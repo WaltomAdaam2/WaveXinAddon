@@ -1,10 +1,9 @@
 {
   "required": true,
-  "package": "me.waltom.wavexin.mixins",
   "compatibilityLevel": "JAVA_21",
   "client": [
-    "MixinClientPlayerEntity",
-    "MixinPlayerEntity"
+    "me.waltom.wavexin.MixinClientPlayerEntity",
+    "me.waltom.wavexin.MixinPlayerEntity"
   ],
   "injectors": {
     "defaultRequire": 1

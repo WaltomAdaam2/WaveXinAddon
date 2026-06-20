@@ -4,7 +4,11 @@ import meteordevelopment.meteorclient.events.render.Render2DEvent;
 import meteordevelopment.meteorclient.events.world.TickEvent;
 import meteordevelopment.meteorclient.renderer.Renderer2D;
 import meteordevelopment.meteorclient.renderer.text.TextRenderer;
-import meteordevelopment.meteorclient.settings.*;
+import meteordevelopment.meteorclient.settings.BoolSetting;
+import meteordevelopment.meteorclient.settings.ColorSetting;
+import meteordevelopment.meteorclient.settings.DoubleSetting;
+import meteordevelopment.meteorclient.settings.Setting;
+import meteordevelopment.meteorclient.settings.SettingGroup;
 import meteordevelopment.meteorclient.systems.config.Config;
 import meteordevelopment.meteorclient.systems.modules.Module;
 import meteordevelopment.meteorclient.utils.Utils;
@@ -21,6 +25,7 @@ import org.joml.Vector3d;
 
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.Iterator;
 import java.util.List;
 
 public class SnifferNametags extends Module {
@@ -28,30 +33,30 @@ public class SnifferNametags extends Module {
     private final SettingGroup sgRender = settings.createGroup("Render");
 
     private final Setting<Double> scale = sgGeneral.add(new DoubleSetting.Builder()
-        .name("Scale")
-        .description("The nametag scale.")
+        .name("scale")
+        .description("名称标签的缩放大小。")
         .defaultValue(1.1)
         .min(0.1)
         .build()
     );
 
     private final Setting<Boolean> displayHealth = sgGeneral.add(new BoolSetting.Builder()
-        .name("Show Health")
-        .description("Shows sniffer health.")
+        .name("display-health")
+        .description("显示嗅探兽的血量。")
         .defaultValue(true)
         .build()
     );
 
     private final Setting<Boolean> displayDistance = sgGeneral.add(new BoolSetting.Builder()
-        .name("Show Distance")
-        .description("Shows distance to the sniffer.")
+        .name("display-distance")
+        .description("显示与嗅探兽的距离。")
         .defaultValue(false)
         .build()
     );
 
     private final Setting<Double> maxRange = sgGeneral.add(new DoubleSetting.Builder()
-        .name("Render Range")
-        .description("Only renders sniffer nametags within this range.")
+        .name("render-range")
+        .description("只渲染此距离内的嗅探兽名称标签。")
         .defaultValue(64)
         .min(1)
         .sliderMax(256)
@@ -59,22 +64,22 @@ public class SnifferNametags extends Module {
     );
 
     private final Setting<SettingColor> background = sgRender.add(new ColorSetting.Builder()
-        .name("Background Color")
-        .description("The nametag background color.")
+        .name("background")
+        .description("名称标签背景颜色。")
         .defaultValue(new SettingColor(0, 0, 0, 75))
         .build()
     );
 
     private final Setting<SettingColor> nameColor = sgRender.add(new ColorSetting.Builder()
-        .name("Name Color")
-        .description("The nametag text color.")
+        .name("name-color")
+        .description("名称文字颜色。")
         .defaultValue(new SettingColor(255, 255, 255))
         .build()
     );
 
     private final Setting<SettingColor> distanceColor = sgRender.add(new ColorSetting.Builder()
-        .name("Distance Color")
-        .description("The distance text color.")
+        .name("distance-color")
+        .description("距离文字的颜色。")
         .defaultValue(new SettingColor(150, 150, 150))
         .visible(displayDistance::get)
         .build()
@@ -88,7 +93,7 @@ public class SnifferNametags extends Module {
     private final List<SnifferEntity> snifferList = new ArrayList<>();
 
     public SnifferNametags() {
-        super(WaveXinAddon.CATEGORY, "sniffer-nametags", "Displays custom nametags for sniffer entities.");
+        super(WaveXinAddon.CATEGORY, "sniffer-nametags", "显示嗅探兽实体的自定义名称标签。");
     }
 
     @EventHandler
@@ -104,6 +109,7 @@ public class SnifferNametags extends Module {
         for (Entity entity : mc.world.getEntities()) {
             if (entity.getType() != EntityType.SNIFFER) continue;
             if (!(entity instanceof SnifferEntity sniffer)) continue;
+            if (!isValid(sniffer)) continue;
 
             double distance = PlayerUtils.distanceToCamera(sniffer);
             if (distance <= maxRange.get()) {
@@ -121,11 +127,15 @@ public class SnifferNametags extends Module {
             return;
         }
 
-        snifferList.removeIf(sniffer -> sniffer == null || sniffer.isRemoved() || !sniffer.isAlive());
-
         boolean shadow = Config.get().customFont.get();
 
-        for (SnifferEntity sniffer : snifferList) {
+        for (Iterator<SnifferEntity> it = snifferList.iterator(); it.hasNext();) {
+            SnifferEntity sniffer = it.next();
+            if (!isValid(sniffer)) {
+                it.remove();
+                continue;
+            }
+
             Utils.set(pos, sniffer, event.tickDelta);
             pos.add(0, getHeight(sniffer), 0);
 
@@ -133,6 +143,10 @@ public class SnifferNametags extends Module {
                 renderSnifferNametag(sniffer, shadow);
             }
         }
+    }
+
+    private boolean isValid(SnifferEntity sniffer) {
+        return sniffer != null && !sniffer.isRemoved() && sniffer.isAlive();
     }
 
     private double getHeight(Entity entity) {
@@ -143,8 +157,8 @@ public class SnifferNametags extends Module {
         TextRenderer text = TextRenderer.get();
         NametagUtils.begin(pos);
 
-        String nameText = "Sniffer";
-        if (sniffer.hasCustomName()) {
+        String nameText = "嗅探兽";
+        if (sniffer.hasCustomName() && sniffer.getCustomName() != null) {
             nameText = sniffer.getCustomName().getString();
         }
 

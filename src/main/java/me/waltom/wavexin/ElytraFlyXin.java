@@ -84,7 +84,7 @@ public class ElytraFlyXin extends Module {
         }
 
         ItemStack chestStack = mc.player.getEquippedStack(EquipmentSlot.CHEST);
-        hasElytra = chestStack.isOf(Items.ELYTRA) && isUsableElytra(chestStack);
+        hasElytra = isUsableElytra(chestStack);
     }
 
     protected final Vec3d getRotationVector(float pitch, float yaw) {
@@ -130,6 +130,8 @@ public class ElytraFlyXin extends Module {
     }
 
     public static double[] directionSpeedKey(double speed) {
+        if (mc.player == null) return new double[]{0, 0};
+
         float forward = (mc.options.forwardKey.isPressed() ? 1 : 0) + (mc.options.backKey.isPressed() ? -1 : 0);
         float side = (mc.options.leftKey.isPressed() ? 1 : 0) + (mc.options.rightKey.isPressed() ? -1 : 0);
         float yaw = mc.player.getYaw();
@@ -151,6 +153,7 @@ public class ElytraFlyXin extends Module {
 
     @EventHandler
     public void onPlayerMove(MoveEvent event) {
+        if (mc.player == null || mc.world == null) return;
         if (!mc.player.getEquippedStack(EquipmentSlot.CHEST).isOf(Items.ELYTRA)) return;
 
         if (mc.player.isGliding()) {
@@ -178,7 +181,7 @@ public class ElytraFlyXin extends Module {
         if (mc.options.sneakKey.isPressed()) {
             setY(-downSpeed.get());
         } else if (!mc.options.jumpKey.isPressed()) {
-            setY(-0.00000000003D * 0);
+            setY(-0.0D);
         }
 
         if (mc.options.jumpKey.isPressed()) {

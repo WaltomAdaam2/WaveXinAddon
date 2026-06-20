@@ -28,8 +28,8 @@ public class AutoAnswerXin extends Module {
     private int pendingTicks;
 
     private final Setting<Integer> answerDelay = sgGeneral.add(new IntSetting.Builder()
-        .name("Answer Delay")
-        .description("Delay before sending the answer, in ticks")
+        .name("answer-delay")
+        .description("Delay before sending the answer, in ticks.")
         .defaultValue(5)
         .min(0)
         .max(60)
@@ -39,8 +39,8 @@ public class AutoAnswerXin extends Module {
     );
 
     private final Setting<Boolean> chatFeedback = sgGeneral.add(new BoolSetting.Builder()
-        .name("Chat Feedback")
-        .description("Shows detected answers in chat")
+        .name("chat-feedback")
+        .description("Shows detected answers in chat.")
         .defaultValue(true)
         .build()
     );
@@ -69,20 +69,18 @@ public class AutoAnswerXin extends Module {
         if (event.getMessage() == null) return;
 
         String message = event.getMessage().getString();
-        if (!message.contains("丨")) return;
+        for (Map.Entry<String, Pattern> entry : questions.entrySet()) {
+            String question = entry.getKey();
+            int questionIndex = message.indexOf(question);
+            if (questionIndex < 0) continue;
 
-        String[] parts = message.split("丨");
-        if (parts.length != 2) return;
+            String options = message.substring(questionIndex + question.length()).trim();
+            Matcher matcher = entry.getValue().matcher(options);
+            if (!matcher.find() || matcher.groupCount() < 1) continue;
 
-        String question = parts[0].trim();
-        String options = parts[1].trim();
-        Pattern pattern = questions.get(question);
-        if (pattern == null) return;
-
-        Matcher matcher = pattern.matcher(options);
-        if (!matcher.find() || matcher.groupCount() < 1) return;
-
-        queueAnswer(matcher.group(1));
+            queueAnswer(matcher.group(1));
+            return;
+        }
     }
 
     @EventHandler
@@ -105,11 +103,10 @@ public class AutoAnswerXin extends Module {
     }
 
     private void queueAnswer(String answer) {
+        if (pendingAnswer != null) return;
+
         pendingAnswer = answer;
         pendingTicks = Math.max(0, answerDelay.get());
-        if (chatFeedback.get()) {
-            info("Queued quiz answer: %s", answer);
-        }
     }
 
     private void loadQuestions() {

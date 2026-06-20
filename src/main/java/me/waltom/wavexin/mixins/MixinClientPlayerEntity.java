@@ -1,6 +1,7 @@
-package me.waltom.wavexin;
+package me.waltom.wavexin.mixins;
 
 import com.mojang.authlib.GameProfile;
+import me.waltom.wavexin.MoveEvent;
 import meteordevelopment.meteorclient.MeteorClient;
 import net.minecraft.client.network.AbstractClientPlayerEntity;
 import net.minecraft.client.network.ClientPlayerEntity;

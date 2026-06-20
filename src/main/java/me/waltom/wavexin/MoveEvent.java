@@ -1,6 +1,5 @@
 package me.waltom.wavexin;
 
-
 public class MoveEvent extends Event {
     private double x;
     private double y;

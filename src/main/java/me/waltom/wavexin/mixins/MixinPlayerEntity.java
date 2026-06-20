@@ -1,5 +1,8 @@
-package me.waltom.wavexin;
+package me.waltom.wavexin.mixins;
 
+import me.waltom.wavexin.Event;
+import me.waltom.wavexin.TravelEvent;
+import me.waltom.wavexin.Wrapper;
 import meteordevelopment.meteorclient.MeteorClient;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.util.math.Vec3d;

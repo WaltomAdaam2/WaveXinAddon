@@ -3,6 +3,7 @@ package me.waltom.wavexin;
 public class Event {
     private final Stage stage;
     private boolean cancel;
+
     public Event(Stage stage) {
         this.cancel = false;
         this.stage = stage;
@@ -32,7 +33,8 @@ public class Event {
         return stage == Stage.Pre;
     }
 
-    public enum Stage{
-        Pre, Post
+    public enum Stage {
+        Pre,
+        Post
     }
 }
