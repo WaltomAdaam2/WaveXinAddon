@@ -4,7 +4,6 @@ import com.mojang.logging.LogUtils;
 import meteordevelopment.meteorclient.addons.MeteorAddon;
 import meteordevelopment.meteorclient.systems.modules.Category;
 import meteordevelopment.meteorclient.systems.modules.Modules;
-
 import org.slf4j.Logger;
 
 public class WaveXinAddon extends MeteorAddon {
@@ -13,13 +12,12 @@ public class WaveXinAddon extends MeteorAddon {
 
     @Override
     public void onInitialize() {
-
         LOG.info("Initializing WaveXinAddon.");
 
-        
         Modules.get().add(new ElytraFlyXin());
         Modules.get().add(new ElytraReplace());
         Modules.get().add(new SimpleElytraFlyPath());
+        Modules.get().add(new AutoAnswerXin());
         Modules.get().add(new ChickenNametags());
         Modules.get().add(new SnifferNametags());
         Modules.get().add(new AutoLoginXin());
