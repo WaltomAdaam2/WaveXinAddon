@@ -78,13 +78,13 @@ public class ElytraFlyXin extends Module {
 
     @EventHandler
     public void onTick(TickEvent.Pre event) {
-        hasElytra = false;
-        for (ItemStack stack : mc.player.getArmorItems()) {
-            if (stack.isOf(Items.ELYTRA)) {
-                hasElytra = true;
-                break;
-            }
+        if (mc.player == null || mc.world == null) {
+            hasElytra = false;
+            return;
         }
+
+        ItemStack chestStack = mc.player.getEquippedStack(EquipmentSlot.CHEST);
+        hasElytra = chestStack.isOf(Items.ELYTRA) && isUsableElytra(chestStack);
     }
 
     protected final Vec3d getRotationVector(float pitch, float yaw) {
