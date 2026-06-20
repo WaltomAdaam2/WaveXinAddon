@@ -97,7 +97,7 @@ public class AutoAnswerXin extends Module {
 
         String answer = pendingAnswer;
         pendingAnswer = null;
-        mc.getNetworkHandler().sendChatMessage(answer);
+        mc.getNetworkHandler().sendChatMessage(";" + answer);
 
         if (chatFeedback.get()) {
             info("Answered quiz with: %s", answer);
