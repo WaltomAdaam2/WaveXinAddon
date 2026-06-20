@@ -1,0 +1,105 @@
+# Gradle
+.gradle/
+build/
+out/
+classes/
+bin/
+
+# Gradle cache / temporary
+.gradle-cache/
+gradle-app.setting
+
+# Keep Gradle wrapper files
+!gradle/wrapper/gradle-wrapper.jar
+!gradle/wrapper/gradle-wrapper.properties
+!gradlew
+!gradlew.bat
+
+# Minecraft / Fabric / Loom run directory
+run/
+runClient/
+runServer/
+.minecraft/
+logs/
+crash-reports/
+screenshots/
+saves/
+resourcepacks/
+shaderpacks/
+options.txt
+optionsof.txt
+servers.dat
+servers.dat_old
+usernamecache.json
+usercache.json
+realms_persistence.json
+
+# Generated mod jars
+*.jar
+!gradle/wrapper/gradle-wrapper.jar
+
+# Decompiled / remapped / generated sources
+remappedSrc/
+remappedSources/
+generated/
+generated-sources/
+sources/
+decomp/
+decompiled/
+
+# Local dependency jars
+libs/*.jar
+!libs/README.md
+
+# Extracted jar folders
+easy-addon-*/
+meteor-client-*/
+baritone-*/
+fabric-api-*/
+
+# IDE - IntelliJ IDEA
+.idea/
+*.iml
+*.ipr
+*.iws
+
+# IDE - VS Code
+.vscode/
+*.code-workspace
+
+# IDE - Eclipse
+.project
+.classpath
+.settings/
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Logs
+*.log
+*.log.gz
+hs_err_pid*
+replay_pid*
+
+# Java / Kotlin / compiler
+*.class
+*.ctxt
+.mtj.tmp/
+
+# Node / misc tool folders, just in case
+node_modules/
+.cache/
+.temp/
+tmp/
+temp/
+
+# Codex / generated migration junk
+.github/modernize/
+.github/copilot/
+modernize/
+java-upgrade/
+
+# Do not commit packaged extracted output
+easy-addon-0.0.8/
