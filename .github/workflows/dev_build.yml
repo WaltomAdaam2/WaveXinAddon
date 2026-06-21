@@ -4,16 +4,23 @@ on: push
 jobs:
   build:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
+
       - name: Set up Java
         uses: actions/setup-java@v4
         with:
           java-version: 21
-          distribution: adopt
+          distribution: temurin
+
+      - name: Make Gradle wrapper executable
+        run: chmod +x ./gradlew
+
       - name: Build with Gradle
         run: ./gradlew build
+
       - name: Release
         uses: marvinpinto/action-automatic-releases@latest
         with:
