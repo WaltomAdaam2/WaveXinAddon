@@ -77,10 +77,13 @@ This project is mainly designed for the 2b2t.xin use case. Please check server r
 
 ## Credits
 
-Early code was adapted from EasyAddon by IDhammaI.
+WaveXinAddon was originally inspired by EasyAddon by IDhammaI.
 
 WaveXinAddon is now independently modified and maintained by WaltomAdaam.
 
 ## License
 
 See [LICENSE](LICENSE).
+
+WaveXinAddon is licensed under the GNU General Public License v3.0.
+Copyright (C) 2026 WaltomAdaam2.
