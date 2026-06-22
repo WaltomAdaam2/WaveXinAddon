@@ -2,7 +2,11 @@
 
 **语言 / Language:** 中文 | [English](README_EN.md)
 
-WaveXinAddon 是一个为 **2b2t.xin** 服务器设计的 Meteor Client Addon，主要提供鞘翅飞行、路径飞行、自动登录、自动答题、实体名牌显示等辅助功能。
+WaveXinAddon 是一个为 **2b2t.xin** 服务器设计的 Meteor Client Addon (彗星段扩展)，主要提供鞘翅飞行、路径飞行、自动登录、自动答题、实体名牌显示等辅助功能。
+
+<p align="center">
+  <img src="assets/wavexin_readme_preview.png" alt="WaveXinAddon Preview" width="850">
+</p>
 
 ## 功能
 
@@ -12,8 +16,8 @@ WaveXinAddon 是一个为 **2b2t.xin** 服务器设计的 Meteor Client Addon，
 * AutoAnswerXin：自动答题
 * ChickenNametags：鸡实体名牌显示
 * SnifferNametags：嗅探兽实体名牌显示
-* AutoLoginXin：2b2t.xin 自动登录与排队辅助
-* BaseFinderXin：区块搜索 / 基地寻找辅助
+* AutoLoginXin：2b2t.xin 自动登录
+* BaseFinderXin：螺旋扫图 / 基地狩猎
 * NetherElytraPath：下界鞘翅路径飞行辅助
 
 ## 环境要求
@@ -61,14 +65,6 @@ AutoAnswerXin 的题库文件位于：
 
 ```text
 src/main/resources/assets/wavexin/questions.json
-```
-
-题库格式：
-
-```json
-{
-  "问题文本": "用于匹配答案选项的正则表达式"
-}
 ```
 
 ## 说明
