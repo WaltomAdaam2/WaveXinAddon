@@ -4,6 +4,10 @@
 
 WaveXinAddon is a Meteor Client addon designed for the **2b2t.xin** server. It provides elytra flight, path flight, auto login, auto answer, entity nametags, and other utility modules.
 
+<p align="center">
+  <img src="assets/wavexin_readme_preview.png" alt="WaveXinAddon Preview" width="850">
+</p>
+
 ## Features
 
 * ElytraFlyXin: Elytra flight helper
@@ -13,7 +17,7 @@ WaveXinAddon is a Meteor Client addon designed for the **2b2t.xin** server. It p
 * ChickenNametags: Chicken entity nametags
 * SnifferNametags: Sniffer entity nametags
 * AutoLoginXin: 2b2t.xin auto login and queue helper
-* BaseFinderXin: Chunk search / base finding helper
+* BaseFinderXin: Square spiral map scanning / base finding helper
 * NetherElytraPath: Nether elytra path flight helper
 
 ## Requirements
@@ -61,14 +65,6 @@ The question database for AutoAnswerXin is located at:
 
 ```text
 src/main/resources/assets/wavexin/questions.json
-```
-
-Format:
-
-```json
-{
-  "question text": "regex used to match the answer option"
-}
 ```
 
 ## Notice
