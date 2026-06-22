@@ -1,0 +1,305 @@
+package me.waltom.wavexin;
+
+import net.minecraft.nbt.NbtCompound;
+import net.minecraft.nbt.NbtIo;
+import net.minecraft.util.math.ChunkPos;
+import net.fabricmc.loader.api.FabricLoader;
+
+import java.io.File;
+import java.io.IOException;
+import java.nio.file.Path;
+
+/**
+ * 扫描进度管理器
+ * 负责保存和恢复地图扫描的进度数据
+ */
+public class ScanProgressManager {
+    
+    private static final String PROGRESS_FILE = "mapscan_progress.dat";
+    
+    /**
+     * 扫描进度数据
+     */
+    public static class ScanProgress {
+        public int startX;           // 起始区块 X
+        public int startZ;           // 起始区块 Z
+        public int totalSegments;    // 已完成的段数
+        public int currentDir;       // 当前方向索引 (0=EAST, 1=NORTH, 2=WEST, 3=SOUTH)
+        public int stepsInCurrentLength; // 当前步长已走次数
+        public int currentStepLength;    // 当前步长
+        public int chunkStep;            // 区块步长（用于验证一致性）
+        
+        public ScanProgress() {}
+        
+        public ScanProgress(int startX, int startZ, int totalSegments, 
+                           int currentDir, int stepsInCurrentLength, int currentStepLength) {
+            this.startX = startX;
+            this.startZ = startZ;
+            this.totalSegments = totalSegments;
+            this.currentDir = currentDir;
+            this.stepsInCurrentLength = stepsInCurrentLength;
+            this.currentStepLength = currentStepLength;
+            this.chunkStep = 6;  // 默认值，向后兼容
+        }
+        
+        public ScanProgress(int startX, int startZ, int totalSegments, 
+                           int currentDir, int stepsInCurrentLength, int currentStepLength, int chunkStep) {
+            this.startX = startX;
+            this.startZ = startZ;
+            this.totalSegments = totalSegments;
+            this.currentDir = currentDir;
+            this.stepsInCurrentLength = stepsInCurrentLength;
+            this.currentStepLength = currentStepLength;
+            this.chunkStep = chunkStep;
+        }
+        
+        /**
+         * 转换为 NBT 数据
+         */
+        public NbtCompound toNbt() {
+            NbtCompound nbt = new NbtCompound();
+            nbt.putInt("StartX", startX);
+            nbt.putInt("StartZ", startZ);
+            nbt.putInt("TotalSegments", totalSegments);
+            nbt.putInt("CurrentDir", currentDir);
+            nbt.putInt("StepsInCurrentLength", stepsInCurrentLength);
+            nbt.putInt("CurrentStepLength", currentStepLength);
+            nbt.putInt("ChunkStep", chunkStep);  // 保存 chunkStep
+            return nbt;
+        }
+        
+        /**
+         * 从 NBT 数据恢复
+         */
+        public static ScanProgress fromNbt(NbtCompound nbt) {
+            ScanProgress progress = new ScanProgress();
+            progress.startX = nbt.getInt("StartX").orElse(0);
+            progress.startZ = nbt.getInt("StartZ").orElse(0);
+            progress.totalSegments = nbt.getInt("TotalSegments").orElse(0);
+            progress.currentDir = nbt.getInt("CurrentDir").orElse(0);
+            progress.stepsInCurrentLength = nbt.getInt("StepsInCurrentLength").orElse(0);
+            progress.currentStepLength = nbt.getInt("CurrentStepLength").orElse(1);
+            progress.chunkStep = nbt.contains("ChunkStep") ? nbt.getInt("ChunkStep").orElse(6) : 6;  // 向后兼容
+            return progress;
+        }
+    }
+    
+    /**
+     * 保存进度到文件
+     */
+    public static void saveProgress(ScanProgress progress) {
+        try {
+            Path filePath = getProgressFile().toPath();
+            NbtCompound nbt = new NbtCompound();
+            nbt.put("ScanProgress", progress.toNbt());
+            NbtIo.write(nbt, filePath);
+        } catch (IOException e) {
+            WaveXinAddon.LOG.error("保存扫描进度失败: {}", e.getMessage());
+        }
+    }
+    
+    /**
+     * 从文件加载进度
+     */
+    public static ScanProgress loadProgress() {
+        try {
+            Path filePath = getProgressFile().toPath();
+            if (!java.nio.file.Files.exists(filePath)) {
+                return null;
+            }
+            NbtCompound nbt = NbtIo.read(filePath);
+            if (nbt != null && nbt.contains("ScanProgress")) {
+                return nbt.getCompound("ScanProgress").map(ScanProgress::fromNbt).orElse(null);
+            }
+        } catch (IOException e) {
+            WaveXinAddon.LOG.error("加载扫描进度失败: {}", e.getMessage());
+        }
+        return null;
+    }
+    
+    /**
+     * 删除进度文件
+     */
+    public static void clearProgress() {
+        try {
+            Path filePath = getProgressFile().toPath();
+            if (java.nio.file.Files.exists(filePath)) {
+                java.nio.file.Files.delete(filePath);
+            }
+        } catch (IOException e) {
+            WaveXinAddon.LOG.error("清除扫描进度失败: {}", e.getMessage());
+        }
+    }
+    
+    /**
+     * 获取进度文件路径
+     */
+    private static File getProgressFile() {
+        File dir = FabricLoader.getInstance().getConfigDir().resolve("wavexin").toFile();
+        if (!dir.exists() && !dir.mkdirs()) {
+            WaveXinAddon.LOG.warn("Could not create WaveXinAddon config directory: {}", dir);
+        }
+        return new File(dir, PROGRESS_FILE);
+    }
+    
+    /**
+     * 计算指定进度下的目标区块坐标
+     */
+    public static ChunkPos calculateTargetChunkPos(ScanProgress progress, int chunkStep) {
+        if (progress == null) return null;
+        
+        // 计算从起点开始到当前段的累积偏移
+        int currentX = progress.startX;
+        int currentZ = progress.startZ;
+        
+        MapScanDirection[] directions = MapScanDirection.values();
+        int tempDirIdx = 0; // 从 EAST 开始
+        int tempStepLen = 1;
+        int tempStepsInLen = 0;
+        
+        // 累加所有已完成的段
+        for (int i = 0; i < progress.totalSegments; i++) {
+            // 步长序列：1, 1, 2, 2, 3, 3... （需要乘以 chunkStep）
+            int dist = tempStepLen * chunkStep;
+            MapScanDirection dir = directions[tempDirIdx];
+            currentX += dir.dx * dist;
+            currentZ += dir.dz * dist;
+            
+            tempStepsInLen++;
+            if (tempStepsInLen >= 2) {
+                tempStepLen++;
+                tempStepsInLen = 0;
+            }
+            
+            tempDirIdx = (tempDirIdx + 1) % 4;
+        }
+        
+        // 当前方向的目标 = 已完成的累积位置 + 当前段应移动的距离
+        MapScanDirection currentDir = directions[progress.currentDir];
+        int currentDist = progress.currentStepLength * chunkStep;  // 需要乘以 chunkStep
+        int targetX = currentX + currentDir.dx * currentDist;
+        int targetZ = currentZ + currentDir.dz * currentDist;
+        
+        return new ChunkPos(targetX, targetZ);
+    }
+    
+    /**
+     * 计算下一个目标区块坐标（前进一个区块段）
+     */
+    public static ChunkPos calculateNextTargetChunkPos(ScanProgress progress, int chunkStep) {
+        if (progress == null) return null;
+        
+        // 模拟执行一次 turnToNextDirection
+        ScanProgress tempProgress = new ScanProgress(
+            progress.startX, progress.startZ,
+            progress.totalSegments, progress.currentDir,
+            progress.stepsInCurrentLength, progress.currentStepLength,
+            progress.chunkStep  // 保留原始的 chunkStep
+        );
+        
+        // 更新方向
+        tempProgress.currentDir = (tempProgress.currentDir + 1) % 4;
+        tempProgress.totalSegments++;
+        tempProgress.stepsInCurrentLength++;
+        
+        if (tempProgress.stepsInCurrentLength >= 2) {
+            tempProgress.currentStepLength++;
+            tempProgress.stepsInCurrentLength = 0;
+        }
+        
+        // 计算目标坐标
+        return calculateTargetChunkPos(tempProgress, chunkStep);
+    }
+    
+    /**
+     * 根据玩家当前位置实时计算扫描进度
+     * 从指定的起始点开始模拟螺旋路径，找到距离玩家最近的拐点
+     * 
+     * @param playerChunkX 玩家当前区块 X 坐标
+     * @param playerChunkZ 玩家当前区块 Z 坐标
+     * @param startX 扫描起始区块 X
+     * @param startZ 扫描起始区块 Z
+     * @param chunkStep 区块步长（未使用，保留兼容性）
+     * @return 计算出的进度，返回距离玩家最近的螺旋路径状态
+     */
+    public static ScanProgress calculateProgressFromPosition(int playerChunkX, int playerChunkZ, 
+                                                             int startX, int startZ, int chunkStep) {
+        MapScanDirection[] directions = MapScanDirection.values();
+        
+        int currentX = startX;
+        int currentZ = startZ;
+        int tempStepLen = 1;
+        int tempStepsInLen = 0;
+        int tempDirIdx = 0;
+        
+        // 记录距离玩家最近的拐点信息
+        int closestSegment = 0;
+        int closestDirIdx = 0;
+        int closestStepLen = 1;
+        int closestStepsInLen = 0;
+        double minDistance = Double.MAX_VALUE;
+        
+        // 模拟螺旋路径，查找距离玩家最近的拐点
+        int maxSearchSegments = 10000;
+        
+        for (int segment = 0; segment < maxSearchSegments; segment++) {
+            MapScanDirection dir = directions[tempDirIdx];
+            int dist = tempStepLen * chunkStep;  // 需要乘以 chunkStep
+            
+            // 当前段的终点（即拐点）
+            int cornerX = currentX + dir.dx * dist;
+            int cornerZ = currentZ + dir.dz * dist;
+            
+            // 计算玩家到该拐点的距离
+            double distance = Math.sqrt(
+                Math.pow(playerChunkX - cornerX, 2) + 
+                Math.pow(playerChunkZ - cornerZ, 2)
+            );
+            
+            // 如果这个拐点更近，更新记录
+            if (distance < minDistance) {
+                minDistance = distance;
+                closestSegment = segment;
+                closestDirIdx = tempDirIdx;
+                closestStepLen = tempStepLen;
+                closestStepsInLen = tempStepsInLen;
+            }
+            
+            // 如果距离开始变大，说明已经过了最近的拐点，可以提前结束
+            // 但为了保险起见，继续搜索一小段距离
+            if (distance > minDistance && segment > closestSegment + 50) {
+                break;
+            }
+            
+            // 移动到下一个拐点
+            currentX = cornerX;
+            currentZ = cornerZ;
+            
+            tempStepsInLen++;
+            if (tempStepsInLen >= 2) {
+                tempStepLen++;
+                tempStepsInLen = 0;
+            }
+            tempDirIdx = (tempDirIdx + 1) % 4;
+        }
+        
+        int nextTotalSegments = closestSegment + 1;
+        int nextDirIdx = (closestDirIdx + 1) % directions.length;
+        int nextStepsInLen = closestStepsInLen + 1;
+        int nextStepLen = closestStepLen;
+        if (nextStepsInLen >= 2) {
+            nextStepLen++;
+            nextStepsInLen = 0;
+        }
+
+        // 返回距离玩家最近的拐点之后的下一段状态
+        return new ScanProgress(
+            startX, startZ,
+            nextTotalSegments,   // totalSegments
+            nextDirIdx,          // currentDir
+            nextStepsInLen,
+            nextStepLen,         // currentStepLength
+            chunkStep            // 必须传入 chunkStep，否则会使用默认值6导致计算错误
+        );
+    }
+}

@@ -2,7 +2,7 @@
 
 **语言 / Language:** 中文 | [English](README_EN.md)
 
-WaveXinAddon 是一个为 **2b2t.xin** 服务器设计的 Meteor Client Addon，主要提供鞘翅飞行、路径飞行、自动登录、自动答题、实体名牌显示等辅助功能。
+WaveXinAddon 是一个为 **2b2t.xin** 服务器设计的 Meteor Client Addon (彗星端扩展)，主要提供鞘翅飞行、路径飞行、自动登录、自动答题、实体名牌显示等辅助功能。
 
 ## 功能
 
