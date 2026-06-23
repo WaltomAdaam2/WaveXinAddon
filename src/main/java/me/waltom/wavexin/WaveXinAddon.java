@@ -21,6 +21,7 @@ public class WaveXinAddon extends MeteorAddon {
         Modules.get().add(new SnifferNametags());
         Modules.get().add(new AutoAnswerXin());
         Modules.get().add(new AutoLoginXin());
+        Modules.get().add(new AutoRestockCoreXin());
         Modules.get().add(new BaseFinderXin());
         Modules.get().add(new NetherElytraPath());
     }
