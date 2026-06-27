@@ -3,7 +3,7 @@
   "id": "wave-xin-addon",
   "version": "${version}",
   "name": "WaveXinAddon",
-  "description": "WaveXinAddon for Meteor Client.",
+  "description": "Meteor Addon for 2b2t.xin.",
   "authors": [
     "WaltomAdaam"
   ],

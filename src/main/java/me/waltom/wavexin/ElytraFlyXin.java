@@ -30,25 +30,91 @@ public class ElytraFlyXin extends Module {
         .build()
     );
 
+    public final Setting<Boolean> autoStart = sgGeneral.add(new BoolSetting.Builder()
+        .name("AutoStart")
+        .description("Automatically starts gliding with an equipped elytra")
+        .defaultValue(true)
+        .build()
+    );
+
     public final Setting<Double> speed = sgGeneral.add(new DoubleSetting.Builder()
-        .name("Flight Speed")
+        .name("Speed")
         .description("Horizontal flight speed")
-        .defaultValue(1.5)
+        .defaultValue(1.0)
         .min(0.1)
         .sliderMin(0.1)
-        .max(3)
-        .sliderMax(3)
+        .max(10)
+        .sliderMax(10)
+        .build()
+    );
+
+    public final Setting<Double> upPitch = sgGeneral.add(new DoubleSetting.Builder()
+        .name("UpPitch")
+        .description("Pitch value reserved for upward control")
+        .defaultValue(0.0)
+        .min(0)
+        .sliderMin(0)
+        .max(90)
+        .sliderMax(90)
+        .build()
+    );
+
+    public final Setting<Double> upFactor = sgGeneral.add(new DoubleSetting.Builder()
+        .name("UpFactor")
+        .description("Minimum horizontal speed factor before upward acceleration")
+        .defaultValue(1.0)
+        .min(0)
+        .sliderMin(0)
+        .max(10)
+        .sliderMax(10)
+        .build()
+    );
+
+    public final Setting<Double> downFactor = sgGeneral.add(new DoubleSetting.Builder()
+        .name("FallSpeed")
+        .description("Passive fall speed factor")
+        .defaultValue(1.0)
+        .min(0)
+        .sliderMin(0)
+        .max(10)
+        .sliderMax(10)
         .build()
     );
 
     public final Setting<Double> downSpeed = sgGeneral.add(new DoubleSetting.Builder()
-        .name("Descent Speed")
-        .description("Descent speed")
-        .defaultValue(1)
+        .name("DownSpeed")
+        .description("Sneak descent speed")
+        .defaultValue(1.0)
         .min(0.1)
         .sliderMin(0.1)
-        .max(3)
-        .sliderMax(3)
+        .max(10)
+        .sliderMax(10)
+        .build()
+    );
+
+    public final Setting<Boolean> speedLimit = sgGeneral.add(new BoolSetting.Builder()
+        .name("SpeedLimit")
+        .description("Limits horizontal flight speed")
+        .defaultValue(true)
+        .build()
+    );
+
+    public final Setting<Double> maxSpeed = sgGeneral.add(new DoubleSetting.Builder()
+        .name("MaxSpeed")
+        .description("Maximum horizontal flight speed")
+        .defaultValue(2.5)
+        .min(0.1)
+        .sliderMin(0.1)
+        .max(10)
+        .sliderMax(10)
+        .visible(speedLimit::get)
+        .build()
+    );
+
+    public final Setting<Boolean> noDrag = sgGeneral.add(new BoolSetting.Builder()
+        .name("NoDrag")
+        .description("Disables vanilla-style elytra drag")
+        .defaultValue(false)
         .build()
     );
 
@@ -85,6 +151,10 @@ public class ElytraFlyXin extends Module {
 
         ItemStack chestStack = mc.player.getEquippedStack(EquipmentSlot.CHEST);
         hasElytra = isUsableElytra(chestStack);
+
+        if (autoStart.get() && hasElytra && !mc.player.isGliding()) {
+            recastElytra(mc.player);
+        }
     }
 
     protected final Vec3d getRotationVector(float pitch, float yaw) {
@@ -98,7 +168,7 @@ public class ElytraFlyXin extends Module {
     }
 
     public final Vec3d getRotationVec(float tickDelta) {
-        return this.getRotationVector(0, mc.player.getYaw(tickDelta));
+        return this.getRotationVector(mc.player.getPitch(tickDelta), mc.player.getYaw(tickDelta));
     }
 
     public static boolean recastElytra(ClientPlayerEntity player) {
@@ -152,27 +222,20 @@ public class ElytraFlyXin extends Module {
     }
 
     @EventHandler
-    public void onPlayerMove(MoveEvent event) {
-        if (mc.player == null || mc.world == null) return;
-        if (!mc.player.getEquippedStack(EquipmentSlot.CHEST).isOf(Items.ELYTRA)) return;
-
-        if (mc.player.isGliding()) {
-            int chunkX = (int) (mc.player.getX() / 16);
-            int chunkZ = (int) (mc.player.getZ() / 16);
-
-            if (autoStop.get()) {
-                if (!mc.world.getChunkManager().isChunkLoaded(chunkX, chunkZ)) {
-                    event.setX(0);
-                    event.setY(0);
-                    event.setZ(0);
-                }
-            }
-        }
-    }
-
-    @EventHandler
     public void onMove(TravelEvent event) {
         if (mc.player == null || mc.world == null || !hasElytra || !mc.player.isGliding() || event.isPost()) return;
+
+        if (autoStop.get()) {
+            int chunkX = (int) Math.floor(mc.player.getX()) >> 4;
+            int chunkZ = (int) Math.floor(mc.player.getZ()) >> 4;
+
+            if (!mc.world.getChunkManager().isChunkLoaded(chunkX, chunkZ)) {
+                mc.player.setVelocity(Vec3d.ZERO);
+                event.cancel();
+                mc.player.move(MovementType.SELF, mc.player.getVelocity());
+                return;
+            }
+        }
 
         Vec3d lookVec = getRotationVec(1.0f);
         double lookDist = Math.sqrt(lookVec.x * lookVec.x + lookVec.z * lookVec.z);
@@ -181,11 +244,11 @@ public class ElytraFlyXin extends Module {
         if (mc.options.sneakKey.isPressed()) {
             setY(-downSpeed.get());
         } else if (!mc.options.jumpKey.isPressed()) {
-            setY(-0.0D);
+            setY(-0.00000000003D * downFactor.get());
         }
 
         if (mc.options.jumpKey.isPressed()) {
-            if (motionDist > 0 / 10) {
+            if (lookDist > 0.0D && motionDist > upFactor.get() / 10.0D) {
                 double rawUpSpeed = motionDist * 0.01325D;
                 setY(getY() + rawUpSpeed * 3.2D);
                 setX(getX() - lookVec.x * rawUpSpeed / lookDist);
@@ -208,9 +271,17 @@ public class ElytraFlyXin extends Module {
             setZ(dir[1]);
         }
 
-        setY(getY() * 0.9900000095367432D);
-        setX(getX() * 0.9800000190734863D);
-        setZ(getZ() * 0.9900000095367432D);
+        if (!noDrag.get()) {
+            setY(getY() * 0.9900000095367432D);
+            setX(getX() * 0.9800000190734863D);
+            setZ(getZ() * 0.9900000095367432D);
+        }
+
+        double finalDist = Math.sqrt(getX() * getX() + getZ() * getZ());
+        if (speedLimit.get() && finalDist > maxSpeed.get()) {
+            setX(getX() * maxSpeed.get() / finalDist);
+            setZ(getZ() * maxSpeed.get() / finalDist);
+        }
 
         event.cancel();
         mc.player.move(MovementType.SELF, mc.player.getVelocity());
