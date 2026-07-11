@@ -6,6 +6,7 @@ import meteordevelopment.meteorclient.settings.DoubleSetting;
 import meteordevelopment.meteorclient.settings.Setting;
 import meteordevelopment.meteorclient.settings.SettingGroup;
 import meteordevelopment.meteorclient.systems.modules.Module;
+import meteordevelopment.meteorclient.systems.modules.Modules;
 import meteordevelopment.orbit.EventHandler;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.network.ClientPlayerEntity;
@@ -16,6 +17,7 @@ import net.minecraft.item.ItemStack;
 import net.minecraft.item.Items;
 import net.minecraft.network.packet.c2s.play.ClientCommandC2SPacket;
 import net.minecraft.util.math.MathHelper;
+import net.minecraft.util.math.Vec2f;
 import net.minecraft.util.math.Vec3d;
 
 public class ElytraFlyXin extends Module {
@@ -43,8 +45,8 @@ public class ElytraFlyXin extends Module {
         .defaultValue(1.0)
         .min(0.1)
         .sliderMin(0.1)
-        .max(10)
-        .sliderMax(10)
+        .max(20)
+        .sliderMax(20)
         .build()
     );
 
@@ -105,8 +107,8 @@ public class ElytraFlyXin extends Module {
         .defaultValue(2.5)
         .min(0.1)
         .sliderMin(0.1)
-        .max(10)
-        .sliderMax(10)
+        .max(20)
+        .sliderMax(20)
         .visible(speedLimit::get)
         .build()
     );
@@ -144,6 +146,8 @@ public class ElytraFlyXin extends Module {
 
     @EventHandler
     public void onTick(TickEvent.Pre event) {
+        if (isSimpleElytraFlyPathActive()) return;
+
         if (mc.player == null || mc.world == null) {
             hasElytra = false;
             return;
@@ -168,7 +172,7 @@ public class ElytraFlyXin extends Module {
     }
 
     public final Vec3d getRotationVec(float tickDelta) {
-        return this.getRotationVector(mc.player.getPitch(tickDelta), mc.player.getYaw(tickDelta));
+        return this.getRotationVector(-upPitch.get().floatValue(), mc.player.getYaw(tickDelta));
     }
 
     public static boolean recastElytra(ClientPlayerEntity player) {
@@ -202,9 +206,10 @@ public class ElytraFlyXin extends Module {
     public static double[] directionSpeedKey(double speed) {
         if (mc.player == null) return new double[]{0, 0};
 
-        float forward = (mc.options.forwardKey.isPressed() ? 1 : 0) + (mc.options.backKey.isPressed() ? -1 : 0);
-        float side = (mc.options.leftKey.isPressed() ? 1 : 0) + (mc.options.rightKey.isPressed() ? -1 : 0);
-        float yaw = mc.player.getYaw();
+        Vec2f movementInput = mc.player.input.getMovementInput();
+        float forward = movementInput.y;
+        float side = movementInput.x;
+        float yaw = mc.player.getYaw(mc.getRenderTickCounter().getTickProgress(true));
 
         if (forward != 0.0f) {
             if (side > 0.0f) yaw += forward > 0.0f ? -45 : 45;
@@ -222,37 +227,36 @@ public class ElytraFlyXin extends Module {
     }
 
     @EventHandler
+    public void onPlayerMove(MoveEvent event) {
+        if (isSimpleElytraFlyPathActive() || !autoStop.get() || mc.player == null || mc.world == null || !mc.player.isGliding()) return;
+
+        int chunkX = MathHelper.floor(mc.player.getX()) >> 4;
+        int chunkZ = MathHelper.floor(mc.player.getZ()) >> 4;
+        if (!mc.world.getChunkManager().isChunkLoaded(chunkX, chunkZ)) event.cancel();
+    }
+
+    @EventHandler
     public void onMove(TravelEvent event) {
-        if (mc.player == null || mc.world == null || !hasElytra || !mc.player.isGliding() || event.isPost()) return;
+        if (isSimpleElytraFlyPathActive() || mc.player == null || mc.world == null || !hasElytra || !mc.player.isGliding() || event.isPost()) return;
 
-        if (autoStop.get()) {
-            int chunkX = (int) Math.floor(mc.player.getX()) >> 4;
-            int chunkZ = (int) Math.floor(mc.player.getZ()) >> 4;
-
-            if (!mc.world.getChunkManager().isChunkLoaded(chunkX, chunkZ)) {
-                mc.player.setVelocity(Vec3d.ZERO);
-                event.cancel();
-                mc.player.move(MovementType.SELF, mc.player.getVelocity());
-                return;
-            }
-        }
-
-        Vec3d lookVec = getRotationVec(1.0f);
+        Vec3d lookVec = getRotationVec(mc.getRenderTickCounter().getTickProgress(true));
         double lookDist = Math.sqrt(lookVec.x * lookVec.x + lookVec.z * lookVec.z);
         double motionDist = Math.sqrt(getX() * getX() + getZ() * getZ());
 
-        if (mc.options.sneakKey.isPressed()) {
+        if (mc.player.input.playerInput.sneak()) {
             setY(-downSpeed.get());
-        } else if (!mc.options.jumpKey.isPressed()) {
+        } else if (!mc.player.input.playerInput.jump()) {
             setY(-0.00000000003D * downFactor.get());
         }
 
-        if (mc.options.jumpKey.isPressed()) {
-            if (lookDist > 0.0D && motionDist > upFactor.get() / 10.0D) {
+        if (mc.player.input.playerInput.jump()) {
+            if (motionDist > upFactor.get() / 10.0D) {
                 double rawUpSpeed = motionDist * 0.01325D;
                 setY(getY() + rawUpSpeed * 3.2D);
-                setX(getX() - lookVec.x * rawUpSpeed / lookDist);
-                setZ(getZ() - lookVec.z * rawUpSpeed / lookDist);
+                if (lookDist > 0.0D) {
+                    setX(getX() - lookVec.x * rawUpSpeed / lookDist);
+                    setZ(getZ() - lookVec.z * rawUpSpeed / lookDist);
+                }
             } else {
                 double[] dir = directionSpeedKey(speed.get());
                 setX(dir[0]);
@@ -265,7 +269,7 @@ public class ElytraFlyXin extends Module {
             setZ(getZ() + (lookVec.z / lookDist * motionDist - getZ()) * 0.1D);
         }
 
-        if (!mc.options.jumpKey.isPressed()) {
+        if (!mc.player.input.playerInput.jump()) {
             double[] dir = directionSpeedKey(speed.get());
             setX(dir[0]);
             setZ(dir[1]);
@@ -312,6 +316,11 @@ public class ElytraFlyXin extends Module {
     private void setZ(double f) {
         Vec3d currentVel = mc.player.getVelocity();
         mc.player.setVelocity(new Vec3d(currentVel.x, currentVel.y, f));
+    }
+
+    private boolean isSimpleElytraFlyPathActive() {
+        SimpleElytraFlyPath simpleElytraFlyPath = Modules.get().get(SimpleElytraFlyPath.class);
+        return simpleElytraFlyPath != null && simpleElytraFlyPath.isActive();
     }
 
     private static boolean isUsableElytra(ItemStack stack) {

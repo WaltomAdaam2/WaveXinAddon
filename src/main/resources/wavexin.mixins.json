@@ -4,7 +4,9 @@
   "compatibilityLevel": "JAVA_21",
   "client": [
     "MixinClientPlayerEntity",
-    "MixinPlayerEntity"
+    "MixinPlayerEntity",
+    "MixinWIntEdit",
+    "MixinWTextBoxAccessor"
   ],
   "injectors": {
     "defaultRequire": 1
