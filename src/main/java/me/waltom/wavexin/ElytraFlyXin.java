@@ -6,6 +6,7 @@ import meteordevelopment.meteorclient.settings.DoubleSetting;
 import meteordevelopment.meteorclient.settings.Setting;
 import meteordevelopment.meteorclient.settings.SettingGroup;
 import meteordevelopment.meteorclient.systems.modules.Module;
+import meteordevelopment.meteorclient.systems.modules.Modules;
 import meteordevelopment.orbit.EventHandler;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.network.ClientPlayerEntity;
@@ -145,6 +146,8 @@ public class ElytraFlyXin extends Module {
 
     @EventHandler
     public void onTick(TickEvent.Pre event) {
+        if (isSimpleElytraFlyPathActive()) return;
+
         if (mc.player == null || mc.world == null) {
             hasElytra = false;
             return;
@@ -225,16 +228,16 @@ public class ElytraFlyXin extends Module {
 
     @EventHandler
     public void onPlayerMove(MoveEvent event) {
-        if (!autoStop.get() || mc.player == null || mc.world == null || !mc.player.isGliding()) return;
+        if (isSimpleElytraFlyPathActive() || !autoStop.get() || mc.player == null || mc.world == null || !mc.player.isGliding()) return;
 
-        int chunkX = (int) (mc.player.getX() / 16);
-        int chunkZ = (int) (mc.player.getZ() / 16);
+        int chunkX = MathHelper.floor(mc.player.getX()) >> 4;
+        int chunkZ = MathHelper.floor(mc.player.getZ()) >> 4;
         if (!mc.world.getChunkManager().isChunkLoaded(chunkX, chunkZ)) event.cancel();
     }
 
     @EventHandler
     public void onMove(TravelEvent event) {
-        if (mc.player == null || mc.world == null || !hasElytra || !mc.player.isGliding() || event.isPost()) return;
+        if (isSimpleElytraFlyPathActive() || mc.player == null || mc.world == null || !hasElytra || !mc.player.isGliding() || event.isPost()) return;
 
         Vec3d lookVec = getRotationVec(mc.getRenderTickCounter().getTickProgress(true));
         double lookDist = Math.sqrt(lookVec.x * lookVec.x + lookVec.z * lookVec.z);
@@ -250,8 +253,10 @@ public class ElytraFlyXin extends Module {
             if (motionDist > upFactor.get() / 10.0D) {
                 double rawUpSpeed = motionDist * 0.01325D;
                 setY(getY() + rawUpSpeed * 3.2D);
-                setX(getX() - lookVec.x * rawUpSpeed / lookDist);
-                setZ(getZ() - lookVec.z * rawUpSpeed / lookDist);
+                if (lookDist > 0.0D) {
+                    setX(getX() - lookVec.x * rawUpSpeed / lookDist);
+                    setZ(getZ() - lookVec.z * rawUpSpeed / lookDist);
+                }
             } else {
                 double[] dir = directionSpeedKey(speed.get());
                 setX(dir[0]);
@@ -311,6 +316,11 @@ public class ElytraFlyXin extends Module {
     private void setZ(double f) {
         Vec3d currentVel = mc.player.getVelocity();
         mc.player.setVelocity(new Vec3d(currentVel.x, currentVel.y, f));
+    }
+
+    private boolean isSimpleElytraFlyPathActive() {
+        SimpleElytraFlyPath simpleElytraFlyPath = Modules.get().get(SimpleElytraFlyPath.class);
+        return simpleElytraFlyPath != null && simpleElytraFlyPath.isActive();
     }
 
     private static boolean isUsableElytra(ItemStack stack) {

@@ -32,12 +32,15 @@ import net.minecraft.util.math.Vec3d;
 public class NetherElytraPath extends Module {
     private static final MinecraftClient mc = MinecraftClient.getInstance();
     private static final int LANDING_TIMEOUT_TICKS = 20 * 60;
+    private static final int SHULKER_SCREEN_TIMEOUT_TICKS = 20 * 5;
+    private static final int SHULKER_CLEANUP_TIMEOUT_TICKS = 20 * 5;
     private final SettingGroup sgGeneral = settings.getDefaultGroup();
 
     private Progress currentProgress; 
     private ReplenishProgress replenishProgress; 
     private int timer = 0; 
     private int landingTicks = 0;
+    private int replenishWaitTicks = 0;
     private final BlockPos.Mutable bp = new BlockPos.Mutable(); 
     boolean shouldLandForElytra = false;
     boolean shouldLandForFirework = false;
@@ -213,6 +216,7 @@ public class NetherElytraPath extends Module {
             case PLACE_ON_GROUND -> {
                 if (placeShulkerOnGround()) {
                     replenishProgress = ReplenishProgress.OPEN_SHULKER;
+                    replenishWaitTicks = 0;
                     timer = 10;
                     ChatUtils.info("Placed shulker box; continuing...");
                 } else {
@@ -222,23 +226,59 @@ public class NetherElytraPath extends Module {
             }
             case OPEN_SHULKER -> {
                 if (openShulkerBox()) {
-                    replenishProgress = ReplenishProgress.TAKE_FIREWORKS;
+                    replenishProgress = ReplenishProgress.WAIT_SHULKER_SCREEN;
+                    replenishWaitTicks = 0;
                     timer = 10;
-                    ChatUtils.info("Opened shulker box; continuing...");
+                    ChatUtils.info("Opening shulker box...");
                 } else {
                     ChatUtils.error("Could not open the shulker box.");
                     disableWithWarning();
                 }
             }
+            case WAIT_SHULKER_SCREEN -> {
+                if (mc.currentScreen instanceof HandledScreen<?>) {
+                    replenishProgress = ReplenishProgress.TAKE_FIREWORKS;
+                    replenishWaitTicks = 0;
+                    ChatUtils.info("Shulker box opened; taking fireworks...");
+                } else if (++replenishWaitTicks > SHULKER_SCREEN_TIMEOUT_TICKS) {
+                    ChatUtils.error("Timed out waiting for the shulker box screen.");
+                    disableWithWarning();
+                } else if (replenishWaitTicks % 10 == 0) {
+                    openShulkerBox();
+                }
+            }
             case TAKE_FIREWORKS -> {
                 if (takeFireworks()) {
-                    cleanupPlacedShulker();
-                    resumePathing();
-                    timer = 10;
-                    ChatUtils.info("Fireworks refilled; resuming target path...");
+                    replenishProgress = ReplenishProgress.BREAK_SHULKER;
+                    replenishWaitTicks = 0;
+                    timer = 5;
+                    ChatUtils.info("Fireworks refilled; cleaning up shulker...");
                 } else {
                     ChatUtils.error("Could not take fireworks.");
                     disableWithWarning();
+                }
+            }
+            case BREAK_SHULKER -> {
+                if (cleanupPlacedShulker()) {
+                    replenishProgress = ReplenishProgress.WAIT_SHULKER_CLEANUP;
+                    replenishWaitTicks = 0;
+                    timer = 5;
+                } else {
+                    ChatUtils.error("Could not start shulker cleanup.");
+                    disableWithWarning();
+                }
+            }
+            case WAIT_SHULKER_CLEANUP -> {
+                BlockPos placedPos = bp.toImmutable();
+                if (!(mc.world.getBlockState(placedPos).getBlock() instanceof ShulkerBoxBlock)) {
+                    resumePathing();
+                    timer = 10;
+                    ChatUtils.info("Shulker cleaned up; resuming target path...");
+                } else if (++replenishWaitTicks > SHULKER_CLEANUP_TIMEOUT_TICKS) {
+                    ChatUtils.error("Timed out waiting for the placed shulker to break.");
+                    disableWithWarning();
+                } else if (replenishWaitTicks % 10 == 0) {
+                    cleanupPlacedShulker();
                 }
             }
         }
@@ -250,6 +290,7 @@ public class NetherElytraPath extends Module {
         replenishProgress = ReplenishProgress.TAKE_SHULKER;
         timer = 0;
         landingTicks = 0;
+        replenishWaitTicks = 0;
     }
 
     private void saveBaritoneSettings(Settings settings) {
@@ -448,15 +489,18 @@ public class NetherElytraPath extends Module {
         return movedAny || after > before || after > 5;
     }
 
-    private void cleanupPlacedShulker() {
-        if (mc.player == null || mc.world == null) return;
+    private boolean cleanupPlacedShulker() {
+        if (mc.player == null || mc.world == null) return false;
 
         BlockPos placedPos = bp.toImmutable();
-        if (!(mc.world.getBlockState(placedPos).getBlock() instanceof ShulkerBoxBlock)) return;
+        if (!(mc.world.getBlockState(placedPos).getBlock() instanceof ShulkerBoxBlock)) return true;
 
         if (!BlockUtils.breakBlock(placedPos, true)) {
             ChatUtils.warning("Placed shulker cleanup was attempted but not completed; pick it up manually if it remains.");
+            return false;
         }
+
+        return true;
     }
 
     private void resumePathing() {
@@ -483,6 +527,9 @@ public class NetherElytraPath extends Module {
         TAKE_SHULKER, 
         PLACE_ON_GROUND, 
         OPEN_SHULKER, 
+        WAIT_SHULKER_SCREEN,
         TAKE_FIREWORKS, 
+        BREAK_SHULKER,
+        WAIT_SHULKER_CLEANUP,
     }
 }

@@ -7,6 +7,7 @@ import meteordevelopment.meteorclient.settings.*;
 import meteordevelopment.meteorclient.systems.modules.Module;
 import meteordevelopment.meteorclient.utils.player.ChatUtils;
 import meteordevelopment.orbit.EventHandler;
+import meteordevelopment.orbit.EventPriority;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.network.ClientPlayerEntity;
 import net.minecraft.entity.EquipmentSlot;
@@ -82,6 +83,13 @@ public class SimpleElytraFlyPath extends Module {
         .name("Auto Disconnect on Arrival")
         .description("Disconnects after arriving at the target")
         .defaultValue(false)
+        .build()
+    );
+
+    public final Setting<Boolean> autoStopOnArrival = sgFlight.add(new BoolSetting.Builder()
+        .name("Stop on Arrival")
+        .description("Disables Simple Elytra Fly Path after arriving at the target")
+        .defaultValue(true)
         .build()
     );
 
@@ -198,14 +206,24 @@ public class SimpleElytraFlyPath extends Module {
         
         if (mc.player == null || mc.world == null || mc.getNetworkHandler() == null) return;
 
+        if (isArrive) {
+            boolean shouldDisconnect = autoQuitServer.get();
+
+            if (autoStopOnArrival.get()) {
+                toggle();
+            }
+
+            if (shouldDisconnect) {
+                mc.getNetworkHandler().getConnection().disconnect(Text.literal("Auto quit after arriving at target"));
+            }
+
+            isArrive = false;
+            return;
+        }
+
         
         if (autoTakeoff.get() && !mc.player.isGliding()) {
             recastElytra(mc.player);
-        }
-
-        if (isArrive && autoQuitServer.get()) {
-            mc.getNetworkHandler().getConnection().disconnect(Text.literal("Auto quit after arriving at target"));
-            isArrive = false;
         }
     }
 
@@ -214,7 +232,7 @@ public class SimpleElytraFlyPath extends Module {
 
 
 
-    @EventHandler
+    @EventHandler(priority = EventPriority.HIGHEST)
     public void onMove(TravelEvent event) {
         
         if (mc.player == null || mc.world == null || !mc.player.isGliding() || !checkElytra() || event.isPost()) {
@@ -227,7 +245,7 @@ public class SimpleElytraFlyPath extends Module {
         
         Vec3d playerPos = new Vec3d(mc.player.getX(), mc.player.getY(), mc.player.getZ());
         
-        Vec3d targetPos = target.toCenterPos();
+        Vec3d targetPos = new Vec3d(getTargetX(), playerPos.y, getTargetZ());
         
         double deltaX = targetPos.x - playerPos.x;
         double deltaZ = targetPos.z - playerPos.z;
@@ -280,11 +298,11 @@ public class SimpleElytraFlyPath extends Module {
     }
 
     private int getTargetX() {
-        return netherPosCalculation.get() ? globalX.get() / 8 : globalX.get();
+        return netherPosCalculation.get() ? Math.floorDiv(globalX.get(), 8) : globalX.get();
     }
 
     private int getTargetZ() {
-        return netherPosCalculation.get() ? globalZ.get() / 8 : globalZ.get();
+        return netherPosCalculation.get() ? Math.floorDiv(globalZ.get(), 8) : globalZ.get();
     }
 
     
