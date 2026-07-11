@@ -58,6 +58,13 @@ public class SimpleElytraFlyPath extends Module {
         .build()
     );
 
+    public final Setting<Boolean> netherPosCalculation = sgFlight.add(new BoolSetting.Builder()
+        .name("Nether Pos Calculation")
+        .description("Divides Target X and Target Z by 8 before pathing, for Overworld-to-Nether coordinate conversion")
+        .defaultValue(false)
+        .build()
+    );
+
     
     public final Setting<Double> speed = sgFlight.add(new DoubleSetting.Builder()
         .name("Flight Speed")
@@ -138,7 +145,7 @@ public class SimpleElytraFlyPath extends Module {
         }
 
         
-        ChatUtils.info("Started pathing to X=%d, Z=%d", globalX.get(), globalZ.get());
+        ChatUtils.info("Started pathing to X=%d, Z=%d", getTargetX(), getTargetZ());
     }
 
     
@@ -215,7 +222,7 @@ public class SimpleElytraFlyPath extends Module {
         }
 
         
-        target = new BlockPos(globalX.get(), 0, globalZ.get());
+        target = new BlockPos(getTargetX(), 0, getTargetZ());
 
         
         Vec3d playerPos = new Vec3d(mc.player.getX(), mc.player.getY(), mc.player.getZ());
@@ -270,6 +277,14 @@ public class SimpleElytraFlyPath extends Module {
     private boolean checkElytra() {
         
         return isUsableElytra(mc.player.getEquippedStack(EquipmentSlot.CHEST));
+    }
+
+    private int getTargetX() {
+        return netherPosCalculation.get() ? globalX.get() / 8 : globalX.get();
+    }
+
+    private int getTargetZ() {
+        return netherPosCalculation.get() ? globalZ.get() / 8 : globalZ.get();
     }
 
     

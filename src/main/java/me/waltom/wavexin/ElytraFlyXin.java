@@ -16,6 +16,7 @@ import net.minecraft.item.ItemStack;
 import net.minecraft.item.Items;
 import net.minecraft.network.packet.c2s.play.ClientCommandC2SPacket;
 import net.minecraft.util.math.MathHelper;
+import net.minecraft.util.math.Vec2f;
 import net.minecraft.util.math.Vec3d;
 
 public class ElytraFlyXin extends Module {
@@ -168,7 +169,7 @@ public class ElytraFlyXin extends Module {
     }
 
     public final Vec3d getRotationVec(float tickDelta) {
-        return this.getRotationVector(mc.player.getPitch(tickDelta), mc.player.getYaw(tickDelta));
+        return this.getRotationVector(-upPitch.get().floatValue(), mc.player.getYaw(tickDelta));
     }
 
     public static boolean recastElytra(ClientPlayerEntity player) {
@@ -202,9 +203,10 @@ public class ElytraFlyXin extends Module {
     public static double[] directionSpeedKey(double speed) {
         if (mc.player == null) return new double[]{0, 0};
 
-        float forward = (mc.options.forwardKey.isPressed() ? 1 : 0) + (mc.options.backKey.isPressed() ? -1 : 0);
-        float side = (mc.options.leftKey.isPressed() ? 1 : 0) + (mc.options.rightKey.isPressed() ? -1 : 0);
-        float yaw = mc.player.getYaw();
+        Vec2f movementInput = mc.player.input.getMovementInput();
+        float forward = movementInput.y;
+        float side = movementInput.x;
+        float yaw = mc.player.getYaw(mc.getRenderTickCounter().getTickProgress(true));
 
         if (forward != 0.0f) {
             if (side > 0.0f) yaw += forward > 0.0f ? -45 : 45;
@@ -222,33 +224,30 @@ public class ElytraFlyXin extends Module {
     }
 
     @EventHandler
+    public void onPlayerMove(MoveEvent event) {
+        if (!autoStop.get() || mc.player == null || mc.world == null || !mc.player.isGliding()) return;
+
+        int chunkX = (int) (mc.player.getX() / 16);
+        int chunkZ = (int) (mc.player.getZ() / 16);
+        if (!mc.world.getChunkManager().isChunkLoaded(chunkX, chunkZ)) event.cancel();
+    }
+
+    @EventHandler
     public void onMove(TravelEvent event) {
         if (mc.player == null || mc.world == null || !hasElytra || !mc.player.isGliding() || event.isPost()) return;
 
-        if (autoStop.get()) {
-            int chunkX = (int) Math.floor(mc.player.getX()) >> 4;
-            int chunkZ = (int) Math.floor(mc.player.getZ()) >> 4;
-
-            if (!mc.world.getChunkManager().isChunkLoaded(chunkX, chunkZ)) {
-                mc.player.setVelocity(Vec3d.ZERO);
-                event.cancel();
-                mc.player.move(MovementType.SELF, mc.player.getVelocity());
-                return;
-            }
-        }
-
-        Vec3d lookVec = getRotationVec(1.0f);
+        Vec3d lookVec = getRotationVec(mc.getRenderTickCounter().getTickProgress(true));
         double lookDist = Math.sqrt(lookVec.x * lookVec.x + lookVec.z * lookVec.z);
         double motionDist = Math.sqrt(getX() * getX() + getZ() * getZ());
 
-        if (mc.options.sneakKey.isPressed()) {
+        if (mc.player.input.playerInput.sneak()) {
             setY(-downSpeed.get());
-        } else if (!mc.options.jumpKey.isPressed()) {
+        } else if (!mc.player.input.playerInput.jump()) {
             setY(-0.00000000003D * downFactor.get());
         }
 
-        if (mc.options.jumpKey.isPressed()) {
-            if (lookDist > 0.0D && motionDist > upFactor.get() / 10.0D) {
+        if (mc.player.input.playerInput.jump()) {
+            if (motionDist > upFactor.get() / 10.0D) {
                 double rawUpSpeed = motionDist * 0.01325D;
                 setY(getY() + rawUpSpeed * 3.2D);
                 setX(getX() - lookVec.x * rawUpSpeed / lookDist);
@@ -265,7 +264,7 @@ public class ElytraFlyXin extends Module {
             setZ(getZ() + (lookVec.z / lookDist * motionDist - getZ()) * 0.1D);
         }
 
-        if (!mc.options.jumpKey.isPressed()) {
+        if (!mc.player.input.playerInput.jump()) {
             double[] dir = directionSpeedKey(speed.get());
             setX(dir[0]);
             setZ(dir[1]);
