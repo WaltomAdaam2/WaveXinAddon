@@ -45,8 +45,8 @@ public class ElytraFlyXin extends Module {
         .defaultValue(1.0)
         .min(0.1)
         .sliderMin(0.1)
-        .max(10)
-        .sliderMax(10)
+        .max(20)
+        .sliderMax(20)
         .build()
     );
 
@@ -107,8 +107,8 @@ public class ElytraFlyXin extends Module {
         .defaultValue(2.5)
         .min(0.1)
         .sliderMin(0.1)
-        .max(10)
-        .sliderMax(10)
+        .max(20)
+        .sliderMax(20)
         .visible(speedLimit::get)
         .build()
     );

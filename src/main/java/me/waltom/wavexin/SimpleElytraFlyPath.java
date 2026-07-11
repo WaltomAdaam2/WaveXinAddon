@@ -2,7 +2,11 @@ package me.waltom.wavexin;
 
 
 
+import me.waltom.wavexin.gui.TargetCoordinateInput;
 import meteordevelopment.meteorclient.events.world.TickEvent;
+import meteordevelopment.meteorclient.gui.renderer.GuiRenderer;
+import meteordevelopment.meteorclient.gui.utils.SettingsWidgetFactory;
+import meteordevelopment.meteorclient.gui.widgets.input.WIntEdit;
 import meteordevelopment.meteorclient.settings.*;
 import meteordevelopment.meteorclient.systems.modules.Module;
 import meteordevelopment.meteorclient.utils.player.ChatUtils;
@@ -15,14 +19,37 @@ import net.minecraft.entity.MovementType;
 import net.minecraft.entity.effect.StatusEffects;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.Items;
+import net.minecraft.nbt.NbtCompound;
 import net.minecraft.network.packet.c2s.play.ClientCommandC2SPacket;
 import net.minecraft.text.Text;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.ChunkPos;
 import net.minecraft.util.math.Vec3d;
 
+import java.util.function.Consumer;
+
 public class SimpleElytraFlyPath extends Module {
     private static final MinecraftClient mc = MinecraftClient.getInstance();
+    private static final int MAX_TARGET_COORDINATE = 30000000;
+
+    static {
+        SettingsWidgetFactory.registerCustomFactory(TargetCoordinateSetting.class, theme -> (table, setting) -> {
+            TargetCoordinateSetting coordinate = (TargetCoordinateSetting) setting;
+            WIntEdit edit = table.add(theme.intEdit(coordinate.get(), coordinate.min, coordinate.max, coordinate.sliderMin, coordinate.sliderMax, coordinate.noSlider)).expandX().widget();
+            ((TargetCoordinateInput) edit).wavexin$setTargetCoordinateInput(true);
+
+            edit.action = () -> {
+                if (!coordinate.set(edit.get())) edit.set(coordinate.get());
+            };
+
+            var reset = table.add(theme.button(GuiRenderer.RESET)).widget();
+            reset.action = () -> {
+                coordinate.reset();
+                edit.set(coordinate.get());
+            };
+            reset.tooltip = "Reset";
+        });
+    }
 
     
     private final SettingGroup sgTarget = settings.createGroup("Target Coordinates");
@@ -31,22 +58,26 @@ public class SimpleElytraFlyPath extends Module {
 
     
     
-    public final Setting<Integer> globalX = sgTarget.add(new IntSetting.Builder()
+    public final Setting<Integer> globalX = sgTarget.add(new TargetCoordinateSetting.Builder()
         .name("Target X")
         .description("Target X")
         .defaultValue(0)
-        .range(-30000000, 30000000)
-        .sliderRange(-30000000, 30000000)
+        .min(-MAX_TARGET_COORDINATE)
+        .sliderMin(-MAX_TARGET_COORDINATE)
+        .max(MAX_TARGET_COORDINATE)
+        .sliderMax(MAX_TARGET_COORDINATE)
         .build()
     );
 
     
-    public final Setting<Integer> globalZ = sgTarget.add(new IntSetting.Builder()
+    public final Setting<Integer> globalZ = sgTarget.add(new TargetCoordinateSetting.Builder()
         .name("Target Z")
         .description("Target Z")
         .defaultValue(0)
-        .range(-30000000, 30000000)
-        .sliderRange(-30000000, 30000000)
+        .min(-MAX_TARGET_COORDINATE)
+        .sliderMin(-MAX_TARGET_COORDINATE)
+        .max(MAX_TARGET_COORDINATE)
+        .sliderMax(MAX_TARGET_COORDINATE)
         .build()
     );
 
@@ -73,8 +104,8 @@ public class SimpleElytraFlyPath extends Module {
         .defaultValue(0.5)
         .min(0.1)
         .sliderMin(0.1)
-        .max(3)
-        .sliderMax(3)
+        .max(20)
+        .sliderMax(20)
         .build()
     );
 
@@ -139,12 +170,10 @@ public class SimpleElytraFlyPath extends Module {
 
         
         if (!checkValidHeight()) {
-            ChatUtils.error("Can only be used above each dimension height limit: Nether (Y > 128), Overworld (Y > 320), End (Y > 256)");
-            toggle();
-            return;
+            ChatUtils.error("Recommended to use above each dimension height limit: Nether (Y > 128), Overworld (Y > 320), End (Y > 256)");
         }
 
-        
+
         if (!mc.player.isCreative()) mc.player.getAbilities().allowFlying = false;
         mc.player.getAbilities().flying = false;
 
@@ -240,12 +269,14 @@ public class SimpleElytraFlyPath extends Module {
         }
 
         
-        target = new BlockPos(getTargetX(), 0, getTargetZ());
+        int currentTargetX = getTargetX();
+        int currentTargetZ = getTargetZ();
+        target = new BlockPos(currentTargetX, 0, currentTargetZ);
 
         
         Vec3d playerPos = new Vec3d(mc.player.getX(), mc.player.getY(), mc.player.getZ());
         
-        Vec3d targetPos = new Vec3d(getTargetX(), playerPos.y, getTargetZ());
+        Vec3d targetPos = new Vec3d(currentTargetX, playerPos.y, currentTargetZ);
         
         double deltaX = targetPos.x - playerPos.x;
         double deltaZ = targetPos.z - playerPos.z;
@@ -265,10 +296,11 @@ public class SimpleElytraFlyPath extends Module {
         
         Vec3d direction = new Vec3d(deltaX, 0, deltaZ).normalize();
 
-        if (distance2D > arrivalDistance2D.get()) { 
-            setX(direction.x * speed.get());
+        if (distance2D > arrivalDistance2D.get()) {
+            double flightSpeed = Math.min(speed.get(), distance2D - arrivalDistance2D.get());
+            setX(direction.x * flightSpeed);
             setY(0);
-            setZ(direction.z * speed.get());
+            setZ(direction.z * flightSpeed);
         }else{
             setX(0);
             setY(0);
@@ -430,6 +462,83 @@ public class SimpleElytraFlyPath extends Module {
         Vec3d currentVel = mc.player.getVelocity();
         Vec3d newVel = new Vec3d(currentVel.x, currentVel.y, f);
         mc.player.setVelocity(newVel);
+    }
+
+    private static class TargetCoordinateSetting extends Setting<Integer> {
+        public final int min, max;
+        public final int sliderMin, sliderMax;
+        public final boolean noSlider;
+
+        private TargetCoordinateSetting(String name, String description, int defaultValue, Consumer<Integer> onChanged, Consumer<Setting<Integer>> onModuleActivated, IVisible visible, int min, int max, int sliderMin, int sliderMax, boolean noSlider) {
+            super(name, description, defaultValue, onChanged, onModuleActivated, visible);
+
+            this.min = min;
+            this.max = max;
+            this.sliderMin = sliderMin;
+            this.sliderMax = sliderMax;
+            this.noSlider = noSlider;
+        }
+
+        @Override
+        protected Integer parseImpl(String str) {
+            try {
+                return Integer.parseInt(str.trim());
+            } catch (NumberFormatException ignored) {
+                return null;
+            }
+        }
+
+        @Override
+        protected boolean isValueValid(Integer value) {
+            return value >= min && value <= max;
+        }
+
+        @Override
+        protected NbtCompound save(NbtCompound tag) {
+            tag.putInt("value", get());
+            return tag;
+        }
+
+        @Override
+        protected Integer load(NbtCompound tag) {
+            set(tag.getInt("value", 0));
+            return get();
+        }
+
+        private static class Builder extends SettingBuilder<Builder, Integer, TargetCoordinateSetting> {
+            private int min = Integer.MIN_VALUE, max = Integer.MAX_VALUE;
+            private int sliderMin = 0, sliderMax = 10;
+            private boolean noSlider = false;
+
+            private Builder() {
+                super(0);
+            }
+
+            public Builder min(int min) {
+                this.min = min;
+                return this;
+            }
+
+            public Builder max(int max) {
+                this.max = max;
+                return this;
+            }
+
+            public Builder sliderMin(int min) {
+                this.sliderMin = min;
+                return this;
+            }
+
+            public Builder sliderMax(int max) {
+                this.sliderMax = max;
+                return this;
+            }
+
+            @Override
+            public TargetCoordinateSetting build() {
+                return new TargetCoordinateSetting(name, description, defaultValue, onChanged, onModuleActivated, visible, min, max, Math.max(sliderMin, min), Math.min(sliderMax, max), noSlider);
+            }
+        }
     }
 
 
