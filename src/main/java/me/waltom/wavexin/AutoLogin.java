@@ -6,10 +6,16 @@ import meteordevelopment.meteorclient.MeteorClient;
 import meteordevelopment.meteorclient.events.game.OpenScreenEvent;
 import meteordevelopment.meteorclient.events.world.ServerConnectBeginEvent;
 import meteordevelopment.meteorclient.events.world.TickEvent;
+import meteordevelopment.meteorclient.gui.GuiTheme;
+import meteordevelopment.meteorclient.gui.widgets.WWidget;
+import meteordevelopment.meteorclient.gui.widgets.containers.WTable;
+import meteordevelopment.meteorclient.gui.widgets.pressable.WButton;
 import meteordevelopment.meteorclient.settings.BoolSetting;
+import meteordevelopment.meteorclient.settings.EnumSetting;
 import meteordevelopment.meteorclient.settings.IntSetting;
 import meteordevelopment.meteorclient.settings.Setting;
 import meteordevelopment.meteorclient.settings.SettingGroup;
+import meteordevelopment.meteorclient.settings.StringSetting;
 import meteordevelopment.meteorclient.systems.modules.Module;
 import meteordevelopment.meteorclient.utils.player.ChatUtils;
 import meteordevelopment.orbit.EventHandler;
@@ -43,11 +49,15 @@ public class AutoLogin extends Module {
     private static final MinecraftClient mc = MinecraftClient.getInstance();
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
     private static final Path CONFIG_PATH = MeteorClient.FOLDER.toPath().resolve("wavexin").resolve("auto-login.json");
+    private static final String JOIN_ITEM_KEYWORDS = "compass,join,game,\u6307\u5357\u9488,\u52a0\u5165,\u6e38\u620f";
+    private static final String JOIN_GUI_TITLE_KEYWORDS = "join,game,\u52a0\u5165,\u6e38\u620f";
+    private static final String JOIN_BUTTON_KEYWORDS = "join,game,\u52a0\u5165,\u6e38\u620f";
+    private static final int COMPASS_HOTBAR_SLOT_FALLBACK = 2;
+    private static final int JOIN_GUI_SLOT_FALLBACK = 4;
 
     private final SettingGroup sgGeneral = settings.createGroup("General");
     private final SettingGroup sgAccount = settings.createGroup("Account");
     private final SettingGroup sgDelays = settings.createGroup("Delays");
-    private final SettingGroup sgAutoJoin = settings.createGroup("Auto Join");
 
     public final Setting<Boolean> autoLogin = sgGeneral.add(new BoolSetting.Builder()
         .name("Auto Login")
@@ -56,23 +66,9 @@ public class AutoLogin extends Module {
         .build()
     );
 
-    public final Setting<Boolean> autoJoin = sgGeneral.add(new BoolSetting.Builder()
-        .name("Auto Join")
-        .description("Automatically joins the main game from the lobby")
-        .defaultValue(true)
-        .build()
-    );
-
-    public final Setting<Boolean> afterLoginAction = sgGeneral.add(new BoolSetting.Builder()
-        .name("After Login Action")
-        .description("After login success, switches to hotbar slot 3 and right-clicks once")
-        .defaultValue(true)
-        .build()
-    );
-
     public final Setting<Boolean> dailyFlowerCheckIn = sgGeneral.add(new BoolSetting.Builder()
         .name("Daily Flower Check-in")
-        .description("Automatically sends /qiandao once per player per local day after entering the main game")
+        .description("Automatically sends /qiandao once per player per local day after login")
         .defaultValue(false)
         .build()
     );
@@ -91,57 +87,24 @@ public class AutoLogin extends Module {
         .build()
     );
 
-    public final Setting<String> currentAccount = sgAccount.add(new meteordevelopment.meteorclient.settings.StringSetting.Builder()
-        .name("Current Account")
-        .description("Current Minecraft player name")
-        .defaultValue("")
+    public final Setting<AccountType> accountType = sgAccount.add(new EnumSetting.Builder<AccountType>()
+        .name("Account Type")
+        .description("Microsoft accounts do not need /l. Offline accounts use the saved password")
+        .defaultValue(AccountType.Microsoft)
         .build()
     );
 
-    public final Setting<Boolean> password = sgAccount.add(new BoolSetting.Builder()
-        .name("Password")
-        .description("Shows whether the current account has a saved password")
-        .defaultValue(false)
-        .build()
-    );
-
-    public final Setting<String> passwordInput = sgAccount.add(new meteordevelopment.meteorclient.settings.StringSetting.Builder()
+    public final Setting<String> passwordInput = sgAccount.add(new StringSetting.Builder()
         .name("Password Input")
         .description("Temporary input. Cleared after Add or Update Account is enabled")
         .defaultValue("")
-        .build()
-    );
-
-    public final Setting<Integer> savedAccounts = sgAccount.add(new IntSetting.Builder()
-        .name("Saved Accounts")
-        .description("Number of locally saved account passwords")
-        .defaultValue(0)
-        .min(0)
-        .max(999)
-        .sliderMax(20)
-        .build()
-    );
-
-    public final Setting<Boolean> addOrUpdateAccount = sgAccount.add(new BoolSetting.Builder()
-        .name("Add or Update Account")
-        .description("Saves Password Input for the current account and clears the input")
-        .defaultValue(false)
-        .build()
-    );
-
-    public final Setting<Boolean> removeCurrentAccount = sgAccount.add(new BoolSetting.Builder()
-        .name("Remove Current Account")
-        .description("Removes the saved password for the current account")
-        .defaultValue(false)
+        .visible(() -> accountType.get() == AccountType.Offline)
         .build()
     );
 
     public final Setting<Integer> loginDelay = delay("Login Delay", "Delay before sending /l", 500, 0, 10000);
-    public final Setting<Integer> successfulLoginActionDelay = delay("Successful Login Action Delay", "Delay before slot 3 right-click flow", 500, 0, 10000);
-    public final Setting<Integer> rightClickDelay = delay("Right Click Delay", "Delay between selecting slot 3 and right-clicking", 300, 0, 10000);
-    public final Setting<Integer> openGuiDelay = delay("Open GUI Delay", "Delay before using the compass", 500, 0, 10000);
-    public final Setting<Integer> guiClickDelay = delay("GUI Click Delay", "Delay before clicking the join GUI", 500, 0, 10000);
-    public final Setting<Integer> dailyCheckInDelay = delay("Daily Check-in Delay", "Delay after entering main game before /qiandao", 3000, 0, 10000);
+    public final Setting<Integer> actionDelay = delay("Action Delay", "Delay between automatic login actions", 500, 0, 10000);
+    public final Setting<Integer> dailyCheckInDelay = delay("Daily Check-in Delay", "Delay before /qiandao after login", 500, 0, 10000);
     public final Setting<Integer> retryDelay = delay("Retry Delay", "Delay before retrying a stage", 500, 100, 10000);
 
     public final Setting<Integer> maximumRetries = sgDelays.add(new IntSetting.Builder()
@@ -151,62 +114,6 @@ public class AutoLogin extends Module {
         .min(1)
         .max(200)
         .sliderMax(50)
-        .build()
-    );
-
-    public final Setting<Boolean> detectAdventureMode = sgAutoJoin.add(new BoolSetting.Builder()
-        .name("Detect Adventure Mode")
-        .description("Start auto join when the player enters adventure mode")
-        .defaultValue(true)
-        .build()
-    );
-
-    public final Setting<Boolean> detectCompass = sgAutoJoin.add(new BoolSetting.Builder()
-        .name("Detect Compass")
-        .description("Detect compass-like hotbar items before opening the join GUI")
-        .defaultValue(true)
-        .build()
-    );
-
-    public final Setting<String> joinItemName = sgAutoJoin.add(new meteordevelopment.meteorclient.settings.StringSetting.Builder()
-        .name("Join Item Name")
-        .description("Name or lore keyword for the item used to open the join GUI")
-        .defaultValue("指南针,compass,加入,join,游戏,game")
-        .build()
-    );
-
-    public final Setting<String> joinGuiTitle = sgAutoJoin.add(new meteordevelopment.meteorclient.settings.StringSetting.Builder()
-        .name("Join GUI Title")
-        .description("Title keyword for the join GUI")
-        .defaultValue("加入,join,game,游戏")
-        .build()
-    );
-
-    public final Setting<String> joinButtonName = sgAutoJoin.add(new meteordevelopment.meteorclient.settings.StringSetting.Builder()
-        .name("Join Button Name")
-        .description("Name or lore keyword for the join button")
-        .defaultValue("加入,join,game,游戏")
-        .build()
-    );
-
-    public final Setting<Integer> compassHotbarSlotFallback = sgAutoJoin.add(new IntSetting.Builder()
-        .name("Compass Hotbar Slot Fallback")
-        .description("Fallback hotbar slot, 1-9")
-        .defaultValue(3)
-        .min(1)
-        .max(9)
-        .sliderMin(1)
-        .sliderMax(9)
-        .build()
-    );
-
-    public final Setting<Integer> joinGuiSlotFallback = sgAutoJoin.add(new IntSetting.Builder()
-        .name("Join GUI Slot Fallback")
-        .description("Fallback GUI slot id")
-        .defaultValue(4)
-        .min(0)
-        .max(53)
-        .sliderMax(53)
         .build()
     );
 
@@ -239,7 +146,29 @@ public class AutoLogin extends Module {
 
     @Override
     public String getInfoString() {
-        return state + " | " + (hasPasswordForCurrentPlayer() ? "set" : "not set");
+        return null;
+    }
+
+    @Override
+    public WWidget getWidget(GuiTheme theme) {
+        WTable table = theme.table();
+        table.add(theme.settings(settings)).expandX();
+        table.row();
+
+        table.add(theme.label("Current Account: " + currentAccountLabel())).expandX();
+        table.row();
+        table.add(theme.label("Password: " + (hasPasswordForCurrentPlayer() ? "Set" : "Not Set"))).expandX();
+        table.row();
+        table.add(theme.label("Saved Accounts: " + config.passwords.size())).expandX();
+        table.row();
+
+        WButton addOrUpdate = table.add(theme.button("Add / Update Account")).expandX().widget();
+        addOrUpdate.action = this::savePasswordFromInput;
+
+        WButton remove = table.add(theme.button("Remove Current Account")).expandX().widget();
+        remove.action = this::removeSavedPassword;
+
+        return table;
     }
 
     @EventHandler
@@ -249,7 +178,7 @@ public class AutoLogin extends Module {
 
     @EventHandler
     private void onOpenScreen(OpenScreenEvent event) {
-        if (!isActive() || !autoJoin.get()) return;
+        if (!isActive()) return;
         if (state == LoginState.WAITING_FOR_JOIN_GUI && event.screen instanceof HandledScreen<?>) {
             setState(LoginState.WAITING_TO_CLICK_JOIN);
         }
@@ -264,13 +193,17 @@ public class AutoLogin extends Module {
         debug("Text %s: %s", event.source, text);
 
         if (isLoginSuccessText(text)) {
-            if (afterLoginAction.get() && !afterLoginActionDone) setState(LoginState.LOGIN_SUCCESS);
-            else if (autoJoin.get()) setState(LoginState.WAITING_TO_USE_COMPASS);
-            else enterMainGame();
+            beginPostLoginFlow();
             return;
         }
 
         if (autoLogin.get() && !loginSent && isLoginPromptText(text)) {
+            if (accountType.get() == AccountType.Microsoft) {
+                loginSent = true;
+                beginPostLoginFlow();
+                return;
+            }
+
             if (!hasPasswordForCurrentPlayer()) {
                 feedback("Password is not set for current account.");
                 return;
@@ -282,7 +215,6 @@ public class AutoLogin extends Module {
     @EventHandler
     private void onTick(TickEvent.Pre event) {
         if (!isActive()) return;
-        processAccountActions();
 
         if (mc.player == null || mc.world == null || mc.getNetworkHandler() == null) {
             resetConnectionState(LoginState.IDLE);
@@ -296,28 +228,21 @@ public class AutoLogin extends Module {
             resetConnectionState(LoginState.IDLE);
         }
 
-        if (detectAdventureMode.get() && autoJoin.get() && !joinDone && mc.interactionManager != null && mc.interactionManager.getCurrentGameMode() == GameMode.ADVENTURE) {
+        if (!joinDone && mc.interactionManager != null && mc.interactionManager.getCurrentGameMode() == GameMode.ADVENTURE) {
             if (state == LoginState.IDLE || state == LoginState.LOGIN_SENT || state == LoginState.LOGIN_SUCCESS) {
-                setState(LoginState.WAITING_TO_USE_COMPASS);
+                beginPostLoginFlow();
             }
         }
 
         runState();
     }
 
-    private void processAccountActions() {
-        if (addOrUpdateAccount.get()) {
-            addOrUpdateAccount.set(false);
-            savePasswordFromInput();
-        }
-
-        if (removeCurrentAccount.get()) {
-            removeCurrentAccount.set(false);
-            removeSavedPassword();
-        }
-    }
-
     private void savePasswordFromInput() {
+        if (accountType.get() == AccountType.Microsoft) {
+            feedback("Microsoft Account does not need a saved login password.");
+            return;
+        }
+
         String playerName = getCurrentPlayerName();
         String value = passwordInput.get();
 
@@ -375,6 +300,13 @@ public class AutoLogin extends Module {
 
     private void runLogin() {
         if (loginSent || !elapsed(loginDelay.get())) return;
+
+        if (accountType.get() == AccountType.Microsoft) {
+            loginSent = true;
+            beginPostLoginFlow();
+            return;
+        }
+
         String password = config.getPassword(getCurrentPlayerName());
         if (password == null || password.isEmpty()) {
             feedback("Password is not set for current account.");
@@ -389,7 +321,7 @@ public class AutoLogin extends Module {
     }
 
     private void runAfterLoginActionStart() {
-        if (afterLoginActionDone || !elapsed(successfulLoginActionDelay.get())) return;
+        if (afterLoginActionDone || !elapsed(actionDelay.get())) return;
         if (mc.player == null || mc.interactionManager == null) {
             retry();
             return;
@@ -400,7 +332,7 @@ public class AutoLogin extends Module {
     }
 
     private void runAfterLoginRightClick() {
-        if (!elapsed(rightClickDelay.get())) return;
+        if (!elapsed(actionDelay.get())) return;
         if (mc.player == null || mc.interactionManager == null) {
             retry();
             return;
@@ -408,12 +340,11 @@ public class AutoLogin extends Module {
 
         mc.interactionManager.interactItem(mc.player, Hand.MAIN_HAND);
         afterLoginActionDone = true;
-        if (autoJoin.get()) setState(LoginState.WAITING_TO_USE_COMPASS);
-        else enterMainGame();
+        setState(LoginState.WAITING_TO_USE_COMPASS);
     }
 
     private void runUseCompass() {
-        if (joinDone || !elapsed(openGuiDelay.get())) return;
+        if (joinDone || !elapsed(actionDelay.get())) return;
         if (mc.player == null || mc.interactionManager == null) {
             retry();
             return;
@@ -431,13 +362,13 @@ public class AutoLogin extends Module {
     }
 
     private void runClickJoinGui() {
-        if (!elapsed(guiClickDelay.get())) return;
+        if (!elapsed(actionDelay.get())) return;
         if (!(mc.currentScreen instanceof HandledScreen<?> screen) || mc.player == null || mc.interactionManager == null) {
             retry();
             return;
         }
 
-        if (!matchesAny(screen.getTitle().getString(), joinGuiTitle.get())) {
+        if (!matchesAny(screen.getTitle().getString(), JOIN_GUI_TITLE_KEYWORDS)) {
             retry();
             return;
         }
@@ -463,7 +394,7 @@ public class AutoLogin extends Module {
     }
 
     private void runInGame() {
-        if (dailyFlowerCheckIn.get() && !checkInSent && !config.hasCheckedInToday(getCurrentPlayerName())) {
+        if (shouldCheckIn()) {
             setState(LoginState.WAITING_FOR_CHECKIN);
         } else {
             setState(LoginState.COMPLETED);
@@ -481,8 +412,8 @@ public class AutoLogin extends Module {
         checkInSent = true;
         config.lastCheckIn.put(getCurrentPlayerName(), LocalDate.now().toString());
         config.save();
-        setState(LoginState.COMPLETED);
         feedback("Daily check-in command sent.");
+        continueAfterCheckIn();
     }
 
     private void retryAfterDelay() {
@@ -500,6 +431,32 @@ public class AutoLogin extends Module {
 
     private void enterMainGame() {
         setState(LoginState.IN_GAME);
+    }
+
+    private void beginPostLoginFlow() {
+        if (shouldCheckIn()) {
+            setState(LoginState.WAITING_FOR_CHECKIN);
+        } else if (!afterLoginActionDone) {
+            setState(LoginState.LOGIN_SUCCESS);
+        } else if (!joinDone) {
+            setState(LoginState.WAITING_TO_USE_COMPASS);
+        } else {
+            setState(LoginState.COMPLETED);
+        }
+    }
+
+    private void continueAfterCheckIn() {
+        if (!afterLoginActionDone) {
+            setState(LoginState.LOGIN_SUCCESS);
+        } else if (!joinDone) {
+            setState(LoginState.WAITING_TO_USE_COMPASS);
+        } else {
+            setState(LoginState.COMPLETED);
+        }
+    }
+
+    private boolean shouldCheckIn() {
+        return dailyFlowerCheckIn.get() && !checkInSent && !config.hasCheckedInToday(getCurrentPlayerName());
     }
 
     private void setState(LoginState newState) {
@@ -522,14 +479,12 @@ public class AutoLogin extends Module {
     }
 
     private int findJoinHotbarSlot() {
-        if (detectCompass.get()) {
-            for (int i = 0; i < 9; i++) {
-                ItemStack stack = mc.player.getInventory().getStack(i);
-                if (isJoinCompass(stack)) return i;
-            }
+        for (int i = 0; i < 9; i++) {
+            ItemStack stack = mc.player.getInventory().getStack(i);
+            if (isJoinCompass(stack)) return i;
         }
 
-        int fallback = compassHotbarSlotFallback.get() - 1;
+        int fallback = COMPASS_HOTBAR_SLOT_FALLBACK;
         ItemStack stack = mc.player.getInventory().getStack(fallback);
         return stack.isEmpty() ? -1 : fallback;
     }
@@ -537,7 +492,7 @@ public class AutoLogin extends Module {
     private boolean isJoinCompass(ItemStack stack) {
         if (stack.isEmpty()) return false;
         if (stack.isOf(Items.COMPASS)) return true;
-        return matchesItem(stack, joinItemName.get());
+        return matchesItem(stack, JOIN_ITEM_KEYWORDS);
     }
 
     private int findJoinButtonSlot(HandledScreen<?> screen) {
@@ -547,10 +502,10 @@ public class AutoLogin extends Module {
 
         for (int i = 0; i < containerSlotCount; i++) {
             ItemStack stack = slots.get(i).getStack();
-            if (!stack.isEmpty() && matchesItem(stack, joinButtonName.get())) return i;
+            if (!stack.isEmpty() && matchesItem(stack, JOIN_BUTTON_KEYWORDS)) return i;
         }
 
-        int fallback = joinGuiSlotFallback.get();
+        int fallback = JOIN_GUI_SLOT_FALLBACK;
         if (fallback >= 0 && fallback < slots.size() && !slots.get(fallback).getStack().isEmpty()) return fallback;
         return -1;
     }
@@ -578,12 +533,12 @@ public class AutoLogin extends Module {
 
     private boolean isLoginPromptText(String text) {
         String lower = text.toLowerCase(Locale.ROOT);
-        return (text.contains("登录") || text.contains("登陆") || lower.contains("login")) && !isLoginSuccessText(text);
+        return (text.contains("鐧诲綍") || text.contains("鐧婚檰") || lower.contains("login")) && !isLoginSuccessText(text);
     }
 
     private boolean isLoginSuccessText(String text) {
         String lower = text.toLowerCase(Locale.ROOT);
-        return text.contains("登录成功") || text.contains("登陆成功") || lower.contains("login successful") || lower.contains("logged in");
+        return text.contains("鐧诲綍鎴愬姛") || text.contains("鐧婚檰鎴愬姛") || lower.contains("login successful") || lower.contains("logged in");
     }
 
     private boolean hasPasswordForCurrentPlayer() {
@@ -592,10 +547,12 @@ public class AutoLogin extends Module {
 
     private void syncAccountSettings() {
         String playerName = getCurrentPlayerName();
-        currentAccount.set(playerName.isEmpty() ? "unknown" : playerName);
-        password.set(config.hasPassword(playerName));
-        savedAccounts.set(config.passwords.size());
         lastPlayerName = playerName;
+    }
+
+    private String currentAccountLabel() {
+        String playerName = getCurrentPlayerName();
+        return playerName.isEmpty() ? "Unknown" : playerName;
     }
 
     private static String getCurrentPlayerName() {
@@ -622,6 +579,22 @@ public class AutoLogin extends Module {
 
     private void debug(String message, Object... args) {
         if (debugMode.get()) ChatUtils.info("[AutoLogin] " + message, args);
+    }
+
+    private enum AccountType {
+        Microsoft("Microsoft Account"),
+        Offline("Offline Account");
+
+        private final String title;
+
+        AccountType(String title) {
+            this.title = title;
+        }
+
+        @Override
+        public String toString() {
+            return title;
+        }
     }
 
     private enum LoginState {
@@ -680,3 +653,4 @@ public class AutoLogin extends Module {
         }
     }
 }
+
