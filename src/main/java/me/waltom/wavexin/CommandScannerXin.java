@@ -35,7 +35,8 @@ import java.util.Locale;
 import java.util.Set;
 import java.util.TreeSet;
 
-public class CommandScannerXin extends Module {
+// Internal backend only. It is intentionally not registered in WaveXinAddon's module list.
+final class CommandScannerXin extends Module {
     private static final MinecraftClient mc = MinecraftClient.getInstance();
     private static final String LETTERS = "abcdefghijklmnopqrstuvwxyz";
     private static final String NUMBERS = "0123456789";
