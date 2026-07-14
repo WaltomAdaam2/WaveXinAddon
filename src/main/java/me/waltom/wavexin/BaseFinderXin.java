@@ -4,17 +4,37 @@ import meteordevelopment.meteorclient.events.world.TickEvent;
 import meteordevelopment.meteorclient.events.render.Render3DEvent;
 import meteordevelopment.meteorclient.renderer.ShapeMode;
 import meteordevelopment.meteorclient.settings.*;
+import meteordevelopment.meteorclient.MeteorClient;
 import meteordevelopment.meteorclient.systems.modules.Module;
 import meteordevelopment.meteorclient.utils.render.color.SettingColor;
 import meteordevelopment.orbit.EventHandler;
 import meteordevelopment.orbit.EventPriority;
+import net.minecraft.block.entity.BlockEntity;
+import net.minecraft.block.entity.BlockEntityType;
+import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.ChunkPos;
+import net.minecraft.world.chunk.WorldChunk;
+
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.lang.reflect.Constructor;
+import java.lang.reflect.Method;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
 
 public class BaseFinderXin extends Module {
+    private static final Path CONTAINER_RECORD_PATH = MeteorClient.FOLDER.toPath().resolve("base-finder-xin").resolve("container-records.txt");
+    private static final DateTimeFormatter RECORD_TIME_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+
     public enum ScanMode {
-        RESUME("§a按保存的断点"),
-        CALCULATE("§e根据坐标实时计算"),
-        CURRENT("§b从当前位置开始");
+        RESUME("Resume Saved Progress"),
+        CALCULATE("Calculate From Position"),
+        CURRENT("Start From Current Position");
 
         private final String name;
 
@@ -29,10 +49,11 @@ public class BaseFinderXin extends Module {
     }
 
     private final SettingGroup sgGeneral = settings.getDefaultGroup();
+    private final SettingGroup sgXaeroWaypoints = settings.createGroup("Xaero Waypoints");
 
     private final Setting<Integer> chunkStep = sgGeneral.add(new IntSetting.Builder()
-        .name("区块步长")
-        .description("每移动多少个区块后旋转视角")
+        .name("Chunk Step")
+        .description("How many chunks to move before rotating the scan direction.")
         .defaultValue(6)
         .min(1)
         .sliderRange(1, 32)
@@ -40,8 +61,8 @@ public class BaseFinderXin extends Module {
     );
 
     private final Setting<Integer> maxChunks = sgGeneral.add(new IntSetting.Builder()
-        .name("最大区块数")
-        .description("扫描区块段数上限，0 为无限")
+        .name("Maximum Chunks")
+        .description("Maximum scanned chunk segments. 0 means unlimited.")
         .defaultValue(0)
         .min(0)
         .sliderMax(10000)
@@ -49,22 +70,22 @@ public class BaseFinderXin extends Module {
     );
 
     private final Setting<ScanMode> scanMode = sgGeneral.add(new EnumSetting.Builder<ScanMode>()
-        .name("扫描方式")
-        .description("选择扫描的起点和恢复方式")
+        .name("Scan Mode")
+        .description("Selects how the scan starts or resumes.")
         .defaultValue(ScanMode.CURRENT)
         .build()
     );
 
     private final Setting<Boolean> debugMode = sgGeneral.add(new BoolSetting.Builder()
-        .name("调试模式")
-        .description("在聊天栏显示详细调试信息")
+        .name("Debug Mode")
+        .description("Shows detailed scan messages in chat.")
         .defaultValue(true)
         .build()
     );
 
     private final Setting<Boolean> lockView = sgGeneral.add(new BoolSetting.Builder()
-        .name("锁定视角")
-        .description("强制锁定视角朝向扫描方向")
+        .name("Lock View")
+        .description("Locks view direction toward the current scan direction.")
         .defaultValue(true)
         .build()
     );
@@ -87,6 +108,57 @@ public class BaseFinderXin extends Module {
         .name("Pause On Screen")
         .description("Pauses scanning controls while a screen is open.")
         .defaultValue(true)
+        .build()
+    );
+
+    private final Setting<Integer> containerThreshold = sgGeneral.add(new IntSetting.Builder()
+        .name("Container Threshold")
+        .description("Records the current chunk when it contains at least this many selected containers.")
+        .defaultValue(10)
+        .min(2)
+        .max(200)
+        .sliderRange(2, 200)
+        .build()
+    );
+
+    private final Setting<List<BlockEntityType<?>>> containerBlocks = sgGeneral.add(new StorageBlockListSetting.Builder()
+        .name("Container Blocks")
+        .description("Container block entity types to count, matching Meteor Storage ESP defaults.")
+        .defaultValue(StorageBlockListSetting.STORAGE_BLOCKS)
+        .build()
+    );
+
+    private final Setting<Boolean> xaeroWaypoints = sgXaeroWaypoints.add(new BoolSetting.Builder()
+        .name("Xaero Waypoints")
+        .description("Creates a Xaero waypoint when a container chunk is recorded. Requires Xaero's Minimap at runtime.")
+        .defaultValue(false)
+        .build()
+    );
+
+    private final Setting<Integer> xaeroWaypointNumber = sgXaeroWaypoints.add(new IntSetting.Builder()
+        .name("Waypoint Number")
+        .description("Numeric waypoint sequence used between prefix and suffix.")
+        .defaultValue(1)
+        .min(1)
+        .max(999999)
+        .sliderRange(1, 9999)
+        .visible(xaeroWaypoints::get)
+        .build()
+    );
+
+    private final Setting<String> xaeroWaypointPrefix = sgXaeroWaypoints.add(new StringSetting.Builder()
+        .name("Waypoint Prefix")
+        .description("Text before the waypoint number.")
+        .defaultValue("Base ")
+        .visible(xaeroWaypoints::get)
+        .build()
+    );
+
+    private final Setting<String> xaeroWaypointSuffix = sgXaeroWaypoints.add(new StringSetting.Builder()
+        .name("Waypoint Suffix")
+        .description("Text after the waypoint number.")
+        .defaultValue("")
+        .visible(xaeroWaypoints::get)
         .build()
     );
 
@@ -125,41 +197,44 @@ public class BaseFinderXin extends Module {
     private final Setting<SettingColor> routeSideColor = sgRender.add(new ColorSetting.Builder()
         .name("Route Side Color")
         .description("Route marker side color.")
-        .defaultValue(new SettingColor(0, 180, 255, 35))
+        .defaultValue(new SettingColor(0, 180, 255, 32))
         .build()
     );
 
     private final Setting<SettingColor> routeLineColor = sgRender.add(new ColorSetting.Builder()
         .name("Route Line Color")
         .description("Route marker line color.")
-        .defaultValue(new SettingColor(0, 220, 255, 180))
+        .defaultValue(new SettingColor(0, 180, 255, 180))
         .build()
     );
 
-    // 螺旋状态
+    // 闁捐崵鍎ゅΛ鍡涙偐閼哥鍋?
     private MapScanDirection currentDir = MapScanDirection.EAST;
-    private int stepsInCurrentLength = 0;  // 当前步长已走的次数
-    private int currentStepLength = 1;     // 当前步长（会递增：1,1,2,2,3,3...）
-    private int totalSegments = 0;         // 总段数
-    private ChunkPos startPos = null;      // 起始区块坐标
-    private int targetChunkX = 0;          // 目标区块 X 坐标
-    private int targetChunkZ = 0;          // 目标区块 Z 坐标
+    private int stepsInCurrentLength = 0;  // 鐟滅増鎸告晶鐘差潰閵夆晜姣愮€规瓕灏摂瀣儍閸曨剦鍋ч柡?
+    private int currentStepLength = 1;     // 鐟滅増鎸告晶鐘差潰閵夆晜姣愰柨娑樼墔缁变即鏌呴幒鎴澔闁?,1,2,2,3,3...闁?
+    private int totalSegments = 0;         // 闁诡剛绮宀勫极?
+    private ChunkPos startPos = null;      // 閻犙冨槻椤劙宕犻崫鍕仴闁秆勫姈閻?
+    private int targetChunkX = 0;          // 闁烩晩鍠楅悥锝夊礌閸濆嫭鍋?X 闁秆勫姈閻?
+    private int targetChunkZ = 0;          // 闁烩晩鍠楅悥锝夊礌閸濆嫭鍋?Z 闁秆勫姈閻?
 
-    // 旋转控制
+    // 闁哄啫顑堝ù鍡涘箳瑜嶉崺?
     private float targetYaw = 0f;
     private boolean isRotating = false;
     private boolean forcingForward = false;
+    private final Set<Long> recordedContainerChunks = new HashSet<>();
     
-    // 进度恢复设置
-    private boolean needsInitialRotation = false; // 是否需要初始旋转校准
+    // 閺夆晜绋戠€规娊骞侀姀鐙€妲婚悹浣稿⒔閻?
+    private boolean needsInitialRotation = false; // 闁哄嫷鍨伴幆渚€妫侀埀顒傛啺娴ｇ鐏ュ┑顔碱儐濡棙娼浣哄ⅰ闁?
 
     public BaseFinderXin() {
-        super(WaveXinAddon.CATEGORY, "base-finder-xin", "方形螺旋扫图 - 自动旋转视角");
+        super(WaveXinAddon.CATEGORY, "base-finder-xin", "Square spiral map scanner with automatic view rotation.");
     }
 
     @Override
     public void onActivate() {
         if (mc.player == null) return;
+        recordedContainerChunks.clear();
+        validateXaeroWaypointSetting();
 
         ScanMode mode = scanMode.get();
 
@@ -171,42 +246,42 @@ public class BaseFinderXin extends Module {
     }
 
     /**
-     * 模式1：按保存的断点继续（从 0,0 起点，使用保存的进度数据）
+     * 婵☆垪鈧磭纭€1闁挎稒纰嶇€垫粍绌卞┑鍡欐憼闁汇劌瀚弻鍥倷閸︻厽鍩涚紓渚囧弿缁辨瑦绂?0,0 閻犙囶棑閸嬶綁鏁嶇仦鐓庘枏闁活潿鍔嬬换姘扁偓娑欘焽濞堟垶娼诲☉妯侯唺闁轰胶澧楀畵渚€鏁?
      */
     private void resumeFromSavedProgress() {
         ScanProgressManager.ScanProgress savedProgress = ScanProgressManager.loadProgress();
         
         if (savedProgress == null) {
             if (debugMode.get()) {
-                info("§e未找到保存的进度文件，请确保之前已保存过进度");
+                info("No saved progress file was found. Save progress before using resume mode.");
             }
-            // 回退到从当前位置开始
+            // 闁搞儳鍋ら埀顑藉亾闁告帡顣︾划鐘恒亹閹惧啿顤呭ù锝呯Ф閻ゅ棗顕ｉ埀顒佹叏?
             startFromCurrentPosition();
             return;
         }
         
-        // 验证 chunkStep 是否一致
+        // 濡ょ姴鐭侀惁?chunkStep 闁哄嫷鍨伴幆浣圭▔閳ь剟鎳?
         int savedChunkStep = savedProgress.chunkStep;
         int currentChunkStep = chunkStep.get();
         if (savedChunkStep != currentChunkStep) {
-            info("§c§l警告: §f检测到区块步长不一致！");
-            info("§e保存的步长: §f" + savedChunkStep);
-            info("§e当前设置的步长: §f" + currentChunkStep);
-            info("§a将使用保存的步长 §f" + savedChunkStep + " §a进行恢复");
-            // 临时修改设置以匹配保存的值
+            info("Warning: saved chunk step differs from current setting.");
+            info("Saved chunk step: " + savedChunkStep);
+            info("Current chunk step: " + currentChunkStep);
+            info("Using saved chunk step " + savedChunkStep + " to resume.");
+            // 濞戞挸鐡ㄥ鍌涚┍椤旇姤鏆悹浣稿⒔閻ゅ棙绂掗妷銉ョ埍闂佹澘绉崇换姘扁偓娑欘焽濞堟垿宕?
             chunkStep.set(savedChunkStep);
         }
         
-        // 使用保存的起点（从 0,0 开始的路径）
+        // 濞达綀娉曢弫銈嗙┍濠靛棛鎽犻柣銊ュ閹癸綁鎮欓惂鍝ョ濞?0,0 鐎殿喒鍋撳┑顔碱儑濞堟垹鎹勯姘辩獮闁?
         int startX = savedProgress.startX;
         int startZ = savedProgress.startZ;
         
         if (debugMode.get()) {
-            info("§a使用保存的断点恢复，起点为 §f(" + startX + ", " + startZ + ")" );
-            info("§a已扫描 §e" + savedProgress.totalSegments + " §a段");
+            info("Resuming from saved checkpoint at (" + startX + ", " + startZ + ").");
+            info("Scanned segments: " + savedProgress.totalSegments);
         }
         
-        // 恢复进度状态
+        // 闁诡厹鍨归ˇ鍙夋交濞戞ê顔婇柣妯垮煐閳?
         startPos = new ChunkPos(startX, startZ);
         currentDir = MapScanDirection.values()[savedProgress.currentDir];
         stepsInCurrentLength = savedProgress.stepsInCurrentLength;
@@ -214,20 +289,20 @@ public class BaseFinderXin extends Module {
         totalSegments = savedProgress.totalSegments;
         needsInitialRotation = false;
         
-        // 计算当前目标点
+        // 閻犱緤绱曢悾鏄忋亹閹惧啿顤呴柣鈺婂枟閻栵綁鎮?
         ChunkPos targetPos = ScanProgressManager.calculateTargetChunkPos(savedProgress, chunkStep.get());
         if (targetPos != null) {
             targetChunkX = targetPos.x;
             targetChunkZ = targetPos.z;
             
-            // 校准朝向
+            // 闁哄秮鈧啿娅欓柡鍫熺箓閹?
             if (!currentDir.isFacingDirection(mc.player.getYaw())) {
                 needsInitialRotation = true;
                 targetYaw = currentDir.yaw;
                 isRotating = true;
                 
                 if (debugMode.get()) {
-                    info("§e正在校准朝向至 §f" + currentDir.name());
+                    info("Calibrating view to " + currentDir.name());
                 }
             } else {
                 if (lockView.get()) {
@@ -236,27 +311,27 @@ public class BaseFinderXin extends Module {
             }
             
             if (debugMode.get()) {
-                info("§a下一个目标区块: §e(" + targetChunkX + ", " + targetChunkZ + ")");
+                info("Next target chunk: (" + targetChunkX + ", " + targetChunkZ + ")");
             }
         }
     }
 
     /**
-     * 模式2：根据坐标实时计算（从 0,0 起点，根据玩家位置反推进度）
+     * 婵☆垪鈧磭纭€2闁挎稒纰嶉悧鎾箲椤斿吋缍忛柡宥呮搐閻ゅ嫰寮幆閭﹀悁缂佺姵顨愮槐娆愮?0,0 閻犙囶棑閸嬶綁鏁嶇仦鍓у闁硅鍠氱敮铏光偓瑙勬构缂嶅懐绱旈鐓庡唨闁规亽鍔忕换妯绘償閿旇偐绀?
      */
     private void calculateFromPositionWithZeroStart() {
         ChunkPos playerChunk = mc.player.getChunkPos();
         
-        // 前两种模式都以 0,0 作为螺旋路径的理论起点
+        // 闁告挸绉崇悮杈╃矓瀹ュ枺浣割嚕韫囨稑鍘村ù?0,0 濞达絾绮堢拹鐔兼懚閻戞ɑ顥嬮悹渚灠缁剁偤鎯冮崟顓熷€為悹渚€缂氶幑锝夋倷?
         final int ORIGIN_X = 0;
         final int ORIGIN_Z = 0;
         
         if (debugMode.get()) {
-            info("§e螺旋路径起点: §f(" + ORIGIN_X + ", " + ORIGIN_Z + ")" );
-            info("§e正在根据当前位置 §f(" + playerChunk.x + ", " + playerChunk.z + ") §e计算最近拐点...");
+            info("Spiral origin: (" + ORIGIN_X + ", " + ORIGIN_Z + ").");
+            info("Calculating nearest spiral corner from current chunk (" + playerChunk.x + ", " + playerChunk.z + ").");
         }
         
-        // 计算从原点 (0,0) 到玩家位置的最近拐点
+        // 閻犱緤绱曢悾缁樼鎼粹€虫枾闁?(0,0) 闁告帗澹嗙敮铏光偓瑙勬构缂嶅懐绱旈鐐暠闁哄牃鍋撻弶鈺傚灦鐎氬嫰鎮?
         ScanProgressManager.ScanProgress calculatedProgress = ScanProgressManager.calculateProgressFromPosition(
             playerChunk.x, playerChunk.z,
             ORIGIN_X, ORIGIN_Z,
@@ -264,34 +339,34 @@ public class BaseFinderXin extends Module {
         );
         
         if (calculatedProgress != null) {
-            // 成功计算出进度，从最近的拐点继续
+            // 闁瑰瓨鍔曟慨娑氭媼閿涘嫮鏆柛鎴︾細缁绘ɑ鎯旈敂鑲╃濞寸姴瀛╁〒鑸垫交閹寸姵鐣遍柟閿嬪姉閸嬶絿绱掕閻?
             if (debugMode.get()) {
-                info("§a计算成功: §f从第 §e" + calculatedProgress.totalSegments + " §f段继续扫描");
+                info("Calculation succeeded. Continuing from segment " + calculatedProgress.totalSegments + ".");
             }
             
-            // 计算最近拐点的实际坐标
+            // 閻犱緤绱曢悾濠氬嫉閳ь剚娼婚幋鐐茬彄闁绘劕婀卞▓鎴犫偓鍦仱濡绢垶宕搁幇顓犲灱
             int cornerX = ORIGIN_X + calculateOffsetX(calculatedProgress.totalSegments);
             int cornerZ = ORIGIN_Z + calculateOffsetZ(calculatedProgress.totalSegments);
             
-            // 检查坐标偏离程度（不考虑正负号，只比较绝对值，允许 ±2 区块误差）
+            // 婵☆偀鍋撻柡灞诲劚濞兼寮介崶褌鐒婄紒鍌濆吹閳诲吋鎯旈敂鑲╃濞戞挸绉烽埀顒€鍟冲璇差潰閿濆牏顦伴柛娆忓殩缁辨繈宕ｉ鍛Х閺夊牆鍟扮划椋庘偓鐢垫嚀閳ь剛銆嬬槐婵嬪礂娴ｇ瓔鍟?閸? 闁告牕鎼锛勬嫚椤栨碍鈻曢柨?
             int diffAbsX = Math.abs(Math.abs(playerChunk.x) - Math.abs(cornerX));
             int diffAbsZ = Math.abs(Math.abs(playerChunk.z) - Math.abs(cornerZ));
             boolean isAtLayer = diffAbsX <= 2 && diffAbsZ <= 2;
             
             if (!isAtLayer) {
-                // 玩家不在同一圈层，提示前往
-                info("§c§l警告: §f玩家偏离螺旋路径过远！");
-                info("§e当前位置(区块): §f(" + playerChunk.x + ", " + playerChunk.z + ")");
-                info("§e推荐坐标(区块): §f(" + cornerX + ", " + cornerZ + ")");
-                info("§e绝对值差距: §fX=" + diffAbsX + " Z=" + diffAbsZ + " §e(区块)");
-                info("§a请前往坐标 §f(" + (cornerX * 16) + ", " + (cornerZ * 16) + ") §a后重新启动扫描");
+                // 闁绘壕鏅涢宥嗙▔瀹ュ懏韬柛姘缁旀挳宕烽崼婵堟勾闁挎稑鏈ぐ浣虹矆閸濆嫬顤呯€垫壋鍋?
+                info("Warning: the player is too far from the spiral path.");
+                info("Current chunk: (" + playerChunk.x + ", " + playerChunk.z + ").");
+                info("Recommended chunk: (" + cornerX + ", " + cornerZ + ").");
+                info("Distance from path: X=" + diffAbsX + " Z=" + diffAbsZ + " chunks.");
+                info("Move to block coordinates (" + (cornerX * 16) + ", " + (cornerZ * 16) + ") and restart scanning.");
                 
-                // 关闭模块
+                // 闁稿繑濞婂Λ鏉懳熼垾铏仴
                 toggle();
                 return;
             }
             
-            // 恢复计算出的进度
+            // 闁诡厹鍨归ˇ鑼媼閿涘嫮鏆柛鎴ｆ濞堟垶娼诲☉妯侯唺
             startPos = new ChunkPos(calculatedProgress.startX, calculatedProgress.startZ);
             currentDir = MapScanDirection.values()[calculatedProgress.currentDir];
             stepsInCurrentLength = calculatedProgress.stepsInCurrentLength;
@@ -299,7 +374,7 @@ public class BaseFinderXin extends Module {
             totalSegments = calculatedProgress.totalSegments;
             needsInitialRotation = false;
             
-            // 计算目标点
+            // 閻犱緤绱曢悾濠氭儎椤旂晫鍨奸柣?
             ChunkPos targetPos = ScanProgressManager.calculateTargetChunkPos(calculatedProgress, chunkStep.get());
             if (targetPos != null) {
                 targetChunkX = targetPos.x;
@@ -316,41 +391,41 @@ public class BaseFinderXin extends Module {
                 }
                 
                 if (debugMode.get()) {
-                    info("§a下一个目标区块: §e(" + targetChunkX + ", " + targetChunkZ + ")");
+                    info("Next target chunk: (" + targetChunkX + ", " + targetChunkZ + ")");
                 }
             }
         } else {
-            // 无法计算，从原点重新开始
+            // 闁哄啰濮电涵鍓佹媼閿涘嫮鏆柨娑樺缁娀宕㈤悢鍝勪化闂佹彃绉甸弻濠傤嚕閳ь剚鎱?
             if (debugMode.get()) {
-                info("§e无法计算进度，从原点 §f(" + ORIGIN_X + ", " + ORIGIN_Z + ") §e重新开始扫描");
+                info("Could not calculate progress. Restarting from origin (" + ORIGIN_X + ", " + ORIGIN_Z + ").");
             }
             startNewScanFromOrigin(ORIGIN_X, ORIGIN_Z);
         }
     }
 
     /**
-     * 模式3：从当前位置开始扫描（以当前位置为起点）
+     * 婵☆垪鈧磭纭€3闁挎稒鐭划鐘恒亹閹惧啿顤呭ù锝呯Ф閻ゅ棗顕ｉ埀顒佹叏鐎ｎ偄顥囬柟璇查獜缁辨瑦绂掗妷銉хЪ闁告挸绉崇紞鍛磾椤旀槒绀嬮悹褔顥撻崑锝夋晬?
      */
     private void startFromCurrentPosition() {
         ChunkPos playerChunk = mc.player.getChunkPos();
         
         if (debugMode.get()) {
-            info("§a从当前位置 §f(" + playerChunk.x + ", " + playerChunk.z + ") §a开始新扫描");
+            info("Starting a new scan from current chunk (" + playerChunk.x + ", " + playerChunk.z + ").");
         }
         
         startNewScanFromPosition(playerChunk);
     }
 
     /**
-     * 从指定原点开始新的扫描（起点固定，不从当前位置重置）
-     * @param originX 起点区块 X
-     * @param originZ 起点区块 Z
+     * 濞寸姴瀛╃€垫氨鈧鑹剧敮顐︽倷閻熸壆纾诲┑顔碱儐閺屽﹪鎯冮崟顒€顥囬柟璇查獜缁辨瑧鎸ф搴′化闁搞儱鎼悾楣冩晬鐏炶偐鐟濆ù鐘查缂嶅宕滃鍕Т缂傚喚鍣ｉ崳鍝ョ磾椤曞棛绀?
+     * @param originX 閻犙囶棑閸嬶綁宕犻崫鍕仴 X
+     * @param originZ 閻犙囶棑閸嬶綁宕犻崫鍕仴 Z
      */
     private void startNewScanFromOrigin(int originX, int originZ) {
         startPos = new ChunkPos(originX, originZ);
-        info("§a扫描开始: §f起始区块 §e(" + originX + ", " + originZ + ")" );
+        info("Scan started at chunk (" + originX + ", " + originZ + ").");
     
-        // 重置状态
+        // 闂佹彃绉堕悿鍡涙偐閼哥鍋?
         currentDir = MapScanDirection.EAST;
         stepsInCurrentLength = 0;
         currentStepLength = 1;
@@ -358,31 +433,31 @@ public class BaseFinderXin extends Module {
         isRotating = false;
         needsInitialRotation = false;
     
-        // 计算第一个目标点
+        // 閻犱緤绱曢悾鑽ょ箔椤戣法顏卞☉鎿冧簽濞蹭即寮介崶鈺佷化
         updateTarget();
     
-        // 设置初始朝向（东）
+        // 閻犱礁澧介悿鍡涘礆濠靛棭娼楅柡鍫熺箓閹粓鏁嶉崼婊咁偨闁?
         targetYaw = MapScanDirection.EAST.yaw;
         applyRotation(targetYaw);
     
-        // 保存起点坐标
+        // 濞ｅ洦绻傞悺銊ф導妞嬪骸浠柛褎鍔栭悥?
         saveInitialProgress();
     
         if (debugMode.get()) {
-            info("§a下一个目标区块: §e(" + targetChunkX + ", " + targetChunkZ + ")");
+            info("Next target chunk: (" + targetChunkX + ", " + targetChunkZ + ")");
         }
     }
 
     /**
-     * 从指定位置开始新的扫描
-     * @param startPos 起始区块坐标
+     * 濞寸姴瀛╃€垫氨鈧鐭紞鍛磾椤旇偐纾诲┑顔碱儐閺屽﹪鎯冮崟顒€顥囬柟?
+     * @param startPos 閻犙冨槻椤劙宕犻崫鍕仴闁秆勫姈閻?
      */
     private void startNewScanFromPosition(ChunkPos startPos) {
-        // 记录起始区块
+        // 閻犱焦婢樼紞宥囨導瀹勯偊娼楅柛鏍ф惈濞?
         this.startPos = startPos;
-        info("§a扫描开始: §f起始区块 §e(" + startPos.x + ", " + startPos.z + ")" );
+        info("Scan started at chunk (" + startPos.x + ", " + startPos.z + ").");
     
-        // 重置状态
+        // 闂佹彃绉堕悿鍡涙偐閼哥鍋?
         currentDir = MapScanDirection.EAST;
         stepsInCurrentLength = 0;
         currentStepLength = 1;
@@ -390,23 +465,23 @@ public class BaseFinderXin extends Module {
         isRotating = false;
         needsInitialRotation = false;
     
-        // 计算第一个目标点
+        // 閻犱緤绱曢悾鑽ょ箔椤戣法顏卞☉鎿冧簽濞蹭即寮介崶鈺佷化
         updateTarget();
     
-        // 设置初始朝向（东）
+        // 閻犱礁澧介悿鍡涘礆濠靛棭娼楅柡鍫熺箓閹粓鏁嶉崼婊咁偨闁?
         targetYaw = MapScanDirection.EAST.yaw;
         applyRotation(targetYaw);
     
-        // 立即保存起点坐标到文件，以便后续崩溃或重启时能根据坐标推算进度
+        // 缂佹柨顑呭畵鍡樼┍濠靛棛鎽犻悹褔顥撻崑锝夊锤閹邦厾鍨奸柛鎺斿閺嬪啯绂掔拋鍦濞寸姰鍎扮粚鍫曞触鎼达絿鏁剧€规洍鏅滅花婵嬪箣閺嶎厼娅㈤柛姘煎灡濡炲倿鎳楅懞銉у闁硅鍠栧妤呭冀閸ャ劌鑵圭紒鐘愁殙缁绘ɑ鎯?
         saveInitialProgress();
     
         if (debugMode.get()) {
-            info("§a下一个目标区块: §e(" + targetChunkX + ", " + targetChunkZ + ")");
+            info("Next target chunk: (" + targetChunkX + ", " + targetChunkZ + ")");
         }
     }
 
     /**
-     * 保存初始进度（仅记录起点）
+     * 濞ｅ洦绻傞悺銊╁礆濠靛棭娼楅弶鈺傜☉鐎规娊鏁嶉崼婊呯煂閻犱焦婢樼紞宥囨導妞嬪骸浠柨?
      */
     private void saveInitialProgress() {
         if (startPos != null) {
@@ -416,7 +491,7 @@ public class BaseFinderXin extends Module {
                 currentDir.ordinal(),
                 stepsInCurrentLength,
                 currentStepLength,
-                chunkStep.get()  // 保存当前的 chunkStep
+                chunkStep.get()  // 濞ｅ洦绻傞悺銊ㄣ亹閹惧啿顤呴柣?chunkStep
             );
             ScanProgressManager.saveProgress(progress);
         }
@@ -425,9 +500,9 @@ public class BaseFinderXin extends Module {
     @Override
     public void onDeactivate() {
         releaseForward();
-        info("§c扫描结束: §f共走过 §e" + totalSegments + " §f个区块段");
+        info("Scan ended after " + totalSegments + " chunk segments.");
         
-        // 保存进度
+        // 濞ｅ洦绻傞悺銊︽交濞戞ê顔?
         if (startPos != null) {
             ScanProgressManager.ScanProgress progress = new ScanProgressManager.ScanProgress(
                 startPos.x, startPos.z,
@@ -435,12 +510,12 @@ public class BaseFinderXin extends Module {
                 currentDir.ordinal(),
                 stepsInCurrentLength,
                 currentStepLength,
-                chunkStep.get()  // 保存当前的 chunkStep
+                chunkStep.get()  // 濞ｅ洦绻傞悺銊ㄣ亹閹惧啿顤呴柣?chunkStep
             );
             ScanProgressManager.saveProgress(progress);
             
             if (debugMode.get()) {
-                info("§a进度已保存");
+                info("Progress saved.");
             }
         }
     }
@@ -457,54 +532,55 @@ public class BaseFinderXin extends Module {
             return;
         }
 
-        // 检查最大区块限制
+        // 婵☆偀鍋撻柡灞诲劜濞撹埖寰勮鐏忣垶宕稿Δ鍛€欓柛?
         if (maxChunks.get() > 0 && totalSegments >= maxChunks.get()) {
-            info("§a已达到最大区块数，扫描完成");
+            info("Maximum chunk count reached. Scan complete.");
             toggle();
             return;
         }
 
-        // 如果需要初始旋转校准（恢复模式）
+        // 濠碘€冲€归悘澶愭閳ь剛鎲版担绋跨仴濠殿喖顑嗗Λ鍡樻姜椤掍胶澧￠柛鎴濇４缁辨瑩骞侀姀鐙€妲绘俊顖椻偓宕囩闁?
         if (needsInitialRotation && isRotating) {
             smoothRotation();
             releaseForward();
-            if (isRotating) return; // 旋转未完成，等待下一 tick
-            // 旋转完成，继续正常流程
+            if (isRotating) return; // 闁哄啫顑堝ù鍡涘嫉椤忓嫮鏆氶柟瀛樺姧缁辨繄绮垫径濠勭濞戞挸顑勭粩?tick
+            // 闁哄啫顑堝ù鍡欌偓鐟版湰閸ㄦ岸鏁嶅畝鈧幋椋庣磼椤撶噥鍔€閻㈩垰鎲＄粊锔剧矙?
         }
 
-        // 如果正在旋转，执行平滑旋转
+        // 濠碘€冲€归悘澶婎潰閿濆懏韬柡鍐儓濞村棝鏁嶇仦鎯р挃閻炴稑鑻柦鈺侇煥閹寸偞顥嬮弶?
         if (isRotating) {
             smoothRotation();
             releaseForward();
             if (isRotating) return;
         }
 
-        // 如果启用锁定视角，持续应用当前方向
+        // 濠碘€冲€归悘澶愬触椤栨粍鏆忛梺澶哥閻ｅ墽鎲撮崱姘兼健闁挎稑鏈€垫梻绱掗鐐靛畨闁活潿鍔岀紞瀣礈瀹ュ棙鐓欓柛?
         if (lockView.get() && !isRotating && !needsInitialRotation) {
             applyRotation(currentDir.yaw);
         }
 
         handleAutoWalk();
 
-        // 获取当前位置（区块坐标）
+        // 闁兼儳鍢茶ぐ鍥亹閹惧啿顤呭ù锝呯Ф閻ゅ棝鏁嶉崼婵嗛殬闁秆勵殔濞兼寮介崶椋庣
         ChunkPos currentChunk = mc.player.getChunkPos();
+        recordContainerChunkIfNeeded(currentChunk);
 
-        // 检查是否到达或超过目标区块
+        // 婵☆偀鍋撻柡灞诲劜濡叉悂宕ラ敃鈧崺灞炬綇閻愵剙鐏楅悺鎺戞嚀缁诲啴鎯勯鐣屽灱闁告牕鎼?
         if (hasReachedTarget(currentChunk)) {
-            // 计算下一个方向，并判断是否需要平滑旋转
+            // 閻犱緤绱曢悾缁樼▔鐎ｂ晝顏卞☉鎿冧簼閺岀喖宕ラ幋顖滅妤犵偠娉涢崹浠嬪棘椤撶喐笑闁告熬绠撳〒鍓佹啺娴ｆ悂鎸繝濠冨灦濡棙娼?
             boolean needSmoothRotation = turnToNextDirection();
 
-            // 更新目标坐标
+            // 闁哄洤鐡ㄩ弻濠囨儎椤旂晫鍨奸柛褎鍔栭悥?
             updateTarget();
 
-            // 只有在需要时才启动平滑旋转
+            // 闁告瑯浜濆﹢渚€宕烽妸鈺備粯閻熸洑鐒﹀鍌炲箥瀹ュ懏鍎欓柛鏂诲妼闁解晛顭ㄩ幋鐐搭棆閺?
             if (needSmoothRotation) {
                 targetYaw = currentDir.yaw;
                 isRotating = true;
             }
 
             if (debugMode.get()) {
-                info("§a已转向 §e" + currentDir.name() + " §f→ 下一个目标 §e(" + targetChunkX + ", " + targetChunkZ + ")");
+                info("Turned to " + currentDir.name() + ". Next target: (" + targetChunkX + ", " + targetChunkZ + ").");
             }
         }
     }
@@ -534,6 +610,133 @@ public class BaseFinderXin extends Module {
                 routeSideColor.get(), routeLineColor.get(), shapeMode.get(), 0
             );
         }
+    }
+
+    private void recordContainerChunkIfNeeded(ChunkPos chunkPos) {
+        long key = chunkPos.toLong();
+        if (recordedContainerChunks.contains(key)) return;
+
+        WorldChunk chunk = mc.world.getChunkManager().getWorldChunk(chunkPos.x, chunkPos.z, false);
+        if (chunk == null) return;
+
+        int count = 0;
+        BlockPos firstPos = null;
+
+        for (BlockEntity blockEntity : chunk.getBlockEntities().values()) {
+            if (!containerBlocks.get().contains(blockEntity.getType())) continue;
+
+            count++;
+            if (firstPos == null) firstPos = blockEntity.getPos();
+            if (count >= containerThreshold.get()) break;
+        }
+
+        if (count < containerThreshold.get()) return;
+
+        recordedContainerChunks.add(key);
+        BlockPos playerPos = mc.player.getBlockPos();
+        BlockPos recordPos = firstPos != null ? firstPos : playerPos;
+        appendContainerRecord(chunkPos, recordPos, playerPos, count);
+        createXaeroWaypointIfEnabled(recordPos);
+        info("Recorded container chunk (" + chunkPos.x + ", " + chunkPos.z + ") with at least " + count + " selected containers.");
+    }
+
+    private void appendContainerRecord(ChunkPos chunkPos, BlockPos recordPos, BlockPos playerPos, int count) {
+        String line = "%s | chunk=(%d,%d) | first-container=(%d,%d,%d) | player=(%d,%d,%d) | count>=%d%n".formatted(
+            LocalDateTime.now().format(RECORD_TIME_FORMAT),
+            chunkPos.x,
+            chunkPos.z,
+            recordPos.getX(),
+            recordPos.getY(),
+            recordPos.getZ(),
+            playerPos.getX(),
+            playerPos.getY(),
+            playerPos.getZ(),
+            count
+        );
+
+        try {
+            Files.createDirectories(CONTAINER_RECORD_PATH.getParent());
+            Files.writeString(CONTAINER_RECORD_PATH, line, StandardCharsets.UTF_8,
+                java.nio.file.StandardOpenOption.CREATE,
+                java.nio.file.StandardOpenOption.APPEND
+            );
+        } catch (IOException e) {
+            error("Failed to save container chunk record: %s", e.getMessage());
+        }
+    }
+
+    private void createXaeroWaypointIfEnabled(BlockPos pos) {
+        if (!validateXaeroWaypointSetting()) return;
+
+        try {
+            String name = xaeroWaypointPrefix.get() + xaeroWaypointNumber.get() + xaeroWaypointSuffix.get();
+            String initials = makeWaypointInitials(name);
+
+            Class<?> sessionClass = Class.forName("xaero.common.XaeroMinimapSession");
+            Object currentSession = sessionClass.getMethod("getCurrentSession").invoke(null);
+            if (currentSession == null) {
+                warning("Xaero's Minimap session is not ready. Container record saved without a waypoint.");
+                return;
+            }
+
+            Object processor = currentSession.getClass().getMethod("getMinimapProcessor").invoke(currentSession);
+            Object minimapSession = processor.getClass().getMethod("getSession").invoke(processor);
+            Object worldManager = minimapSession.getClass().getMethod("getWorldManager").invoke(minimapSession);
+            Object currentWorld = worldManager.getClass().getMethod("getCurrentWorld").invoke(worldManager);
+            if (currentWorld == null) {
+                warning("Xaero current waypoint world is not ready. Container record saved without a waypoint.");
+                return;
+            }
+
+            Object waypointSet = currentWorld.getClass().getMethod("getCurrentWaypointSet").invoke(currentWorld);
+            if (waypointSet == null) {
+                warning("Xaero current waypoint set is not ready. Container record saved without a waypoint.");
+                return;
+            }
+
+            Class<?> waypointClass = Class.forName("xaero.common.minimap.waypoints.Waypoint");
+            Constructor<?> constructor = waypointClass.getConstructor(int.class, int.class, int.class, String.class, String.class, int.class);
+            Object waypoint = constructor.newInstance(pos.getX(), pos.getY(), pos.getZ(), name, initials, 0);
+            Method addMethod = waypointSet.getClass().getMethod("add", waypointClass);
+            addMethod.invoke(waypointSet, waypoint);
+
+            Object waypointSession = minimapSession.getClass().getMethod("getWaypointSession").invoke(minimapSession);
+            waypointSession.getClass().getMethod("setSetChangedTime", long.class).invoke(waypointSession, System.currentTimeMillis());
+            xaeroWaypointNumber.set(xaeroWaypointNumber.get() + 1);
+            info("Created Xaero waypoint: " + name);
+        } catch (ReflectiveOperationException | RuntimeException e) {
+            warning("Failed to create Xaero waypoint: %s", e.getMessage());
+        }
+    }
+
+    private boolean isXaeroAvailable() {
+        try {
+            Class.forName("xaero.common.XaeroMinimapSession");
+            Class.forName("xaero.common.minimap.waypoints.Waypoint");
+            return true;
+        } catch (ClassNotFoundException ignored) {
+            return false;
+        }
+    }
+
+    private boolean validateXaeroWaypointSetting() {
+        if (!xaeroWaypoints.get()) return false;
+        if (isXaeroAvailable()) return true;
+
+        xaeroWaypoints.set(false);
+        warning("Xaero's Minimap was not detected. Xaero Waypoints has been disabled, but container recording will continue.");
+        return false;
+    }
+
+    private String makeWaypointInitials(String name) {
+        if (name == null || name.isBlank()) return "B";
+
+        StringBuilder initials = new StringBuilder();
+        for (String part : name.trim().split("\\s+")) {
+            if (!part.isEmpty() && initials.length() < 2) initials.append(Character.toUpperCase(part.charAt(0)));
+        }
+
+        return initials.isEmpty() ? "B" : initials.toString();
     }
 
     private boolean hasPassedRenderTarget(int chunkX, int chunkZ) {
@@ -566,10 +769,10 @@ public class BaseFinderXin extends Module {
     }
 
     /**
-     * 判断是否已到达或超过目标区块
+     * 闁告帇鍊栭弻鍥及椤栨碍鍎婄€瑰憡褰冮崺灞炬綇閻愵剙鐏楅悺鎺戞嚀缁诲啴鎯勯鐣屽灱闁告牕鎼?
      */
     private boolean hasReachedTarget(ChunkPos currentChunk) {
-        // 主要轴：检查是否到达或超过目标
+        // 濞戞挻妲掗々锔芥姜鏉堝墽绐楁俊顐熷亾闁哄被鍎插Σ鎼佸触閿曗偓閸╁本娼忛悙顒€鐏楅悺鎺戞嚀缁诲啴鎯勯鐣屽灱
         boolean mainAxisReached = switch (currentDir) {
             case EAST -> currentChunk.x >= targetChunkX;
             case WEST -> currentChunk.x <= targetChunkX;
@@ -577,10 +780,10 @@ public class BaseFinderXin extends Module {
             case SOUTH -> currentChunk.z >= targetChunkZ;
         };
 
-        // 如果主要轴未到达，直接返回
+        // 濠碘€冲€归悘澶嬬▔閺勫浚娲ｉ弶鐐茬摠濠€顓㈠礆閹峰本褰ч柨娑樼灱濞插潡骞掗妷銊х闁?
         if (!mainAxisReached) return false;
 
-        // 次要轴：检查是否偏离（允许±1区块的误差）
+        // 婵炲枴銈庢矗閺夌偠鎻槐鏉课涢埀顒勫蓟閵夛附笑闁告熬绠戞禍鍝ョ矉娴兼瑧绀勯柛蹇庢祰椤斿繐宕?闁告牕鎼锟犳儍閸曨噮鍤栫€瑰壊鍣槐?
         return switch (currentDir) {
             case EAST, WEST -> Math.abs(currentChunk.z - targetChunkZ) <= 1;
             case NORTH, SOUTH -> Math.abs(currentChunk.x - targetChunkX) <= 1;
@@ -588,10 +791,10 @@ public class BaseFinderXin extends Module {
     }
 
     /**
-     * 更新目标区块坐标
+     * 闁哄洤鐡ㄩ弻濠囨儎椤旂晫鍨奸柛鏍ф惈濞硷繝宕搁幇顓犲灱
      */
     private void updateTarget() {
-        // 计算从起点开始到当前段的累积偏移
+        // 閻犱緤绱曢悾缁樼鎼淬倖宕抽柣鎰嚀缁辨垶鎱ㄧ€ｎ亜鐓傜憸鐗堟尭婢х姴鈻撻悽鍨暠缂侀硸鍨宠ⅶ闁稿绻掍簺
         int currentX = startPos.x;
         int currentZ = startPos.z;
 
@@ -599,9 +802,9 @@ public class BaseFinderXin extends Module {
         int tempStepLen = 1;
         int tempStepsInLen = 0;
 
-        // 累加所有已完成的段
+        // 缂侀硸鍨版慨鐐哄箥閳ь剟寮垫径濠傚殥閻庣懓鏈崹姘舵儍閸曨剦鍞?
         for (int i = 0; i < totalSegments; i++) {
-            // 步长序列：1, 1, 2, 2, 3, 3... （需要乘以 chunkStep）
+            // 婵縿鍎甸弳杈ㄦ償韫囨挸鐏欓柨?, 1, 2, 2, 3, 3... 闁挎稑鐗撳〒鍓佹啺娴ｉ顔掑ù?chunkStep闁?
             int dist = tempStepLen * chunkStep.get();
             currentX += tempDir.dx * dist;
             currentZ += tempDir.dz * dist;
@@ -615,41 +818,41 @@ public class BaseFinderXin extends Module {
             tempDir = tempDir.getNext();
         }
 
-        // 当前方向的目标 = 已完成的累积位置 + 当前段应移动的距离
-        int currentDist = currentStepLength * chunkStep.get();  // 需要乘以 chunkStep
+        // 鐟滅増鎸告晶鐘诲棘閻熺増鍊婚柣銊ュ濞蹭即寮?= 鐎瑰憡褰冮悾顒勫箣閹邦喗鐣辩紒槌栧灣琚уù锝呯Ф閻?+ 鐟滅増鎸告晶鐘测枔闂堟稓瀹夌紒澶庮嚙婵晠鎯冮崟顔剧崺缂?
+        int currentDist = currentStepLength * chunkStep.get();  // 闂傚洠鍋撻悷鏇氭缁犵粯绂?chunkStep
         targetChunkX = currentX + tempDir.dx * currentDist;
         targetChunkZ = currentZ + tempDir.dz * currentDist;
     }
 
     /**
-     * 转向下一个方向
-     * @return 是否需要后续平滑旋转
+     * 閺夌儐鍓欓幃婊勭▔鐎ｂ晝顏卞☉鎿冧簼閺岀喖宕?
+     * @return 闁哄嫷鍨伴幆渚€妫侀埀顒傛啺娴ｅ憡鍊电紓渚囧幖闁解晛顭ㄩ幋鐐搭棆閺?
      */
     private boolean turnToNextDirection() {
-        // 方向循环：EAST -> NORTH -> WEST -> SOUTH -> EAST
+        // 闁哄倻鎳撻幃婊冾嚗椤忓棗绠氶柨娑欘儛AST -> NORTH -> WEST -> SOUTH -> EAST
         currentDir = currentDir.getNext();
 
-        // 更新步数计数
+        // 闁哄洤鐡ㄩ弻濠傤潰閵夛附娈堕悹浣插墲閺?
         stepsInCurrentLength++;
         totalSegments++;
 
-        // 每两次相同步长后，步长增加1（1,1,2,2,3,3,4,4...）
+        // 婵絽绻嬬悮鍗炩枎閿涘嫭绁查柛姘湰椤掔偤姊归崹顔藉€甸柨娑樻湰椤掔偤姊归崹顕呮澔闁?闁?,1,2,2,3,3,4,4...闁?
         if (stepsInCurrentLength >= 2) {
             currentStepLength++;
             stepsInCurrentLength = 0;
         }
 
-        // 如果启用锁定视角，立即应用新方向的旋转
+        // 濠碘€冲€归悘澶愬触椤栨粍鏆忛梺澶哥閻ｅ墽鎲撮崱姘兼健闁挎稑鐬奸悵娑㈠础閸愯尙瀹夐柣顫妽閺屽﹪寮悷鐗堝€婚柣銊ュ濡棙娼?
         if (lockView.get()) {
             applyRotation(currentDir.yaw);
-            return false;  // 不需要后续平滑旋转
+            return false;  // 濞戞挸绉瑰〒鍓佹啺娴ｅ憡鍊电紓渚囧幖闁解晛顭ㄩ幋鐐搭棆閺?
         }
         
-        return true;  // 需要后续平滑旋转
+        return true;  // 闂傚洠鍋撻悷鏇氱閹绱掗鐐烘尙婵犲﹥鍨跺Λ鍡樻姜?
     }
 
     /**
-     * 平滑旋转视角
+     * 妤犵偠娅曠划锕傚籍鐎ｎ厽绁悷娆忔椤?
      */
     private void smoothRotation() {
         if (mc.player == null) {
@@ -660,29 +863,29 @@ public class BaseFinderXin extends Module {
         float currentYaw = mc.player.getYaw();
         float diff = targetYaw - currentYaw;
 
-        // 处理角度跨越 -180/180 的问题
+        // 濠㈣泛瀚幃濠勬喆閹烘垵顔婇悹鎭掑姀缁?-180/180 闁汇劌瀚板Λ鑸碉紣?
         if (diff > 180f) diff -= 360f;
         if (diff < -180f) diff += 360f;
 
-        // 旋转速度（度/tick）
+        // 闁哄啫顑堝ù鍡涙焻閻斿嘲顔婇柨娑樼墕鐎?tick闁?
         float rotationSpeed = 15f;
 
         if (Math.abs(diff) < rotationSpeed) {
-            // 接近目标，直接设置
+            // 闁规亽鍎寸换搴ㄦ儎椤旂晫鍨奸柨娑樼灱濞插潡骞掗妷顭戝晭缂?
             applyRotation(targetYaw);
 
             if (isRotating && debugMode.get()) {
-                info("§a旋转完成");
+                info("Rotation complete.");
             }
             isRotating = false;
         } else {
-            // 逐步旋转
+            // 闂侇偅鍔栭鐐哄籍鐎ｎ厽绁?
             applyRotation(currentYaw + Math.signum(diff) * rotationSpeed);
         }
     }
 
     /**
-     * 应用旋转（同时设置 yaw, headYaw, bodyYaw）
+     * 閹煎瓨姊婚弫銈夊籍鐎ｎ厽绁柨娑樼墕閹捇寮幆閭﹀晭缂?yaw, headYaw, bodyYaw闁?
      */
     private void applyRotation(float yaw) {
         mc.player.setYaw(yaw);
@@ -691,7 +894,7 @@ public class BaseFinderXin extends Module {
     }
 
     /**
-     * 计算从起点开始经过指定段数后的 X 偏移量
+     * 閻犱緤绱曢悾缁樼鎼淬倖宕抽柣鎰嚀缁辨垶鎱ㄧ€ｎ剛鐥呴弶鈺佹处鐎垫氨鈧纰嶉宀勫极閺夋寧鍊甸柣?X 闁稿绻掍簺闂?
      */
     private int calculateOffsetX(int segments) {
         int x = 0;
@@ -700,7 +903,7 @@ public class BaseFinderXin extends Module {
         int tempStepsInLen = 0;
 
         for (int i = 0; i < segments; i++) {
-            x += tempDir.dx * tempStepLen * chunkStep.get();  // 需要乘以 chunkStep
+            x += tempDir.dx * tempStepLen * chunkStep.get();  // 闂傚洠鍋撻悷鏇氭缁犵粯绂?chunkStep
 
             tempStepsInLen++;
             if (tempStepsInLen >= 2) {
@@ -715,7 +918,7 @@ public class BaseFinderXin extends Module {
     }
 
     /**
-     * 计算从起点开始经过指定段数后的 Z 偏移量
+     * 閻犱緤绱曢悾缁樼鎼淬倖宕抽柣鎰嚀缁辨垶鎱ㄧ€ｎ剛鐥呴弶鈺佹处鐎垫氨鈧纰嶉宀勫极閺夋寧鍊甸柣?Z 闁稿绻掍簺闂?
      */
     private int calculateOffsetZ(int segments) {
         int z = 0;
@@ -724,7 +927,7 @@ public class BaseFinderXin extends Module {
         int tempStepsInLen = 0;
 
         for (int i = 0; i < segments; i++) {
-            z += tempDir.dz * tempStepLen * chunkStep.get();  // 需要乘以 chunkStep
+            z += tempDir.dz * tempStepLen * chunkStep.get();  // 闂傚洠鍋撻悷鏇氭缁犵粯绂?chunkStep
 
             tempStepsInLen++;
             if (tempStepsInLen >= 2) {
@@ -740,6 +943,8 @@ public class BaseFinderXin extends Module {
 
     @Override
     public String getInfoString() {
-        return "§e" + totalSegments + " §f| §e" + currentDir.name();
+        return "" + totalSegments + " | " + currentDir.name();
     }
 }
+
+

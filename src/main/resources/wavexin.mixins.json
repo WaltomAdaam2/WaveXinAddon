@@ -3,6 +3,7 @@
   "package": "me.waltom.wavexin.mixins",
   "compatibilityLevel": "JAVA_21",
   "client": [
+    "MixinClientPlayNetworkHandler",
     "MixinClientPlayerEntity",
     "MixinPlayerEntity",
     "MixinWIntEdit",
