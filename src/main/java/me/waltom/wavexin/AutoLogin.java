@@ -2,20 +2,13 @@ package me.waltom.wavexin;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
-import meteordevelopment.meteorclient.MeteorClient;
 import meteordevelopment.meteorclient.events.game.OpenScreenEvent;
 import meteordevelopment.meteorclient.events.world.ServerConnectBeginEvent;
 import meteordevelopment.meteorclient.events.world.TickEvent;
 import meteordevelopment.meteorclient.gui.GuiTheme;
-import meteordevelopment.meteorclient.gui.widgets.WWidget;
+import meteordevelopment.meteorclient.gui.utils.SettingsWidgetFactory;
 import meteordevelopment.meteorclient.gui.widgets.containers.WTable;
-import meteordevelopment.meteorclient.gui.widgets.pressable.WButton;
-import meteordevelopment.meteorclient.settings.BoolSetting;
-import meteordevelopment.meteorclient.settings.EnumSetting;
-import meteordevelopment.meteorclient.settings.IntSetting;
-import meteordevelopment.meteorclient.settings.Setting;
-import meteordevelopment.meteorclient.settings.SettingGroup;
-import meteordevelopment.meteorclient.settings.StringSetting;
+import meteordevelopment.meteorclient.settings.*;
 import meteordevelopment.meteorclient.systems.modules.Module;
 import meteordevelopment.meteorclient.utils.player.ChatUtils;
 import meteordevelopment.orbit.EventHandler;
@@ -23,6 +16,7 @@ import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.screen.ingame.HandledScreen;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.Items;
+import net.minecraft.nbt.NbtCompound;
 import net.minecraft.screen.slot.Slot;
 import net.minecraft.screen.slot.SlotActionType;
 import net.minecraft.text.Text;
@@ -30,14 +24,24 @@ import net.minecraft.util.Hand;
 import net.minecraft.world.GameMode;
 
 import java.io.IOException;
+import java.lang.ref.WeakReference;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.time.LocalDate;
+import java.security.GeneralSecurityException;
+import java.security.SecureRandom;
+import java.util.Base64;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.function.Consumer;
+import java.util.function.Supplier;
+import javax.crypto.Cipher;
+import javax.crypto.SecretKey;
+import javax.crypto.spec.GCMParameterSpec;
+import javax.crypto.spec.SecretKeySpec;
 
 /**
  * Auto-login flow adapted for WaveXinAddon from XinAutoLogin.
@@ -48,15 +52,32 @@ import java.util.Map;
 public class AutoLogin extends Module {
     private static final MinecraftClient mc = MinecraftClient.getInstance();
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
-    private static final Path CONFIG_PATH = MeteorClient.FOLDER.toPath().resolve("wavexin").resolve("auto-login.json");
+    private static final Path CONFIG_DIRECTORY = Path.of("D:\\.Others\\.Minecraft\\.minecraft\\versions\\1.21.11_Meteor Client 2b2t\\meteor-client\\wavexin");
+    private static final Path CONFIG_PATH = CONFIG_DIRECTORY.resolve("auto-login.json");
+    private static final Path KEY_PATH = CONFIG_PATH.resolveSibling("auto-login.key");
+    private static final PasswordCipher PASSWORD_CIPHER = new PasswordCipher(KEY_PATH);
     private static final String JOIN_ITEM_KEYWORDS = "compass,join,game,\u6307\u5357\u9488,\u52a0\u5165,\u6e38\u620f";
     private static final String JOIN_GUI_TITLE_KEYWORDS = "join,game,\u52a0\u5165,\u6e38\u620f";
     private static final String JOIN_BUTTON_KEYWORDS = "join,game,\u52a0\u5165,\u6e38\u620f";
     private static final int COMPASS_HOTBAR_SLOT_FALLBACK = 2;
     private static final int JOIN_GUI_SLOT_FALLBACK = 4;
 
+    static {
+        SettingsWidgetFactory.registerCustomFactory(ActionButtonSetting.class, theme -> (table, setting) -> {
+            ActionButtonSetting buttonSetting = (ActionButtonSetting) setting;
+            var button = table.add(theme.button(buttonSetting.buttonLabel)).widget();
+            button.action = buttonSetting::run;
+            button.tooltip = setting.description;
+        });
+        SettingsWidgetFactory.registerCustomFactory(SavedAccountsSetting.class, theme -> (table, setting) -> {
+            SavedAccountsSetting accountList = (SavedAccountsSetting) setting;
+            accountList.create(table, theme);
+        });
+    }
+
     private final SettingGroup sgGeneral = settings.createGroup("General");
     private final SettingGroup sgAccount = settings.createGroup("Account");
+    private final SettingGroup sgSavedAccounts = settings.createGroup("Saved Accounts");
     private final SettingGroup sgDelays = settings.createGroup("Delays");
 
     public final Setting<Boolean> autoLogin = sgGeneral.add(new BoolSetting.Builder()
@@ -68,7 +89,7 @@ public class AutoLogin extends Module {
 
     public final Setting<Boolean> dailyFlowerCheckIn = sgGeneral.add(new BoolSetting.Builder()
         .name("Daily Flower Check-in")
-        .description("Automatically sends /qiandao once per player per local day after login")
+        .description("Automatically sends /qiandao once per connection after joining")
         .defaultValue(false)
         .build()
     );
@@ -89,16 +110,40 @@ public class AutoLogin extends Module {
 
     public final Setting<AccountType> accountType = sgAccount.add(new EnumSetting.Builder<AccountType>()
         .name("Account Type")
-        .description("Microsoft accounts do not need /l. Offline accounts use the saved password")
+        .description("Microsoft accounts do not use /l. Offline accounts use the saved password")
         .defaultValue(AccountType.Microsoft)
+        .build()
+    );
+
+    public final SavedAccountsSetting savedAccounts = sgSavedAccounts.add(new SavedAccountsSetting.Builder()
+        .name("")
+        .description("Select an account to edit or remove")
+        .accounts(this::getSavedAccounts)
+        .onSelect(this::loadSavedAccount)
+        .onDelete(this::deleteSavedAccount)
+        .build()
+    );
+
+    public final Setting<String> accountNameInput = sgAccount.add(new StringSetting.Builder()
+        .name("Account Name")
+        .description("Account name to save. Leave empty to use the current player name")
+        .defaultValue("")
         .build()
     );
 
     public final Setting<String> passwordInput = sgAccount.add(new StringSetting.Builder()
         .name("Password Input")
-        .description("Temporary input. Cleared after Add or Update Account is enabled")
+        .description("Temporary input for Offline Account. It is encrypted before saving")
         .defaultValue("")
         .visible(() -> accountType.get() == AccountType.Offline)
+        .build()
+    );
+
+    public final Setting<Boolean> addOrUpdateAccount = sgAccount.add(new ActionButtonSetting.Builder()
+        .name("Add / Update Account")
+        .description("Saves Account Name with the selected account type")
+        .buttonLabel("Save")
+        .action(this::saveAccountFromInput)
         .build()
     );
 
@@ -137,6 +182,7 @@ public class AutoLogin extends Module {
         config = AutoLoginConfig.load();
         resetConnectionState(LoginState.IDLE);
         syncAccountSettings();
+        savedAccounts.refresh();
     }
 
     @Override
@@ -147,28 +193,6 @@ public class AutoLogin extends Module {
     @Override
     public String getInfoString() {
         return null;
-    }
-
-    @Override
-    public WWidget getWidget(GuiTheme theme) {
-        WTable table = theme.table();
-        table.add(theme.settings(settings)).expandX();
-        table.row();
-
-        table.add(theme.label("Current Account: " + currentAccountLabel())).expandX();
-        table.row();
-        table.add(theme.label("Password: " + (hasPasswordForCurrentPlayer() ? "Set" : "Not Set"))).expandX();
-        table.row();
-        table.add(theme.label("Saved Accounts: " + config.passwords.size())).expandX();
-        table.row();
-
-        WButton addOrUpdate = table.add(theme.button("Add / Update Account")).expandX().widget();
-        addOrUpdate.action = this::savePasswordFromInput;
-
-        WButton remove = table.add(theme.button("Remove Current Account")).expandX().widget();
-        remove.action = this::removeSavedPassword;
-
-        return table;
     }
 
     @EventHandler
@@ -198,14 +222,16 @@ public class AutoLogin extends Module {
         }
 
         if (autoLogin.get() && !loginSent && isLoginPromptText(text)) {
-            if (accountType.get() == AccountType.Microsoft) {
+            AccountRecord account = config.getAccount(getCurrentPlayerName());
+            if (account != null && account.type == AccountType.Microsoft) {
                 loginSent = true;
-                beginPostLoginFlow();
+                setState(LoginState.LOGIN_SENT);
+                feedback("Saved Microsoft Account detected. Waiting for login success.");
                 return;
             }
 
-            if (!hasPasswordForCurrentPlayer()) {
-                feedback("Password is not set for current account.");
+            if (account == null || !account.hasPassword()) {
+                feedback("Offline password is not set for current account.");
                 return;
             }
             setState(LoginState.WAITING_FOR_LOGIN);
@@ -234,45 +260,56 @@ public class AutoLogin extends Module {
             }
         }
 
+        if (state == LoginState.WAITING_FOR_LOGIN && shouldCheckIn() && usesNativeSession()) {
+            beginPostLoginFlow();
+        }
+
         runState();
     }
 
-    private void savePasswordFromInput() {
-        if (accountType.get() == AccountType.Microsoft) {
-            feedback("Microsoft Account does not need a saved login password.");
-            return;
-        }
-
-        String playerName = getCurrentPlayerName();
+    private void saveAccountFromInput() {
+        String playerName = getAccountNameInput();
         String value = passwordInput.get();
 
         if (playerName.isEmpty()) {
-            feedback("Join a server before setting a password.");
+            feedback("Enter an account name or join a server first.");
             return;
         }
 
-        if (value == null || value.isEmpty()) {
-            feedback("Password Input is empty.");
-            return;
+        AccountRecord account = new AccountRecord();
+        account.type = accountType.get();
+        if (account.type == AccountType.Offline) {
+            if (value == null || value.isEmpty()) {
+                feedback("Offline Account requires a password.");
+                return;
+            }
+
+            String encryptedPassword = PASSWORD_CIPHER.encrypt(value);
+            if (encryptedPassword.isEmpty()) {
+                feedback("Password could not be encrypted.");
+                return;
+            }
+            account.encryptedPassword = encryptedPassword;
         }
 
-        config.passwords.put(playerName, value);
+        config.accounts.put(playerName, account);
         config.save();
         passwordInput.set("");
+        savedAccounts.refresh();
         syncAccountSettings();
-        feedback("Password saved for current account.");
+        feedback("Account saved as %s.", account.type);
     }
 
-    private void removeSavedPassword() {
-        String playerName = getCurrentPlayerName();
-        if (!playerName.isEmpty()) {
-            config.passwords.remove(playerName);
-            config.save();
-        }
+    private void deleteSavedAccount(String playerName) {
+        if (playerName == null || config.accounts.remove(playerName) == null) return;
 
-        passwordInput.set("");
-        syncAccountSettings();
-        feedback("Password removed for current account.");
+        config.save();
+        if (playerName.equals(getAccountNameInput())) {
+            passwordInput.set("");
+            accountType.set(AccountType.Microsoft);
+        }
+        savedAccounts.refresh();
+        feedback("Saved account removed.");
     }
 
     private void runState() {
@@ -301,15 +338,23 @@ public class AutoLogin extends Module {
     private void runLogin() {
         if (loginSent || !elapsed(loginDelay.get())) return;
 
-        if (accountType.get() == AccountType.Microsoft) {
+        AccountRecord account = config.getAccount(getCurrentPlayerName());
+        if (account != null && account.type == AccountType.Microsoft) {
             loginSent = true;
-            beginPostLoginFlow();
+            setState(LoginState.LOGIN_SENT);
+            feedback("Saved Microsoft Account detected. Waiting for login success.");
             return;
         }
 
-        String password = config.getPassword(getCurrentPlayerName());
-        if (password == null || password.isEmpty()) {
-            feedback("Password is not set for current account.");
+        if (account == null || !account.hasPassword()) {
+            feedback("Offline password is not set for current account.");
+            setState(LoginState.IDLE);
+            return;
+        }
+
+        String password = account.getPassword();
+        if (password.isEmpty()) {
+            feedback("Offline password could not be read for current account.");
             setState(LoginState.IDLE);
             return;
         }
@@ -410,8 +455,6 @@ public class AutoLogin extends Module {
 
         mc.getNetworkHandler().sendChatCommand("qiandao");
         checkInSent = true;
-        config.lastCheckIn.put(getCurrentPlayerName(), LocalDate.now().toString());
-        config.save();
         feedback("Daily check-in command sent.");
         continueAfterCheckIn();
     }
@@ -441,7 +484,7 @@ public class AutoLogin extends Module {
         } else if (!joinDone) {
             setState(LoginState.WAITING_TO_USE_COMPASS);
         } else {
-            setState(LoginState.COMPLETED);
+            setState(LoginState.IN_GAME);
         }
     }
 
@@ -456,7 +499,12 @@ public class AutoLogin extends Module {
     }
 
     private boolean shouldCheckIn() {
-        return dailyFlowerCheckIn.get() && !checkInSent && !config.hasCheckedInToday(getCurrentPlayerName());
+        return dailyFlowerCheckIn.get() && !checkInSent;
+    }
+
+    private boolean usesNativeSession() {
+        AccountRecord account = config.getAccount(getCurrentPlayerName());
+        return account == null || account.type == AccountType.Microsoft;
     }
 
     private void setState(LoginState newState) {
@@ -533,26 +581,50 @@ public class AutoLogin extends Module {
 
     private boolean isLoginPromptText(String text) {
         String lower = text.toLowerCase(Locale.ROOT);
-        return (text.contains("鐧诲綍") || text.contains("鐧婚檰") || lower.contains("login")) && !isLoginSuccessText(text);
+        return (text.contains("\u767b\u5f55") || text.contains("\u767b\u9646") || lower.contains("login")) && !isLoginSuccessText(text);
     }
 
     private boolean isLoginSuccessText(String text) {
         String lower = text.toLowerCase(Locale.ROOT);
-        return text.contains("鐧诲綍鎴愬姛") || text.contains("鐧婚檰鎴愬姛") || lower.contains("login successful") || lower.contains("logged in");
-    }
-
-    private boolean hasPasswordForCurrentPlayer() {
-        return config.hasPassword(getCurrentPlayerName());
+        return text.contains("\u767b\u5f55\u6210\u529f") || text.contains("\u767b\u9646\u6210\u529f") || lower.contains("login successful") || lower.contains("logged in");
     }
 
     private void syncAccountSettings() {
         String playerName = getCurrentPlayerName();
         lastPlayerName = playerName;
+        if (!playerName.isEmpty()) {
+            accountNameInput.set(playerName);
+            AccountRecord account = config.getAccount(playerName);
+            if (account != null) accountType.set(account.type);
+        }
     }
 
-    private String currentAccountLabel() {
-        String playerName = getCurrentPlayerName();
-        return playerName.isEmpty() ? "Unknown" : playerName;
+    private List<SavedAccountEntry> getSavedAccounts() {
+        List<SavedAccountEntry> accounts = new ArrayList<>();
+        for (String playerName : config.accounts.keySet()) {
+            AccountRecord account = config.getAccount(playerName);
+            if (account != null) accounts.add(new SavedAccountEntry(playerName, account.type));
+        }
+        accounts.sort((first, second) -> String.CASE_INSENSITIVE_ORDER.compare(first.name, second.name));
+        return accounts;
+    }
+
+    private void loadSavedAccount(String playerName) {
+        if (playerName == null) return;
+
+        AccountRecord account = config.getAccount(playerName);
+        if (account == null) return;
+
+        accountNameInput.set(playerName);
+        accountType.set(account.type);
+        passwordInput.set("");
+        savedAccounts.refresh();
+    }
+
+    private String getAccountNameInput() {
+        String value = accountNameInput.get();
+        if (value != null && !value.isBlank()) return value.trim();
+        return getCurrentPlayerName();
     }
 
     private static String getCurrentPlayerName() {
@@ -612,17 +684,207 @@ public class AutoLogin extends Module {
         COMPLETED
     }
 
+    private static class ActionButtonSetting extends Setting<Boolean> {
+        private final String buttonLabel;
+        private final Runnable action;
+
+        private ActionButtonSetting(String name, String description, String buttonLabel, Runnable action, Consumer<Boolean> onChanged, Consumer<Setting<Boolean>> onModuleActivated, IVisible visible) {
+            super(name, description, false, onChanged, onModuleActivated, visible);
+            this.buttonLabel = buttonLabel;
+            this.action = action;
+        }
+
+        private void run() {
+            if (action != null) action.run();
+        }
+
+        @Override
+        protected Boolean parseImpl(String str) {
+            return false;
+        }
+
+        @Override
+        protected boolean isValueValid(Boolean value) {
+            return true;
+        }
+
+        @Override
+        protected NbtCompound save(NbtCompound tag) {
+            tag.putBoolean("value", false);
+            return tag;
+        }
+
+        @Override
+        protected Boolean load(NbtCompound tag) {
+            set(false);
+            return false;
+        }
+
+        private static class Builder extends SettingBuilder<Builder, Boolean, ActionButtonSetting> {
+            private String buttonLabel = "Run";
+            private Runnable action;
+
+            private Builder() {
+                super(false);
+            }
+
+            private Builder buttonLabel(String buttonLabel) {
+                this.buttonLabel = buttonLabel;
+                return this;
+            }
+
+            private Builder action(Runnable action) {
+                this.action = action;
+                return this;
+            }
+
+            @Override
+            public ActionButtonSetting build() {
+                return new ActionButtonSetting(name, description, buttonLabel, action, onChanged, onModuleActivated, visible);
+            }
+        }
+    }
+
+    private static class SavedAccountsSetting extends Setting<Boolean> {
+        private final Supplier<List<SavedAccountEntry>> accounts;
+        private final Consumer<String> onSelect;
+        private final Consumer<String> onDelete;
+        private final List<WeakReference<WTable>> tables = new ArrayList<>();
+
+        private SavedAccountsSetting(String name, String description, Supplier<List<SavedAccountEntry>> accounts, Consumer<String> onSelect, Consumer<String> onDelete, Consumer<Boolean> onChanged, Consumer<Setting<Boolean>> onModuleActivated, IVisible visible) {
+            super(name, description, false, onChanged, onModuleActivated, visible);
+            this.accounts = accounts;
+            this.onSelect = onSelect;
+            this.onDelete = onDelete;
+        }
+
+        private void create(WTable table, GuiTheme theme) {
+            WTable accountsTable = table.add(theme.table()).expandX().widget();
+            tables.add(new WeakReference<>(accountsTable));
+            rebuild(accountsTable, theme);
+        }
+
+        private void refresh() {
+            tables.removeIf(reference -> {
+                WTable table = reference.get();
+                if (table == null) return true;
+                rebuild(table, table.theme);
+                return false;
+            });
+        }
+
+        private void rebuild(WTable table, GuiTheme theme) {
+            table.clear();
+            List<SavedAccountEntry> entries = accounts.get();
+            if (entries.isEmpty()) {
+                table.add(theme.label("No saved accounts")).expandX();
+                return;
+            }
+
+            for (SavedAccountEntry entry : entries) {
+                var select = table.add(theme.button(entry.name)).expandX().widget();
+                select.action = () -> onSelect.accept(entry.name);
+                table.add(theme.label(entry.type.toString())).expandX();
+
+                var delete = table.add(theme.minus()).widget();
+                delete.action = () -> onDelete.accept(entry.name);
+                delete.tooltip = "Delete";
+                table.row();
+            }
+        }
+
+        @Override
+        protected Boolean parseImpl(String str) {
+            return false;
+        }
+
+        @Override
+        protected boolean isValueValid(Boolean value) {
+            return true;
+        }
+
+        @Override
+        protected NbtCompound save(NbtCompound tag) {
+            tag.putBoolean("value", false);
+            return tag;
+        }
+
+        @Override
+        protected Boolean load(NbtCompound tag) {
+            set(false);
+            return false;
+        }
+
+        private static class Builder extends SettingBuilder<Builder, Boolean, SavedAccountsSetting> {
+            private Supplier<List<SavedAccountEntry>> accounts;
+            private Consumer<String> onSelect;
+            private Consumer<String> onDelete;
+
+            private Builder() {
+                super(false);
+            }
+
+            private Builder accounts(Supplier<List<SavedAccountEntry>> accounts) {
+                this.accounts = accounts;
+                return this;
+            }
+
+            private Builder onSelect(Consumer<String> onSelect) {
+                this.onSelect = onSelect;
+                return this;
+            }
+
+            private Builder onDelete(Consumer<String> onDelete) {
+                this.onDelete = onDelete;
+                return this;
+            }
+
+            @Override
+            public SavedAccountsSetting build() {
+                return new SavedAccountsSetting(name, description, accounts, onSelect, onDelete, onChanged, onModuleActivated, visible);
+            }
+        }
+    }
+
+    private static class SavedAccountEntry {
+        private final String name;
+        private final AccountType type;
+
+        private SavedAccountEntry(String name, AccountType type) {
+            this.name = name;
+            this.type = type;
+        }
+    }
+
+    private static class AccountRecord {
+        AccountType type = AccountType.Microsoft;
+        String encryptedPassword = "";
+        @Deprecated
+        String password = "";
+
+        boolean hasPassword() {
+            return type == AccountType.Offline && !getPassword().isEmpty();
+        }
+
+        String getPassword() {
+            if (type != AccountType.Offline) return "";
+            return PASSWORD_CIPHER.decrypt(encryptedPassword);
+        }
+    }
+
     private static class AutoLoginConfig {
+        Map<String, AccountRecord> accounts = new HashMap<>();
+        @Deprecated
         Map<String, String> passwords = new HashMap<>();
-        Map<String, String> lastCheckIn = new HashMap<>();
 
         static AutoLoginConfig load() {
             try {
                 if (!Files.exists(CONFIG_PATH)) return new AutoLoginConfig();
                 AutoLoginConfig config = GSON.fromJson(Files.readString(CONFIG_PATH, StandardCharsets.UTF_8), AutoLoginConfig.class);
                 if (config == null) config = new AutoLoginConfig();
+                if (config.accounts == null) config.accounts = new HashMap<>();
                 if (config.passwords == null) config.passwords = new HashMap<>();
-                if (config.lastCheckIn == null) config.lastCheckIn = new HashMap<>();
+                if (config.migratePasswords()) config.save();
                 return config;
             } catch (Exception ignored) {
                 return new AutoLoginConfig();
@@ -632,24 +894,110 @@ public class AutoLogin extends Module {
         void save() {
             try {
                 Files.createDirectories(CONFIG_PATH.getParent());
-                Files.writeString(CONFIG_PATH, GSON.toJson(this), StandardCharsets.UTF_8);
+                AutoLoginConfig saved = new AutoLoginConfig();
+                saved.accounts = accounts;
+                saved.passwords = null;
+                Files.writeString(CONFIG_PATH, GSON.toJson(saved), StandardCharsets.UTF_8);
             } catch (IOException e) {
                 ChatUtils.error("Auto Login config save failed: %s", e.getMessage());
             }
         }
 
-        String getPassword(String playerName) {
-            if (playerName == null || playerName.isEmpty()) return "";
-            return passwords.getOrDefault(playerName, "");
+        AccountRecord getAccount(String playerName) {
+            if (playerName == null || playerName.isEmpty()) return null;
+            AccountRecord account = accounts.get(playerName);
+            if (account == null) return null;
+            if (account.type == null) account.type = AccountType.Microsoft;
+            if (account.encryptedPassword == null) account.encryptedPassword = "";
+            if (account.password == null) account.password = "";
+            return account;
         }
 
-        boolean hasPassword(String playerName) {
-            return !getPassword(playerName).isEmpty();
+        private boolean migratePasswords() {
+            boolean changed = false;
+            for (AccountRecord account : accounts.values()) {
+                if (account == null || account.type != AccountType.Offline || account.password == null || account.password.isEmpty() || !account.encryptedPassword.isEmpty()) continue;
+
+                String encryptedPassword = PASSWORD_CIPHER.encrypt(account.password);
+                if (!encryptedPassword.isEmpty()) {
+                    account.encryptedPassword = encryptedPassword;
+                    account.password = "";
+                    changed = true;
+                }
+            }
+
+            for (Map.Entry<String, String> entry : passwords.entrySet()) {
+                if (entry.getKey() == null || entry.getKey().isEmpty()) continue;
+                if (accounts.containsKey(entry.getKey())) continue;
+
+                AccountRecord account = new AccountRecord();
+                account.type = AccountType.Offline;
+                account.encryptedPassword = PASSWORD_CIPHER.encrypt(entry.getValue() == null ? "" : entry.getValue());
+                accounts.put(entry.getKey(), account);
+                changed = true;
+            }
+            if (!passwords.isEmpty()) changed = true;
+            passwords.clear();
+            return changed;
+        }
+    }
+
+    private static class PasswordCipher {
+        private static final String TRANSFORMATION = "AES/GCM/NoPadding";
+        private static final int KEY_LENGTH = 32;
+        private static final int IV_LENGTH = 12;
+
+        private final Path keyPath;
+        private final SecureRandom random = new SecureRandom();
+        private SecretKey key;
+
+        private PasswordCipher(Path keyPath) {
+            this.keyPath = keyPath;
         }
 
-        boolean hasCheckedInToday(String playerName) {
-            if (playerName == null || playerName.isEmpty()) return false;
-            return LocalDate.now().toString().equals(lastCheckIn.get(playerName));
+        String encrypt(String plainText) {
+            if (plainText == null || plainText.isEmpty()) return "";
+            try {
+                byte[] iv = new byte[IV_LENGTH];
+                random.nextBytes(iv);
+                Cipher cipher = Cipher.getInstance(TRANSFORMATION);
+                cipher.init(Cipher.ENCRYPT_MODE, getKey(), new GCMParameterSpec(128, iv));
+                byte[] encrypted = cipher.doFinal(plainText.getBytes(StandardCharsets.UTF_8));
+                return Base64.getEncoder().encodeToString(iv) + ":" + Base64.getEncoder().encodeToString(encrypted);
+            } catch (IOException | GeneralSecurityException ignored) {
+                return "";
+            }
+        }
+
+        String decrypt(String encryptedText) {
+            if (encryptedText == null || encryptedText.isEmpty()) return "";
+            try {
+                String[] parts = encryptedText.split(":", 2);
+                if (parts.length != 2) return "";
+                Cipher cipher = Cipher.getInstance(TRANSFORMATION);
+                cipher.init(Cipher.DECRYPT_MODE, getKey(), new GCMParameterSpec(128, Base64.getDecoder().decode(parts[0])));
+                return new String(cipher.doFinal(Base64.getDecoder().decode(parts[1])), StandardCharsets.UTF_8);
+            } catch (IOException | GeneralSecurityException | IllegalArgumentException ignored) {
+                return "";
+            }
+        }
+
+        private SecretKey getKey() throws IOException {
+            if (key != null) return key;
+
+            byte[] keyBytes;
+            if (Files.exists(keyPath)) {
+                keyBytes = Base64.getDecoder().decode(Files.readString(keyPath, StandardCharsets.UTF_8).trim());
+            } else {
+                Files.createDirectories(keyPath.getParent());
+                keyBytes = new byte[KEY_LENGTH];
+                random.nextBytes(keyBytes);
+                Files.writeString(keyPath, Base64.getEncoder().encodeToString(keyBytes), StandardCharsets.UTF_8);
+            }
+
+            if (keyBytes.length != KEY_LENGTH) throw new IOException("Invalid Auto Login key.");
+            key = new SecretKeySpec(keyBytes, "AES");
+            return key;
         }
     }
 }

@@ -49,6 +49,7 @@ public class BaseFinderXin extends Module {
     }
 
     private final SettingGroup sgGeneral = settings.getDefaultGroup();
+    private final SettingGroup sgXaeroWaypoints = settings.createGroup("Xaero Waypoints");
 
     private final Setting<Integer> chunkStep = sgGeneral.add(new IntSetting.Builder()
         .name("Chunk Step")
@@ -127,14 +128,14 @@ public class BaseFinderXin extends Module {
         .build()
     );
 
-    private final Setting<Boolean> xaeroWaypoints = sgGeneral.add(new BoolSetting.Builder()
+    private final Setting<Boolean> xaeroWaypoints = sgXaeroWaypoints.add(new BoolSetting.Builder()
         .name("Xaero Waypoints")
         .description("Creates a Xaero waypoint when a container chunk is recorded. Requires Xaero's Minimap at runtime.")
         .defaultValue(false)
         .build()
     );
 
-    private final Setting<Integer> xaeroWaypointNumber = sgGeneral.add(new IntSetting.Builder()
+    private final Setting<Integer> xaeroWaypointNumber = sgXaeroWaypoints.add(new IntSetting.Builder()
         .name("Waypoint Number")
         .description("Numeric waypoint sequence used between prefix and suffix.")
         .defaultValue(1)
@@ -145,7 +146,7 @@ public class BaseFinderXin extends Module {
         .build()
     );
 
-    private final Setting<String> xaeroWaypointPrefix = sgGeneral.add(new StringSetting.Builder()
+    private final Setting<String> xaeroWaypointPrefix = sgXaeroWaypoints.add(new StringSetting.Builder()
         .name("Waypoint Prefix")
         .description("Text before the waypoint number.")
         .defaultValue("Base ")
@@ -153,7 +154,7 @@ public class BaseFinderXin extends Module {
         .build()
     );
 
-    private final Setting<String> xaeroWaypointSuffix = sgGeneral.add(new StringSetting.Builder()
+    private final Setting<String> xaeroWaypointSuffix = sgXaeroWaypoints.add(new StringSetting.Builder()
         .name("Waypoint Suffix")
         .description("Text after the waypoint number.")
         .defaultValue("")
