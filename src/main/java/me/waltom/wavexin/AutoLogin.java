@@ -2,11 +2,7 @@ package me.waltom.wavexin;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
-import com.mojang.brigadier.arguments.StringArgumentType;
-import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import meteordevelopment.meteorclient.MeteorClient;
-import meteordevelopment.meteorclient.commands.Command;
-import meteordevelopment.meteorclient.commands.Commands;
 import meteordevelopment.meteorclient.events.game.OpenScreenEvent;
 import meteordevelopment.meteorclient.events.world.ServerConnectBeginEvent;
 import meteordevelopment.meteorclient.events.world.TickEvent;
@@ -15,12 +11,10 @@ import meteordevelopment.meteorclient.settings.IntSetting;
 import meteordevelopment.meteorclient.settings.Setting;
 import meteordevelopment.meteorclient.settings.SettingGroup;
 import meteordevelopment.meteorclient.systems.modules.Module;
-import meteordevelopment.meteorclient.systems.modules.Modules;
 import meteordevelopment.meteorclient.utils.player.ChatUtils;
 import meteordevelopment.orbit.EventHandler;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.screen.ingame.HandledScreen;
-import net.minecraft.command.CommandSource;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.Items;
 import net.minecraft.screen.slot.Slot;
@@ -99,15 +93,22 @@ public class AutoLogin extends Module {
 
     public final Setting<String> currentAccount = sgAccount.add(new meteordevelopment.meteorclient.settings.StringSetting.Builder()
         .name("Current Account")
-        .description("Current Minecraft player name. Passwords are managed with .autologin password <password>")
+        .description("Current Minecraft player name")
         .defaultValue("")
         .build()
     );
 
     public final Setting<Boolean> password = sgAccount.add(new BoolSetting.Builder()
         .name("Password")
-        .description("Status only. Use .autologin password <password> to set it safely")
+        .description("Shows whether the current account has a saved password")
         .defaultValue(false)
+        .build()
+    );
+
+    public final Setting<String> passwordInput = sgAccount.add(new meteordevelopment.meteorclient.settings.StringSetting.Builder()
+        .name("Password Input")
+        .description("Temporary input. Cleared after Add or Update Account is enabled")
+        .defaultValue("")
         .build()
     );
 
@@ -123,14 +124,14 @@ public class AutoLogin extends Module {
 
     public final Setting<Boolean> addOrUpdateAccount = sgAccount.add(new BoolSetting.Builder()
         .name("Add or Update Account")
-        .description("Use .autologin password <password>")
+        .description("Saves Password Input for the current account and clears the input")
         .defaultValue(false)
         .build()
     );
 
     public final Setting<Boolean> removeCurrentAccount = sgAccount.add(new BoolSetting.Builder()
         .name("Remove Current Account")
-        .description("Use .autologin remove")
+        .description("Removes the saved password for the current account")
         .defaultValue(false)
         .build()
     );
@@ -224,88 +225,6 @@ public class AutoLogin extends Module {
         syncAccountSettings();
     }
 
-    public static void registerCommands() {
-        if (Commands.get("autologin") == null) Commands.add(new AutoLoginCommand());
-    }
-
-    private static class AutoLoginCommand extends Command {
-        AutoLoginCommand() {
-            super("autologin", "Manages WaveXinAddon auto login passwords and state.");
-        }
-
-        @Override
-        public void build(LiteralArgumentBuilder<CommandSource> builder) {
-            builder
-                .then(literal("password")
-                    .then(argument("value", StringArgumentType.greedyString())
-                        .executes(context -> {
-                            AutoLogin module = Modules.get().get(AutoLogin.class);
-                            String playerName = getCurrentPlayerName();
-                            if (playerName.isEmpty()) {
-                                warning("Join a server before setting a password.");
-                                return 0;
-                            }
-
-                            AutoLoginConfig cfg = AutoLoginConfig.load();
-                            cfg.passwords.put(playerName, context.getArgument("value", String.class));
-                            cfg.save();
-                            if (module != null) {
-                                module.config = cfg;
-                                module.syncAccountSettings();
-                            }
-
-                            info("Password saved for %s.", playerName);
-                            return SINGLE_SUCCESS;
-                        })
-                    )
-                )
-                .then(literal("remove")
-                    .executes(context -> {
-                        AutoLogin module = Modules.get().get(AutoLogin.class);
-                        String playerName = getCurrentPlayerName();
-                        AutoLoginConfig cfg = AutoLoginConfig.load();
-                        if (!playerName.isEmpty()) cfg.passwords.remove(playerName);
-                        cfg.save();
-                        if (module != null) {
-                            module.config = cfg;
-                            module.syncAccountSettings();
-                        }
-
-                        info("Password removed for current account.");
-                        return SINGLE_SUCCESS;
-                    })
-                )
-                .then(literal("status")
-                    .executes(context -> {
-                        AutoLogin module = Modules.get().get(AutoLogin.class);
-                        String playerName = getCurrentPlayerName();
-                        AutoLoginConfig cfg = module == null ? AutoLoginConfig.load() : module.config;
-                        boolean hasPassword = cfg.hasPassword(playerName);
-                        boolean checkedToday = cfg.hasCheckedInToday(playerName);
-
-                        info("Account: %s", playerName.isEmpty() ? "unknown" : playerName);
-                        info("Password: %s", hasPassword ? "set" : "not set");
-                        if (module != null) {
-                            info("Auto Login: %s", module.autoLogin.get());
-                            info("Auto Join: %s", module.autoJoin.get());
-                            info("After Login Action: %s", module.afterLoginAction.get());
-                            info("Daily Check-in: %s", module.dailyFlowerCheckIn.get());
-                            info("Checked Today: %s", checkedToday);
-                        }
-                        return SINGLE_SUCCESS;
-                    })
-                )
-                .then(literal("reset")
-                    .executes(context -> {
-                        AutoLogin module = Modules.get().get(AutoLogin.class);
-                        if (module != null) module.resetConnectionState(LoginState.IDLE);
-                        info("Auto Login state reset.");
-                        return SINGLE_SUCCESS;
-                    })
-                );
-        }
-    }
-
     @Override
     public void onActivate() {
         config = AutoLoginConfig.load();
@@ -363,6 +282,8 @@ public class AutoLogin extends Module {
     @EventHandler
     private void onTick(TickEvent.Pre event) {
         if (!isActive()) return;
+        processAccountActions();
+
         if (mc.player == null || mc.world == null || mc.getNetworkHandler() == null) {
             resetConnectionState(LoginState.IDLE);
             return;
@@ -382,6 +303,51 @@ public class AutoLogin extends Module {
         }
 
         runState();
+    }
+
+    private void processAccountActions() {
+        if (addOrUpdateAccount.get()) {
+            addOrUpdateAccount.set(false);
+            savePasswordFromInput();
+        }
+
+        if (removeCurrentAccount.get()) {
+            removeCurrentAccount.set(false);
+            removeSavedPassword();
+        }
+    }
+
+    private void savePasswordFromInput() {
+        String playerName = getCurrentPlayerName();
+        String value = passwordInput.get();
+
+        if (playerName.isEmpty()) {
+            feedback("Join a server before setting a password.");
+            return;
+        }
+
+        if (value == null || value.isEmpty()) {
+            feedback("Password Input is empty.");
+            return;
+        }
+
+        config.passwords.put(playerName, value);
+        config.save();
+        passwordInput.set("");
+        syncAccountSettings();
+        feedback("Password saved for current account.");
+    }
+
+    private void removeSavedPassword() {
+        String playerName = getCurrentPlayerName();
+        if (!playerName.isEmpty()) {
+            config.passwords.remove(playerName);
+            config.save();
+        }
+
+        passwordInput.set("");
+        syncAccountSettings();
+        feedback("Password removed for current account.");
     }
 
     private void runState() {

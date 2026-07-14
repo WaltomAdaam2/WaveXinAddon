@@ -13,8 +13,6 @@ public class WaveXinAddon extends MeteorAddon {
     @Override
     public void onInitialize() {
         LOG.info("Initializing WaveXinAddon.");
-        AutoLogin.registerCommands();
-
         Modules.get().add(new ElytraFlyXin());
         Modules.get().add(new ElytraReplace());
         Modules.get().add(new SimpleElytraFlyPath());
