@@ -1,5 +1,9 @@
-name: Development Build
-on: push
+name: Build Main and Snapshot
+on:
+  push:
+    branches:
+      - main
+      - SNAPSHOT
 
 permissions:
   contents: read
