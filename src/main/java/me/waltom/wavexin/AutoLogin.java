@@ -25,6 +25,8 @@ import net.minecraft.world.GameMode;
 
 import java.io.IOException;
 import java.lang.ref.WeakReference;
+import java.net.InetSocketAddress;
+import java.net.SocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -36,6 +38,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 import javax.crypto.Cipher;
@@ -56,6 +59,7 @@ public class AutoLogin extends Module {
     private static final Path CONFIG_PATH = CONFIG_DIRECTORY.resolve("auto-login.json");
     private static final Path KEY_PATH = CONFIG_PATH.resolveSibling("auto-login.key");
     private static final PasswordCipher PASSWORD_CIPHER = new PasswordCipher(KEY_PATH);
+    private static final Set<String> XIN_SERVERS = Set.of("2b2t.xin", "d.2b2t.xin", "lt.2b2t.xin", "2b2t.org", "110.42.44.209");
     private static final String JOIN_ITEM_KEYWORDS = "compass,join,game,\u6307\u5357\u9488,\u52a0\u5165,\u6e38\u620f";
     private static final String JOIN_GUI_TITLE_KEYWORDS = "join,game,\u52a0\u5165,\u6e38\u620f";
     private static final String JOIN_BUTTON_KEYWORDS = "join,game,\u52a0\u5165,\u6e38\u620f";
@@ -79,6 +83,14 @@ public class AutoLogin extends Module {
     private final SettingGroup sgAccount = settings.createGroup("Account");
     private final SettingGroup sgSavedAccounts = settings.createGroup("Saved Accounts");
     private final SettingGroup sgDelays = settings.createGroup("Delays");
+
+    public final Setting<Boolean> onlyOnXinServers = sgGeneral.add(new BoolSetting.Builder()
+        .name("Only on 2b2t.xin")
+        .description("Runs AutoLogin only on supported 2b2t.xin servers")
+        .defaultValue(true)
+        .onChanged(value -> serverChecked = false)
+        .build()
+    );
 
     public final Setting<Boolean> autoLogin = sgGeneral.add(new BoolSetting.Builder()
         .name("Auto Login")
@@ -170,6 +182,8 @@ public class AutoLogin extends Module {
     private boolean afterLoginActionDone;
     private boolean joinDone;
     private boolean checkInSent;
+    private boolean serverChecked;
+    private boolean targetServer;
     private String lastPlayerName = "";
 
     public AutoLogin() {
@@ -197,12 +211,14 @@ public class AutoLogin extends Module {
 
     @EventHandler
     private void onConnect(ServerConnectBeginEvent event) {
+        serverChecked = false;
+        targetServer = false;
         resetConnectionState(LoginState.WAITING_FOR_LOGIN);
     }
 
     @EventHandler
     private void onOpenScreen(OpenScreenEvent event) {
-        if (!isActive()) return;
+        if (!isActive() || !canRunOnCurrentServer()) return;
         if (state == LoginState.WAITING_FOR_JOIN_GUI && event.screen instanceof HandledScreen<?>) {
             setState(LoginState.WAITING_TO_CLICK_JOIN);
         }
@@ -210,7 +226,7 @@ public class AutoLogin extends Module {
 
     @EventHandler
     private void onText(AutoLoginTextEvent event) {
-        if (!isActive() || mc.isInSingleplayer()) return;
+        if (!isActive() || !canRunOnCurrentServer()) return;
         if (event.text == null || event.text.isBlank()) return;
 
         String text = event.text;
@@ -244,6 +260,11 @@ public class AutoLogin extends Module {
 
         if (mc.player == null || mc.world == null || mc.getNetworkHandler() == null) {
             resetConnectionState(LoginState.IDLE);
+            return;
+        }
+
+        if (!canRunOnCurrentServer()) {
+            if (state != LoginState.IDLE) resetConnectionState(LoginState.IDLE);
             return;
         }
 
@@ -505,6 +526,30 @@ public class AutoLogin extends Module {
     private boolean usesNativeSession() {
         AccountRecord account = config.getAccount(getCurrentPlayerName());
         return account == null || account.type == AccountType.Microsoft;
+    }
+
+    private boolean canRunOnCurrentServer() {
+        if (mc.isInSingleplayer()) return false;
+        if (!onlyOnXinServers.get()) return true;
+        if (serverChecked) return targetServer;
+        if (mc.getNetworkHandler() == null) return false;
+
+        serverChecked = true;
+        try {
+            targetServer = isXinServer(mc.getNetworkHandler().getConnection().getAddress());
+        } catch (Exception ignored) {
+            targetServer = false;
+        }
+        debug("Server detection: %s", targetServer ? "supported server" : "unsupported server");
+        return targetServer;
+    }
+
+    private boolean isXinServer(SocketAddress address) {
+        if (!(address instanceof InetSocketAddress inetAddress)) return false;
+
+        String host = inetAddress.getHostString().toLowerCase(Locale.ROOT);
+        if (host.endsWith(".")) host = host.substring(0, host.length() - 1);
+        return XIN_SERVERS.contains(host);
     }
 
     private void setState(LoginState newState) {
