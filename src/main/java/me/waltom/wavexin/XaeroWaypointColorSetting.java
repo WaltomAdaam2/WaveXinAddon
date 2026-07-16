@@ -16,8 +16,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Consumer;
 
-public class XaeroWaypointColorSetting extends Setting<BaseFinderXin.XaeroWaypointColor> {
-    private final BaseFinderXin.XaeroWaypointColor[] values;
+public class XaeroWaypointColorSetting extends Setting<BaseFinder.XaeroWaypointColor> {
+    private final BaseFinder.XaeroWaypointColor[] values;
     private final List<String> suggestions;
 
     static {
@@ -35,24 +35,24 @@ public class XaeroWaypointColorSetting extends Setting<BaseFinderXin.XaeroWaypoi
         });
     }
 
-    public XaeroWaypointColorSetting(String name, String description, BaseFinderXin.XaeroWaypointColor defaultValue, Consumer<BaseFinderXin.XaeroWaypointColor> onChanged, Consumer<Setting<BaseFinderXin.XaeroWaypointColor>> onModuleActivated, IVisible visible) {
+    public XaeroWaypointColorSetting(String name, String description, BaseFinder.XaeroWaypointColor defaultValue, Consumer<BaseFinder.XaeroWaypointColor> onChanged, Consumer<Setting<BaseFinder.XaeroWaypointColor>> onModuleActivated, IVisible visible) {
         super(name, description, defaultValue, onChanged, onModuleActivated, visible);
 
-        values = BaseFinderXin.XaeroWaypointColor.values();
+        values = BaseFinder.XaeroWaypointColor.values();
         suggestions = new ArrayList<>(values.length);
-        for (BaseFinderXin.XaeroWaypointColor value : values) suggestions.add(value.toString());
+        for (BaseFinder.XaeroWaypointColor value : values) suggestions.add(value.toString());
     }
 
     @Override
-    protected BaseFinderXin.XaeroWaypointColor parseImpl(String str) {
-        for (BaseFinderXin.XaeroWaypointColor value : values) {
+    protected BaseFinder.XaeroWaypointColor parseImpl(String str) {
+        for (BaseFinder.XaeroWaypointColor value : values) {
             if (str.equalsIgnoreCase(value.toString())) return value;
         }
         return null;
     }
 
     @Override
-    protected boolean isValueValid(BaseFinderXin.XaeroWaypointColor value) {
+    protected boolean isValueValid(BaseFinder.XaeroWaypointColor value) {
         return value != null;
     }
 
@@ -68,12 +68,12 @@ public class XaeroWaypointColorSetting extends Setting<BaseFinderXin.XaeroWaypoi
     }
 
     @Override
-    protected BaseFinderXin.XaeroWaypointColor load(NbtCompound tag) {
+    protected BaseFinder.XaeroWaypointColor load(NbtCompound tag) {
         parse(tag.getString("value", ""));
         return get();
     }
 
-    public static class Builder extends SettingBuilder<Builder, BaseFinderXin.XaeroWaypointColor, XaeroWaypointColorSetting> {
+    public static class Builder extends SettingBuilder<Builder, BaseFinder.XaeroWaypointColor, XaeroWaypointColorSetting> {
         public Builder() {
             super(null);
         }
@@ -84,8 +84,8 @@ public class XaeroWaypointColorSetting extends Setting<BaseFinderXin.XaeroWaypoi
         }
     }
 
-    private static class WColorDropdown extends WDropdown<BaseFinderXin.XaeroWaypointColor> implements MeteorWidget {
-        public WColorDropdown(BaseFinderXin.XaeroWaypointColor[] values, BaseFinderXin.XaeroWaypointColor value) {
+    private static class WColorDropdown extends WDropdown<BaseFinder.XaeroWaypointColor> implements MeteorWidget {
+        public WColorDropdown(BaseFinder.XaeroWaypointColor[] values, BaseFinder.XaeroWaypointColor value) {
             super(values, value);
         }
 

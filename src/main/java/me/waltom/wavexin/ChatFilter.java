@@ -10,7 +10,7 @@ import meteordevelopment.orbit.EventHandler;
 
 import java.util.regex.Pattern;
 
-public class ChatFilterXin extends WaveXinModule {
+public class ChatFilter extends WaveXinModule {
     private static final Pattern PRIVATE_MESSAGE_HEADER_PATTERN = Pattern.compile("(?im)(?:^|\\R)\\s*(?:(?:from|to)\\s+[^\\r\\n:\\uFF1A]{1,64}\\s*[:\\uFF1A]|\\u6765\\u81ea\\s*[^\\r\\n:\\uFF1A]{1,64}\\s*[:\\uFF1A]|[^\\r\\n:\\uFF1A]{1,64}\\s+(?:whispers|tells you)\\b)");
     private static final Pattern PRIVATE_MESSAGE_TAG_PATTERN = Pattern.compile("(?i)\\[[^\\]]*(?:private\\s+message|\\u79c1\\u804a\\u4fe1\\u606f|\\u79c1\\u4fe1|\\u5bc6\\u8bed|\\u6084\\u6084\\u8bdd)[^\\]]*\\]");
     private static final Pattern ENGLISH_DEATH_MESSAGE_PATTERN = Pattern.compile("(?i)\\b.+\\s(?:was slain by|was shot by|was blown up by|was killed by|died|fell(?: from| off)?|burned to death|went up in flames|drowned|hit the ground too hard|was squashed by|was struck by lightning|starved to death|withered away|froze to death|experienced kinetic energy)\\b.*");
@@ -40,12 +40,12 @@ public class ChatFilterXin extends WaveXinModule {
         .build()
     );
 
-    public ChatFilterXin() {
+    public ChatFilter() {
         super(WaveXinAddon.CATEGORY, "chat-filter", "Filters selected chat message types");
     }
 
     public static boolean shouldHideServerMessage(String message) {
-        ChatFilterXin module = Modules.get().get(ChatFilterXin.class);
+        ChatFilter module = Modules.get().get(ChatFilter.class);
         return module != null && module.isActive() && module.shouldHideMessage(message);
     }
 

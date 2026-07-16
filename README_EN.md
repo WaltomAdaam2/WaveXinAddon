@@ -10,13 +10,13 @@ WaveXinAddon is a Meteor Client addon designed for the **2b2t.xin** server. It p
 
 ## Features
 
-* ElytraFlyXin: Elytra flight helper
-* SimpleElytraFlyPath: Simple coordinate-based elytra path flight
+* Better Elytra Fly: Elytra flight helper
+* Simple Elytra Fly Path: Simple coordinate-based elytra path flight
 * ChickenNametags: Chicken entity nametags
 * SnifferNametags: Sniffer entity nametags
-* AutoLogin: 2b2t.xin auto login, auto join, and daily flower check-in
-* ChatFilterXin: Private message, public chat, and death message filtering
-* BaseFinderXin: Normal / spiral scanning, container recording, and optional Xaero waypoints
+* Auto Login: 2b2t.xin auto login, auto join, and daily flower check-in
+* Chat Filter: Private message, public chat, and death message filtering
+* Base Finder: Normal / spiral scanning, container recording, and optional Xaero waypoints
 
 ## Requirements
 
