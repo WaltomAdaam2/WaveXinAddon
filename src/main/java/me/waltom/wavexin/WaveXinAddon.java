@@ -1,6 +1,7 @@
 package me.waltom.wavexin;
 
 import com.mojang.logging.LogUtils;
+import meteordevelopment.meteorclient.MeteorClient;
 import meteordevelopment.meteorclient.utils.player.ChatUtils;
 import meteordevelopment.meteorclient.systems.modules.misc.BetterChat;
 import net.minecraft.text.Style;
@@ -23,6 +24,7 @@ public class WaveXinAddon extends MeteorAddon {
         LOG.info("Initializing WaveXinAddon.");
         ChatUtils.registerCustomPrefix(getPackage(), WaveXinAddon::createChatPrefix);
         BetterChat.registerCustomHead("[WaveXin]", CHAT_AVATAR);
+        MeteorClient.EVENT_BUS.subscribe(new WaveXinSettingsAutoSaver());
         Modules.get().add(new ElytraFlyXin());
         Modules.get().add(new SimpleElytraFlyPath());
         Modules.get().add(new ChickenNametags());

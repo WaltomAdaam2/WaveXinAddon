@@ -22,7 +22,7 @@
     "wavexin.mixins.json"
   ],
   "custom": {
-    "meteor-client:color": "225,25,25"
+    "meteor-client:color": "163,140,111"
   },
   "depends": {
     "java": ">=21",
