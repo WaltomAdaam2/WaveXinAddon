@@ -25,6 +25,7 @@ import meteordevelopment.meteorclient.renderer.ShapeMode;
 import meteordevelopment.meteorclient.settings.*;
 import meteordevelopment.meteorclient.utils.render.color.SettingColor;
 import meteordevelopment.orbit.EventHandler;
+import meteordevelopment.orbit.EventPriority;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Box;
 import net.minecraft.util.math.ChunkPos;
@@ -97,6 +98,7 @@ public class BaseFinderXin extends WaveXinModule {
     private final SettingGroup sgScanMode = settings.createGroup("Scan Mode");
     private final SettingGroup sgNormalScan = settings.createGroup("Normal Scan");
     private final SettingGroup sgSpiralScan = settings.createGroup("Spiral Scan");
+    private final SettingGroup sgSpiralRender = settings.createGroup("Spiral Render");
     private final SettingGroup sgContainerRecording = settings.createGroup("Container Recording");
     private final SettingGroup sgRender = settings.createGroup("Render");
     private final SettingGroup sgRestart = settings.createGroup("Restart");
@@ -124,6 +126,7 @@ public class BaseFinderXin extends WaveXinModule {
     private float spiralTargetYaw;
     private boolean spiralRotating;
     private boolean spiralNeedsInitialRotation;
+    private ScanMethod activeScanMethod;
     private final Set<Long> recordedContainerChunks = new HashSet<>();
     private final List<BlockPos> createdWaypointPositions = new ArrayList<>();
     private int nextWaypointNumber = 1;
@@ -132,6 +135,7 @@ public class BaseFinderXin extends WaveXinModule {
         .name("Scan Method")
         .description("Selects the scan route and its settings.")
         .defaultValue(ScanMethod.NORMAL)
+        .onChanged(this::stopScanForMethodChange)
         .build()
     );
 
@@ -176,6 +180,80 @@ public class BaseFinderXin extends WaveXinModule {
         .description("Locks the view to the current spiral direction.")
         .defaultValue(true)
         .visible(this::isSpiralScan)
+        .build()
+    );
+
+    private final Setting<Boolean> spiralAutoWalk = sgSpiralScan.add(new BoolSetting.Builder()
+        .name("Auto Walk")
+        .description("Automatically holds forward while Spiral Scan is active.")
+        .defaultValue(true)
+        .visible(this::isSpiralScan)
+        .build()
+    );
+
+    private final Setting<Boolean> spiralSprint = sgSpiralScan.add(new BoolSetting.Builder()
+        .name("Sprint")
+        .description("Sprints while Spiral Scan auto walk is active.")
+        .defaultValue(true)
+        .visible(() -> isSpiralScan() && spiralAutoWalk.get())
+        .build()
+    );
+
+    private final Setting<Boolean> spiralPauseOnScreen = sgSpiralScan.add(new BoolSetting.Builder()
+        .name("Pause On Screen")
+        .description("Releases movement controls while a screen is open.")
+        .defaultValue(true)
+        .visible(this::isSpiralScan)
+        .build()
+    );
+
+    private final Setting<Boolean> spiralRenderRoute = sgSpiralRender.add(new BoolSetting.Builder()
+        .name("Render Route")
+        .description("Renders the current Spiral Scan route.")
+        .defaultValue(true)
+        .visible(this::isSpiralScan)
+        .build()
+    );
+
+    private final Setting<Integer> spiralRenderRange = sgSpiralRender.add(new IntSetting.Builder()
+        .name("Render Range")
+        .description("How many route markers to render toward the target.")
+        .defaultValue(64)
+        .min(16)
+        .sliderRange(16, 256)
+        .visible(() -> isSpiralScan() && spiralRenderRoute.get())
+        .build()
+    );
+
+    private final Setting<Double> spiralRenderHeight = sgSpiralRender.add(new DoubleSetting.Builder()
+        .name("Render Height")
+        .description("Render height offset from the player's block Y.")
+        .defaultValue(0.02)
+        .visible(() -> isSpiralScan() && spiralRenderRoute.get())
+        .build()
+    );
+
+    private final Setting<ShapeMode> spiralShapeMode = sgSpiralRender.add(new EnumSetting.Builder<ShapeMode>()
+        .name("Shape Mode")
+        .description("Rendered route shape mode.")
+        .defaultValue(ShapeMode.Both)
+        .visible(() -> isSpiralScan() && spiralRenderRoute.get())
+        .build()
+    );
+
+    private final Setting<SettingColor> spiralRouteSideColor = sgSpiralRender.add(new ColorSetting.Builder()
+        .name("Route Side Color")
+        .description("Route marker side color.")
+        .defaultValue(new SettingColor(0, 180, 255, 35))
+        .visible(() -> isSpiralScan() && spiralRenderRoute.get())
+        .build()
+    );
+
+    private final Setting<SettingColor> spiralRouteLineColor = sgSpiralRender.add(new ColorSetting.Builder()
+        .name("Route Line Color")
+        .description("Route marker line color.")
+        .defaultValue(new SettingColor(0, 220, 255, 180))
+        .visible(() -> isSpiralScan() && spiralRenderRoute.get())
         .build()
     );
 
@@ -474,12 +552,14 @@ private final Setting<String> xaeroWaypointPrefix = sgXaeroWaypoints.add(new Str
     public void onActivate() {
         if (mc.player == null)
             return;
+        activeScanMethod = scanMethod.get();
         setScanForwardKey(false);
         recordedContainerChunks.clear();
         createdWaypointPositions.clear();
         nextWaypointNumber = 1;
         validateXaeroWaypointSetting();
-        if (scanMethod.get() == ScanMethod.SPIRAL) { startSpiralScan(); return; }
+        if (activeScanMethod == ScanMethod.SPIRAL) { startSpiralScan(); return; }
+        turnDelayTimer = 0;
 
         // 检查是否Resume Previous Scan,加载参数
         if (lastBegin.get()) {
@@ -627,7 +707,12 @@ private final Setting<String> xaeroWaypointPrefix = sgXaeroWaypoints.add(new Str
 
     @EventHandler
     private void onTick(TickEvent.Pre event) {
-        if (scanMethod.get() == ScanMethod.SPIRAL) { runSpiralScan(); return; }
+        if (activeScanMethod == ScanMethod.SPIRAL) return;
+
+        if (activeScanMethod == null) {
+            setScanForwardKey(false);
+            return;
+        }
         if (mc.player == null || mc.world == null) {
             setScanForwardKey(false);
             return;
@@ -744,8 +829,12 @@ private final Setting<String> xaeroWaypointPrefix = sgXaeroWaypoints.add(new Str
     @Override
     public void onDeactivate() {
         setScanForwardKey(false);
-        if (isSpiralScan()) {
+        ScanMethod stoppedScanMethod = activeScanMethod;
+        activeScanMethod = null;
+
+        if (stoppedScanMethod == ScanMethod.SPIRAL) {
             saveSpiralProgress();
+            clearSpiralState();
             return;
         }
 
@@ -776,6 +865,15 @@ private final Setting<String> xaeroWaypointPrefix = sgXaeroWaypoints.add(new Str
         originChunk = null;
         targetChunk = null;
         currentPath = null;
+        turnDelayTimer = 0;
+        activeScanMethod = null;
+    }
+
+    private void stopScanForMethodChange(ScanMethod ignored) {
+        if (!isActive() || activeScanMethod == null) return;
+
+        info("Scan method changed. Current scan stopped.");
+        toggle();
     }
 
     private void setScanForwardKey(boolean pressed) {
@@ -1085,6 +1183,10 @@ private final Setting<String> xaeroWaypointPrefix = sgXaeroWaypoints.add(new Str
         }
 
         setScanForwardKey(false);
+        if (spiralPauseOnScreen.get() && mc.currentScreen != null) {
+            return;
+        }
+
         ChunkPos playerChunk = mc.player.getChunkPos();
         recordContainerChunkIfNeeded(playerChunk);
 
@@ -1101,15 +1203,17 @@ private final Setting<String> xaeroWaypointPrefix = sgXaeroWaypoints.add(new Str
 
         if (spiralRotating) {
             smoothSpiralRotation();
-            if (!spiralLockView.get()) return;
+            if (spiralRotating) return;
         }
 
         if (spiralLockView.get() && !spiralRotating && !spiralNeedsInitialRotation) {
             applySpiralRotation(spiralDirection.yaw);
         }
 
-        if (!hasReachedSpiralTarget(playerChunk)) return;
+        handleSpiralAutoWalk();
 
+
+        if (!hasReachedSpiralTarget(playerChunk)) return;
         boolean smoothRotation = advanceSpiralDirection();
         updateSpiralTarget();
         if (smoothRotation) {
@@ -1120,6 +1224,16 @@ private final Setting<String> xaeroWaypointPrefix = sgXaeroWaypoints.add(new Str
         if (spiralDebug.get()) {
             info("Spiral direction: %s. Next target: (%d, %d).", spiralDirection, spiralTargetChunk.x, spiralTargetChunk.z);
         }
+    }
+
+    private void handleSpiralAutoWalk() {
+        if (!spiralAutoWalk.get()) {
+            setScanForwardKey(false);
+            return;
+        }
+
+        setScanForwardKey(true);
+        if (spiralSprint.get()) mc.player.setSprinting(true);
     }
 
     private boolean hasReachedSpiralTarget(ChunkPos currentChunk) {
@@ -1206,6 +1320,7 @@ private final Setting<String> xaeroWaypointPrefix = sgXaeroWaypoints.add(new Str
         if (Math.abs(difference) < rotationSpeed) {
             applySpiralRotation(spiralTargetYaw);
             spiralRotating = false;
+            if (spiralDebug.get()) info("Spiral rotation complete.");
         } else {
             applySpiralRotation(currentYaw + Math.signum(difference) * rotationSpeed);
         }
@@ -1231,9 +1346,29 @@ private final Setting<String> xaeroWaypointPrefix = sgXaeroWaypoints.add(new Str
         ));
     }
 
+    private void clearSpiralState() {
+        spiralStartChunk = null;
+        spiralTargetChunk = null;
+        spiralSegments = 0;
+        spiralStepsInCurrentLength = 0;
+        spiralStepLength = 1;
+        spiralRotating = false;
+        spiralNeedsInitialRotation = false;
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST)
+    private void onSpiralTick(TickEvent.Pre event) {
+        if (activeScanMethod == ScanMethod.SPIRAL) runSpiralScan();
+    }
+
     @EventHandler
     private void onRender(Render3DEvent event) {
-        if (mc.player == null || isSpiralScan()) return;
+        if (mc.player == null) return;
+        if (activeScanMethod == ScanMethod.SPIRAL) {
+            renderSpiralRoute(event);
+            return;
+        }
+
 
         BlockPos playerPos = new BlockPos(mc.player.getBlockX(), renderHeight.get(), mc.player.getBlockZ());
         double renderDistanceBlocks = renderDistance.get() * 16.0;
@@ -1271,6 +1406,38 @@ private final Setting<String> xaeroWaypointPrefix = sgXaeroWaypoints.add(new Str
     }
 
     // 渲染单个区块的方法
+    private void renderSpiralRoute(Render3DEvent event) {
+        if (!spiralRenderRoute.get() || mc.world == null || spiralStartChunk == null || spiralTargetChunk == null) return;
+
+        ChunkPos playerChunk = mc.player.getChunkPos();
+        int markers = Math.max(1, spiralRenderRange.get() / 16);
+        int maximumMarkers = Math.min(markers, Math.max(1, spiralStepLength * spiralChunkStep.get()));
+        double y = Math.floor(mc.player.getY()) + spiralRenderHeight.get();
+
+        for (int marker = 0; marker <= maximumMarkers; marker++) {
+            int chunkX = playerChunk.x + spiralDirection.dx * marker;
+            int chunkZ = playerChunk.z + spiralDirection.dz * marker;
+            if (hasPassedSpiralRenderTarget(chunkX, chunkZ)) break;
+
+            double minX = chunkX * 16.0;
+            double minZ = chunkZ * 16.0;
+            event.renderer.box(
+                minX, y, minZ,
+                minX + 16.0, y + 0.05, minZ + 16.0,
+                spiralRouteSideColor.get(), spiralRouteLineColor.get(), spiralShapeMode.get(), 0
+            );
+        }
+    }
+
+    private boolean hasPassedSpiralRenderTarget(int chunkX, int chunkZ) {
+        return switch (spiralDirection) {
+            case EAST -> chunkX > spiralTargetChunk.x;
+            case WEST -> chunkX < spiralTargetChunk.x;
+            case NORTH -> chunkZ < spiralTargetChunk.z;
+            case SOUTH -> chunkZ > spiralTargetChunk.z;
+        };
+    }
+
     private void renderScanChunk(ChunkPos chunk, SettingColor sideColor, SettingColor lineColor, Render3DEvent event) {
         Box box = new Box(
                 new Vec3d(chunk.getStartX(), renderHeight.get(), chunk.getStartZ()),
@@ -1346,6 +1513,12 @@ private final Setting<String> xaeroWaypointPrefix = sgXaeroWaypoints.add(new Str
         Vec3d currentVel = mc.player.getVelocity();
         Vec3d newVel = new Vec3d(currentVel.x, currentVel.y, f);
         mc.player.setVelocity(newVel);
+    }
+
+    @Override
+    public String getInfoString() {
+        if (activeScanMethod != ScanMethod.SPIRAL) return null;
+        return spiralSegments + " | " + spiralDirection.name();
     }
 
     public enum SweepRoute {
