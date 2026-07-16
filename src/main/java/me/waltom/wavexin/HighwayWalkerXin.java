@@ -11,14 +11,14 @@ import meteordevelopment.meteorclient.settings.EnumSetting;
 import meteordevelopment.meteorclient.settings.IntSetting;
 import meteordevelopment.meteorclient.settings.Setting;
 import meteordevelopment.meteorclient.settings.SettingGroup;
-import meteordevelopment.meteorclient.systems.modules.Module;
+
 import meteordevelopment.meteorclient.utils.render.color.SettingColor;
 import meteordevelopment.orbit.EventHandler;
 import net.minecraft.util.math.MathHelper;
 
 import java.util.Locale;
 
-public class HighwayWalkerXin extends Module {
+public class HighwayWalkerXin extends WaveXinModule {
     private final SettingGroup sgGeneral = settings.getDefaultGroup();
     private final SettingGroup sgRender = settings.createGroup("Render");
 
@@ -234,7 +234,7 @@ public class HighwayWalkerXin extends Module {
     }
 
     @EventHandler
-    private void onRender(Render3DEvent event) {
+    private void handleWaveRender(Render3DEvent event) {
         if (!renderRoute.get() || mc.player == null || mc.world == null) return;
 
         double yaw = getTargetYaw();

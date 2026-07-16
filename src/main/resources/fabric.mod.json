@@ -4,6 +4,10 @@
   "version": "${version}",
   "name": "WaveXinAddon",
   "description": "Meteor Addon for 2b2t.xin.",
+  "license": "GPL-3.0-only",
+  "contact": {
+    "sources": "https://github.com/WaltomAdaam2/WaveXinAddon"
+  },
   "authors": [
     "WaltomAdaam"
   ],
@@ -18,7 +22,7 @@
     "wavexin.mixins.json"
   ],
   "custom": {
-    "meteor-client:color": "225,25,25"
+    "meteor-client:color": "163,140,111"
   },
   "depends": {
     "java": ">=21",

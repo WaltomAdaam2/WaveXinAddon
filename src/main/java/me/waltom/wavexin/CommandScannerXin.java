@@ -12,7 +12,7 @@ import meteordevelopment.meteorclient.settings.BoolSetting;
 import meteordevelopment.meteorclient.settings.IntSetting;
 import meteordevelopment.meteorclient.settings.Setting;
 import meteordevelopment.meteorclient.settings.SettingGroup;
-import meteordevelopment.meteorclient.systems.modules.Module;
+
 import meteordevelopment.meteorclient.utils.player.ChatUtils;
 import meteordevelopment.orbit.EventHandler;
 import net.minecraft.client.MinecraftClient;
@@ -36,7 +36,7 @@ import java.util.Set;
 import java.util.TreeSet;
 
 // Internal backend only. It is intentionally not registered in WaveXinAddon's module list.
-final class CommandScannerXin extends Module {
+final class CommandScannerXin extends WaveXinModule {
     private static final MinecraftClient mc = MinecraftClient.getInstance();
     private static final String LETTERS = "abcdefghijklmnopqrstuvwxyz";
     private static final String NUMBERS = "0123456789";

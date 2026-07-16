@@ -6,7 +6,7 @@ import meteordevelopment.meteorclient.renderer.Renderer2D;
 import meteordevelopment.meteorclient.renderer.text.TextRenderer;
 import meteordevelopment.meteorclient.settings.*;
 import meteordevelopment.meteorclient.systems.config.Config;
-import meteordevelopment.meteorclient.systems.modules.Module;
+
 import meteordevelopment.meteorclient.utils.Utils;
 import meteordevelopment.meteorclient.utils.player.PlayerUtils;
 import meteordevelopment.meteorclient.utils.render.NametagUtils;
@@ -21,7 +21,7 @@ import org.joml.Vector3d;
 
 import java.util.*;
 
-public class ChickenNametags extends Module {
+public class ChickenNametags extends WaveXinModule {
     private final SettingGroup sgGeneral = settings.getDefaultGroup();
     private final SettingGroup sgRender = settings.createGroup("Render");
 
@@ -120,7 +120,7 @@ public class ChickenNametags extends Module {
     }
 
     @EventHandler
-    private void onRender2D(Render2DEvent event) {
+    private void handleWaveRender2D(Render2DEvent event) {
         if (mc.player == null || mc.world == null) {
             chickenList.clear();
             return;
@@ -135,7 +135,7 @@ public class ChickenNametags extends Module {
             pos.add(0, getHeight(chicken), 0);
 
             if (NametagUtils.to2D(pos, scale.get())) {
-                renderChickenNametag(chicken, shadow);
+                renderChickenNameplate(chicken, shadow);
             }
         }
     }
@@ -144,7 +144,7 @@ public class ChickenNametags extends Module {
         return entity.getEyeHeight(entity.getPose()) + 0.5;
     }
 
-    private void renderChickenNametag(ChickenEntity chicken, boolean shadow) {
+    private void renderChickenNameplate(ChickenEntity chicken, boolean shadow) {
         TextRenderer text = TextRenderer.get();
         NametagUtils.begin(pos);
 
@@ -186,7 +186,7 @@ public class ChickenNametags extends Module {
         double widthHalf = width / 2;
 
         
-        drawBg(-widthHalf, -heightDown, width, heightDown);
+        drawNametagBackdrop(-widthHalf, -heightDown, width, heightDown);
 
         
         text.beginBig();
@@ -210,7 +210,7 @@ public class ChickenNametags extends Module {
         NametagUtils.end();
     }
 
-    private void drawBg(double x, double y, double width, double height) {
+    private void drawNametagBackdrop(double x, double y, double width, double height) {
         Renderer2D.COLOR.begin();
         Renderer2D.COLOR.quad(x - 1, y - 1, width + 2, height + 2, background.get());
         Renderer2D.COLOR.render();

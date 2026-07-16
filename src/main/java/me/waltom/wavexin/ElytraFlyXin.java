@@ -3,10 +3,14 @@ package me.waltom.wavexin;
 import meteordevelopment.meteorclient.events.world.TickEvent;
 import meteordevelopment.meteorclient.settings.BoolSetting;
 import meteordevelopment.meteorclient.settings.DoubleSetting;
+import meteordevelopment.meteorclient.settings.IntSetting;
 import meteordevelopment.meteorclient.settings.Setting;
 import meteordevelopment.meteorclient.settings.SettingGroup;
-import meteordevelopment.meteorclient.systems.modules.Module;
+
 import meteordevelopment.meteorclient.systems.modules.Modules;
+import meteordevelopment.meteorclient.systems.modules.misc.InventoryTweaks;
+import meteordevelopment.meteorclient.utils.player.FindItemResult;
+import meteordevelopment.meteorclient.utils.player.InvUtils;
 import meteordevelopment.orbit.EventHandler;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.network.ClientPlayerEntity;
@@ -20,10 +24,11 @@ import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec2f;
 import net.minecraft.util.math.Vec3d;
 
-public class ElytraFlyXin extends Module {
+public class ElytraFlyXin extends WaveXinModule {
     static MinecraftClient mc = MinecraftClient.getInstance();
 
     private final SettingGroup sgGeneral = settings.getDefaultGroup();
+    private final SettingGroup sgElytraReplace = settings.createGroup("Elytra Replace");
 
     public final Setting<Boolean> autoStop = sgGeneral.add(new BoolSetting.Builder()
         .name("Stop in Unloaded Chunks")
@@ -119,11 +124,65 @@ public class ElytraFlyXin extends Module {
         .defaultValue(false)
         .build()
     );
+    private static final int ELYTRA_MAX_DAMAGE = new ItemStack(Items.ELYTRA).getMaxDamage();
+
+    private final Setting<Boolean> elytraReplace = sgElytraReplace.add(new BoolSetting.Builder()
+        .name("Enabled")
+        .description("Automatically replaces damaged elytra")
+        .defaultValue(true)
+        .build()
+    );
+
+    private final Setting<Integer> replaceDurability = sgElytraReplace.add(new IntSetting.Builder()
+        .name("Durability Threshold")
+        .description("Elytra durability threshold for replacement")
+        .defaultValue(2)
+        .range(1, ELYTRA_MAX_DAMAGE - 1)
+        .sliderRange(1, ELYTRA_MAX_DAMAGE - 1)
+        .visible(elytraReplace::get)
+        .build()
+    );
+
+    private final Setting<Boolean> elytraReplaceChatFeedback = sgElytraReplace.add(new BoolSetting.Builder()
+        .name("Chat Feedback")
+        .description("Sends chat feedback when replacing elytra")
+        .defaultValue(true)
+        .visible(elytraReplace::get)
+        .build()
+    );
+
+    private final Setting<Boolean> onlyWhenFlying = sgElytraReplace.add(new BoolSetting.Builder()
+        .name("Only While Flying")
+        .description("Only replaces elytra while gliding")
+        .defaultValue(false)
+        .visible(elytraReplace::get)
+        .build()
+    );
+
+    private final Setting<Boolean> pauseInventoryTweaks = sgElytraReplace.add(new BoolSetting.Builder()
+        .name("InventoryTweaks Compatibility")
+        .description("Temporarily disables InventoryTweaks while replacing elytra")
+        .defaultValue(true)
+        .visible(elytraReplace::get)
+        .build()
+    );
+
+    private final Setting<Integer> reEnableDelay = sgElytraReplace.add(new IntSetting.Builder()
+        .name("Compatibility Delay")
+        .description("Delay before re-enabling InventoryTweaks after elytra replacement, in ticks")
+        .defaultValue(10)
+        .range(1, 60)
+        .sliderMax(60)
+        .visible(() -> elytraReplace.get() && pauseInventoryTweaks.get())
+        .build()
+    );
 
     private boolean hasElytra = false;
+    private boolean inventoryTweaksWasActive = false;
+    private int reEnableCountdown = 0;
 
     public ElytraFlyXin() {
-        super(WaveXinAddon.CATEGORY, "elytrafly-xin", "Xin elytra flight");
+        super(WaveXinAddon.CATEGORY, "better-elytra-fly", "Better Elytra Fly");
     }
 
     @Override
@@ -138,6 +197,8 @@ public class ElytraFlyXin extends Module {
     @Override
     public void onDeactivate() {
         hasElytra = false;
+        if (inventoryTweaksWasActive) restoreInventoryTweaks();
+        reEnableCountdown = 0;
         if (mc.player != null) {
             if (!mc.player.isCreative()) mc.player.getAbilities().allowFlying = false;
             mc.player.getAbilities().flying = false;
@@ -157,11 +218,26 @@ public class ElytraFlyXin extends Module {
         hasElytra = isUsableElytra(chestStack);
 
         if (autoStart.get() && hasElytra && !mc.player.isGliding()) {
-            recastElytra(mc.player);
+            requestElytraGlide(mc.player);
         }
     }
 
-    protected final Vec3d getRotationVector(float pitch, float yaw) {
+    @EventHandler
+    private void onElytraReplaceTick(TickEvent.Post event) {
+        if (!elytraReplace.get() || mc.player == null || mc.world == null) return;
+
+        if (reEnableCountdown > 0) {
+            reEnableCountdown--;
+            if (reEnableCountdown == 0 && inventoryTweaksWasActive) restoreInventoryTweaks();
+        }
+
+        ItemStack chestStack = mc.player.getEquippedStack(EquipmentSlot.CHEST);
+        if (chestStack.getItem() != Items.ELYTRA) return;
+
+        int remainingDurability = chestStack.getMaxDamage() - chestStack.getDamage();
+        performElytraReplacement(remainingDurability);
+    }
+    protected final Vec3d buildFlightDirectionVector(float pitch, float yaw) {
         float f = pitch * 0.017453292F;
         float g = -yaw * 0.017453292F;
         float h = MathHelper.cos(g);
@@ -171,19 +247,19 @@ public class ElytraFlyXin extends Module {
         return new Vec3d(i * j, -k, h * j);
     }
 
-    public final Vec3d getRotationVec(float tickDelta) {
-        return this.getRotationVector(-upPitch.get().floatValue(), mc.player.getYaw(tickDelta));
+    public final Vec3d getFlightDirectionVector(float tickDelta) {
+        return this.buildFlightDirectionVector(-upPitch.get().floatValue(), mc.player.getYaw(tickDelta));
     }
 
-    public static boolean recastElytra(ClientPlayerEntity player) {
-        if (checkConditions(player) && ignoreGround(player)) {
+    public static boolean requestElytraGlide(ClientPlayerEntity player) {
+        if (canStartElytraGlide(player) && beginGlidingIfSafe(player)) {
             player.networkHandler.sendPacket(new ClientCommandC2SPacket(player, ClientCommandC2SPacket.Mode.START_FALL_FLYING));
             return true;
         }
         return false;
     }
 
-    public static boolean checkConditions(ClientPlayerEntity player) {
+    public static boolean canStartElytraGlide(ClientPlayerEntity player) {
         ItemStack itemStack = player.getEquippedStack(EquipmentSlot.CHEST);
         return !player.getAbilities().flying
             && !player.hasVehicle()
@@ -192,7 +268,7 @@ public class ElytraFlyXin extends Module {
             && isUsableElytra(itemStack);
     }
 
-    private static boolean ignoreGround(ClientPlayerEntity player) {
+    private static boolean beginGlidingIfSafe(ClientPlayerEntity player) {
         if (!player.isTouchingWater() && !player.hasStatusEffect(StatusEffects.LEVITATION)) {
             ItemStack itemStack = player.getEquippedStack(EquipmentSlot.CHEST);
             if (isUsableElytra(itemStack)) {
@@ -203,7 +279,7 @@ public class ElytraFlyXin extends Module {
         return false;
     }
 
-    public static double[] directionSpeedKey(double speed) {
+    public static double[] calculateFlightVelocity(double speed) {
         if (mc.player == null) return new double[]{0, 0};
 
         Vec2f movementInput = mc.player.input.getMovementInput();
@@ -227,7 +303,7 @@ public class ElytraFlyXin extends Module {
     }
 
     @EventHandler
-    public void onPlayerMove(MoveEvent event) {
+    public void handleWavePlayerMove(MoveEvent event) {
         if (isSimpleElytraFlyPathActive() || !autoStop.get() || mc.player == null || mc.world == null || !mc.player.isGliding()) return;
 
         int chunkX = MathHelper.floor(mc.player.getX()) >> 4;
@@ -239,7 +315,7 @@ public class ElytraFlyXin extends Module {
     public void onMove(TravelEvent event) {
         if (isSimpleElytraFlyPathActive() || mc.player == null || mc.world == null || !hasElytra || !mc.player.isGliding() || event.isPost()) return;
 
-        Vec3d lookVec = getRotationVec(mc.getRenderTickCounter().getTickProgress(true));
+        Vec3d lookVec = getFlightDirectionVector(mc.getRenderTickCounter().getTickProgress(true));
         double lookDist = Math.sqrt(lookVec.x * lookVec.x + lookVec.z * lookVec.z);
         double motionDist = Math.sqrt(getX() * getX() + getZ() * getZ());
 
@@ -258,7 +334,7 @@ public class ElytraFlyXin extends Module {
                     setZ(getZ() - lookVec.z * rawUpSpeed / lookDist);
                 }
             } else {
-                double[] dir = directionSpeedKey(speed.get());
+                double[] dir = calculateFlightVelocity(speed.get());
                 setX(dir[0]);
                 setZ(dir[1]);
             }
@@ -270,7 +346,7 @@ public class ElytraFlyXin extends Module {
         }
 
         if (!mc.player.input.playerInput.jump()) {
-            double[] dir = directionSpeedKey(speed.get());
+            double[] dir = calculateFlightVelocity(speed.get());
             setX(dir[0]);
             setZ(dir[1]);
         }
@@ -318,6 +394,52 @@ public class ElytraFlyXin extends Module {
         mc.player.setVelocity(new Vec3d(currentVel.x, currentVel.y, f));
     }
 
+    private void performElytraReplacement(int remainingDurability) {
+        if (onlyWhenFlying.get() && !mc.player.isGliding()) return;
+        if (remainingDurability > replaceDurability.get()) return;
+
+        FindItemResult elytra = InvUtils.find(stack -> {
+            if (stack.getItem() != Items.ELYTRA) return false;
+            int stackDurability = stack.getMaxDamage() - stack.getDamage();
+            return stackDurability > replaceDurability.get();
+        });
+
+        if (!elytra.found()) {
+            if (elytraReplaceChatFeedback.get()) warning("No replacement elytra found with durability > %d", replaceDurability.get());
+            return;
+        }
+
+        if (pauseInventoryTweaks.get()) pauseInventoryTweaks();
+
+        InvUtils.move().from(elytra.slot()).toArmor(2);
+
+        if (elytraReplaceChatFeedback.get()) {
+            info("Replaced elytra (durability: %d -> %d)", remainingDurability,
+                mc.player.getEquippedStack(EquipmentSlot.CHEST).getMaxDamage() - mc.player.getEquippedStack(EquipmentSlot.CHEST).getDamage());
+        }
+
+        if (pauseInventoryTweaks.get() && inventoryTweaksWasActive) reEnableCountdown = reEnableDelay.get();
+    }
+
+    private void pauseInventoryTweaks() {
+        InventoryTweaks inventoryTweaks = Modules.get().get(InventoryTweaks.class);
+        if (inventoryTweaks != null && inventoryTweaks.isActive()) {
+            inventoryTweaksWasActive = true;
+            inventoryTweaks.toggle();
+            if (elytraReplaceChatFeedback.get()) info("Temporarily disabled InventoryTweaks");
+        } else {
+            inventoryTweaksWasActive = false;
+        }
+    }
+
+    private void restoreInventoryTweaks() {
+        InventoryTweaks inventoryTweaks = Modules.get().get(InventoryTweaks.class);
+        if (inventoryTweaks != null && !inventoryTweaks.isActive()) {
+            inventoryTweaks.toggle();
+            if (elytraReplaceChatFeedback.get()) info("Re-enabled InventoryTweaks");
+        }
+        inventoryTweaksWasActive = false;
+    }
     private boolean isSimpleElytraFlyPathActive() {
         SimpleElytraFlyPath simpleElytraFlyPath = Modules.get().get(SimpleElytraFlyPath.class);
         return simpleElytraFlyPath != null && simpleElytraFlyPath.isActive();
