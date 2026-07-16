@@ -2,7 +2,11 @@ package me.waltom.wavexin;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 import meteordevelopment.meteorclient.events.game.OpenScreenEvent;
+import meteordevelopment.meteorclient.events.game.ReceiveMessageEvent;
 import meteordevelopment.meteorclient.events.world.ServerConnectBeginEvent;
 import meteordevelopment.meteorclient.events.world.TickEvent;
 import meteordevelopment.meteorclient.gui.GuiTheme;
@@ -24,6 +28,8 @@ import net.minecraft.util.Hand;
 import net.minecraft.world.GameMode;
 
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.lang.ref.WeakReference;
 import java.net.InetSocketAddress;
 import java.net.SocketAddress;
@@ -41,6 +47,9 @@ import java.util.Map;
 import java.util.Set;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+import java.util.regex.PatternSyntaxException;
 import javax.crypto.Cipher;
 import javax.crypto.SecretKey;
 import javax.crypto.spec.GCMParameterSpec;
@@ -65,6 +74,7 @@ public class AutoLogin extends Module {
     private static final String JOIN_BUTTON_KEYWORDS = "join,game,\u52a0\u5165,\u6e38\u620f";
     private static final int COMPASS_HOTBAR_SLOT_FALLBACK = 2;
     private static final int JOIN_GUI_SLOT_FALLBACK = 4;
+    private static final int AUTO_ANSWER_DELAY_TICKS = 5;
 
     static {
         SettingsWidgetFactory.registerCustomFactory(ActionButtonSetting.class, theme -> (table, setting) -> {
@@ -96,6 +106,12 @@ public class AutoLogin extends Module {
         .name("Auto Login")
         .description("Automatically sends /l for the current player when login text is detected")
         .defaultValue(true)
+        .build()
+    );
+    public final Setting<Boolean> autoAnswer = sgGeneral.add(new BoolSetting.Builder()
+        .name("Auto Answer")
+        .description("Automatically answers 2b2t.xin quiz questions after a fixed 5-tick delay")
+        .defaultValue(false)
         .build()
     );
 
@@ -185,9 +201,13 @@ public class AutoLogin extends Module {
     private boolean serverChecked;
     private boolean targetServer;
     private String lastPlayerName = "";
+    private final Map<String, Pattern> questions = new HashMap<>();
+    private String pendingAnswer;
+    private int pendingAnswerTicks;
 
     public AutoLogin() {
         super(WaveXinAddon.CATEGORY, "auto-login", "Auto Login");
+        loadQuestions();
         syncAccountSettings();
     }
 
@@ -195,6 +215,9 @@ public class AutoLogin extends Module {
     public void onActivate() {
         config = AutoLoginConfig.load();
         resetConnectionState(LoginState.IDLE);
+        if (questions.isEmpty()) loadQuestions();
+        pendingAnswer = null;
+        pendingAnswerTicks = 0;
         syncAccountSettings();
         savedAccounts.refresh();
     }
@@ -202,6 +225,8 @@ public class AutoLogin extends Module {
     @Override
     public void onDeactivate() {
         resetConnectionState(LoginState.IDLE);
+        pendingAnswer = null;
+        pendingAnswerTicks = 0;
     }
 
     @Override
@@ -255,6 +280,25 @@ public class AutoLogin extends Module {
     }
 
     @EventHandler
+    private void onReceiveMessage(ReceiveMessageEvent event) {
+        if (!autoAnswer.get() || mc.player == null || mc.world == null || mc.getNetworkHandler() == null) return;
+        if (event.getMessage() == null) return;
+
+        String message = event.getMessage().getString();
+        for (Map.Entry<String, Pattern> entry : questions.entrySet()) {
+            String question = entry.getKey();
+            int questionIndex = message.indexOf(question);
+            if (questionIndex < 0) continue;
+
+            String options = message.substring(questionIndex + question.length()).trim();
+            Matcher matcher = entry.getValue().matcher(options);
+            if (!matcher.find() || matcher.groupCount() < 1) continue;
+
+            queueAnswer(matcher.group(1));
+            return;
+        }
+    }
+    @EventHandler
     private void onTick(TickEvent.Pre event) {
         if (!isActive()) return;
 
@@ -262,6 +306,8 @@ public class AutoLogin extends Module {
             resetConnectionState(LoginState.IDLE);
             return;
         }
+
+        sendPendingAnswer();
 
         if (!canRunOnCurrentServer()) {
             if (state != LoginState.IDLE) resetConnectionState(LoginState.IDLE);
@@ -634,6 +680,50 @@ public class AutoLogin extends Module {
         return text.contains("\u767b\u5f55\u6210\u529f") || text.contains("\u767b\u9646\u6210\u529f") || lower.contains("login successful") || lower.contains("logged in");
     }
 
+    private void sendPendingAnswer() {
+        if (pendingAnswer == null) return;
+
+        if (pendingAnswerTicks > 0) {
+            pendingAnswerTicks--;
+            return;
+        }
+
+        String answer = pendingAnswer;
+        pendingAnswer = null;
+        mc.getNetworkHandler().sendChatMessage(";" + answer);
+
+        if (chatFeedback.get()) info("Answered quiz with: %s", answer);
+    }
+
+    private void queueAnswer(String answer) {
+        if (pendingAnswer != null) return;
+
+        pendingAnswer = answer;
+        pendingAnswerTicks = AUTO_ANSWER_DELAY_TICKS;
+    }
+
+    private void loadQuestions() {
+        questions.clear();
+
+        try (InputStream stream = AutoLogin.class.getClassLoader().getResourceAsStream("assets/wavexin/questions.json")) {
+            if (stream == null) {
+                warning("Auto Answer questions.json was not found.");
+                return;
+            }
+
+            JsonObject json = JsonParser.parseReader(new InputStreamReader(stream, StandardCharsets.UTF_8)).getAsJsonObject();
+            for (Map.Entry<String, JsonElement> entry : json.entrySet()) {
+                try {
+                    questions.put(entry.getKey(), Pattern.compile(entry.getValue().getAsString()));
+                } catch (PatternSyntaxException ignored) {
+                }
+            }
+
+            if (chatFeedback.get()) info("Loaded %d quiz answers.", questions.size());
+        } catch (Exception e) {
+            warning("Failed to load quiz answers: %s", e.getMessage());
+        }
+    }
     private void syncAccountSettings() {
         String playerName = getCurrentPlayerName();
         lastPlayerName = playerName;

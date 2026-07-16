@@ -11,7 +11,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 @Mixin(value = PlayerEntity.class)
 public class MixinPlayerEntity implements Wrapper {
     @Inject(method = "travel", at = @At("HEAD"), cancellable = true)
-    private void onTravelPre(Vec3d movementInput, CallbackInfo ci) {
+    private void handleWaveTravelPre(Vec3d movementInput, CallbackInfo ci) {
         PlayerEntity player = (PlayerEntity) (Object) this;
         if (player != mc.player) return;
 
@@ -25,7 +25,7 @@ public class MixinPlayerEntity implements Wrapper {
     }
 
     @Inject(method = "travel", at = @At("RETURN"))
-    private void onTravelPost(Vec3d movementInput, CallbackInfo ci) {
+    private void handleWaveTravelPost(Vec3d movementInput, CallbackInfo ci) {
         PlayerEntity player = (PlayerEntity) (Object) this;
         if (player != mc.player) return;
 

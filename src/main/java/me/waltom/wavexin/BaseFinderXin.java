@@ -227,7 +227,7 @@ public class BaseFinderXin extends Module {
     private boolean needsInitialRotation = false; // 闁哄嫷鍨伴幆渚€妫侀埀顒傛啺娴ｇ鐏ュ┑顔碱儐濡棙娼浣哄ⅰ闁?
 
     public BaseFinderXin() {
-        super(WaveXinAddon.CATEGORY, "base-finder-xin", "Square spiral map scanner with automatic view rotation.");
+        super(WaveXinAddon.CATEGORY, "base-finder", "Square spiral map scanner with automatic view rotation.");
     }
 
     @Override
@@ -586,7 +586,7 @@ public class BaseFinderXin extends Module {
     }
 
     @EventHandler
-    private void onRender(Render3DEvent event) {
+    private void handleWaveRender(Render3DEvent event) {
         if (!renderRoute.get() || mc.player == null || mc.world == null || startPos == null)
             return;
 

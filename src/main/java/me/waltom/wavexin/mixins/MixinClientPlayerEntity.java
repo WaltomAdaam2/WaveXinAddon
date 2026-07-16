@@ -20,7 +20,7 @@ public abstract class MixinClientPlayerEntity extends AbstractClientPlayerEntity
     }
 
     @Inject(method = "move", at = @At("HEAD"), cancellable = true)
-    public void onMoveHook(MovementType movementType, Vec3d movement, CallbackInfo ci) {
+    public void handleWaveMoveHook(MovementType movementType, Vec3d movement, CallbackInfo ci) {
         MoveEvent event = new MoveEvent(movement.x, movement.y, movement.z);
         MeteorClient.EVENT_BUS.post(event);
 

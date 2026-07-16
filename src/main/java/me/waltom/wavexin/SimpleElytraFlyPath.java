@@ -163,13 +163,13 @@ public class SimpleElytraFlyPath extends Module {
     @Override
     public void onActivate() {
         
-        if (mc.player == null || mc.world == null || !checkElytra()) {
+        if (mc.player == null || mc.world == null || !hasWorkingElytra()) {
             toggle();
             return;
         }
 
         
-        if (!checkValidHeight()) {
+        if (!isSafeFlightHeight()) {
             ChatUtils.error("Recommended to use above each dimension height limit: Nether (Y > 128), Overworld (Y > 320), End (Y > 256)");
         }
 
@@ -178,7 +178,7 @@ public class SimpleElytraFlyPath extends Module {
         mc.player.getAbilities().flying = false;
 
         if (autoTakeoff.get() && !mc.player.isGliding()) {
-            recastElytra(mc.player);
+            requestElytraGlide(mc.player);
         }
 
         
@@ -206,7 +206,7 @@ public class SimpleElytraFlyPath extends Module {
 
 
     @EventHandler
-    public void onPlayerMove(MoveEvent event) {
+    public void handleWavePlayerMove(MoveEvent event) {
         if (mc.player == null || mc.world == null) return;
 
         
@@ -252,7 +252,7 @@ public class SimpleElytraFlyPath extends Module {
 
         
         if (autoTakeoff.get() && !mc.player.isGliding()) {
-            recastElytra(mc.player);
+            requestElytraGlide(mc.player);
         }
     }
 
@@ -264,7 +264,7 @@ public class SimpleElytraFlyPath extends Module {
     @EventHandler(priority = EventPriority.HIGHEST)
     public void onMove(TravelEvent event) {
         
-        if (mc.player == null || mc.world == null || !mc.player.isGliding() || !checkElytra() || event.isPost()) {
+        if (mc.player == null || mc.world == null || !mc.player.isGliding() || !hasWorkingElytra() || event.isPost()) {
             return;
         }
 
@@ -324,7 +324,7 @@ public class SimpleElytraFlyPath extends Module {
     
 
 
-    private boolean checkElytra() {
+    private boolean hasWorkingElytra() {
         
         return isUsableElytra(mc.player.getEquippedStack(EquipmentSlot.CHEST));
     }
@@ -344,7 +344,7 @@ public class SimpleElytraFlyPath extends Module {
 
 
 
-    private boolean checkValidHeight() {
+    private boolean isSafeFlightHeight() {
         if (mc.player == null || mc.world == null) return false;
 
         double playerY = mc.player.getY();
@@ -369,8 +369,8 @@ public class SimpleElytraFlyPath extends Module {
 
 
 
-    public static boolean recastElytra(ClientPlayerEntity player) {
-        if (checkConditions(player) && ignoreGround(player)) {
+    public static boolean requestElytraGlide(ClientPlayerEntity player) {
+        if (canStartElytraGlide(player) && beginGlidingIfSafe(player)) {
             
             player.networkHandler.sendPacket(new ClientCommandC2SPacket(player, ClientCommandC2SPacket.Mode.START_FALL_FLYING));
             return true;
@@ -382,7 +382,7 @@ public class SimpleElytraFlyPath extends Module {
 
 
 
-    public static boolean checkConditions(ClientPlayerEntity player) {
+    public static boolean canStartElytraGlide(ClientPlayerEntity player) {
         ItemStack itemStack = player.getEquippedStack(EquipmentSlot.CHEST);
         return (!player.getAbilities().flying &&    
             !player.hasVehicle() &&                 
@@ -395,7 +395,7 @@ public class SimpleElytraFlyPath extends Module {
 
 
 
-    private static boolean ignoreGround(ClientPlayerEntity player) {
+    private static boolean beginGlidingIfSafe(ClientPlayerEntity player) {
         if (!player.isTouchingWater() && !player.hasStatusEffect(StatusEffects.LEVITATION)) {
             ItemStack itemStack = player.getEquippedStack(EquipmentSlot.CHEST);
             if (isUsableElytra(itemStack)) {

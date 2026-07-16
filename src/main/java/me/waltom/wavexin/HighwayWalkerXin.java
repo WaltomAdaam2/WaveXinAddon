@@ -234,7 +234,7 @@ public class HighwayWalkerXin extends Module {
     }
 
     @EventHandler
-    private void onRender(Render3DEvent event) {
+    private void handleWaveRender(Render3DEvent event) {
         if (!renderRoute.get() || mc.player == null || mc.world == null) return;
 
         double yaw = getTargetYaw();

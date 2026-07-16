@@ -121,7 +121,7 @@ public class SnifferNametags extends Module {
     }
 
     @EventHandler
-    private void onRender2D(Render2DEvent event) {
+    private void handleWaveRender2D(Render2DEvent event) {
         if (mc.player == null || mc.world == null) {
             snifferList.clear();
             return;
@@ -190,7 +190,7 @@ public class SnifferNametags extends Module {
         double width = nameWidth + healthWidth + distanceWidth;
         double widthHalf = width / 2;
 
-        drawBg(-widthHalf, -heightDown, width, heightDown);
+        drawNametagBackdrop(-widthHalf, -heightDown, width, heightDown);
 
         text.beginBig();
         double hX = -widthHalf;
@@ -210,7 +210,7 @@ public class SnifferNametags extends Module {
         NametagUtils.end();
     }
 
-    private void drawBg(double x, double y, double width, double height) {
+    private void drawNametagBackdrop(double x, double y, double width, double height) {
         Renderer2D.COLOR.begin();
         Renderer2D.COLOR.quad(x - 1, y - 1, width + 2, height + 2, background.get());
         Renderer2D.COLOR.render();
