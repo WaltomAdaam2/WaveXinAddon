@@ -1,6 +1,7 @@
 package me.waltom.wavexin;
 
 import meteordevelopment.meteorclient.MeteorClient;
+import meteordevelopment.meteorclient.systems.modules.Modules;
 import meteordevelopment.meteorclient.utils.player.ChatUtils;
 import meteordevelopment.meteorclient.utils.render.color.Color;
 import meteordevelopment.meteorclient.utils.render.color.RainbowColors;
@@ -106,7 +107,6 @@ public class BaseFinderXin extends WaveXinModule {
     private ChunkPos targetChunk;
     private int currentCircle;
     private SweepRoute currentPath;
-    private boolean isBack;
     private int turnDelayTimer;
     private float targetYaw;
 
@@ -125,6 +125,9 @@ public class BaseFinderXin extends WaveXinModule {
     private ChunkPos spiralTargetChunk;
     private float spiralTargetYaw;
     private boolean spiralRotating;
+    private ChunkPos savedNormalScanChunk;
+    private int savedNormalScanCircle = -1;
+    private SweepRoute savedNormalScanPath;
     private boolean spiralNeedsInitialRotation;
     private ScanMethod activeScanMethod;
     private final Set<Long> recordedContainerChunks = new HashSet<>();
@@ -583,9 +586,14 @@ private final Setting<String> xaeroWaypointPrefix = sgXaeroWaypoints.add(new Str
         primeScanTargets();
 
         // 如果设置了Resume Previous Scan，设置目标区块 targetChunk
-        isBack = !lastBegin.get();
-        if (!isBack) {
-            targetChunk = new ChunkPos(lastChunkX.get(), lastChunkZ.get());
+        targetChunk = null;
+        savedNormalScanChunk = null;
+        savedNormalScanCircle = -1;
+        savedNormalScanPath = null;
+        if (lastBegin.get()) {
+            info("Resumed normal scan at ring %d, route %s.", currentCircle, currentPath);
+        } else {
+            info("Normal scan started at origin chunk (%d, %d).", originChunk.x, originChunk.z);
         }
     }
 
@@ -724,13 +732,7 @@ private final Setting<String> xaeroWaypointPrefix = sgXaeroWaypoints.add(new Str
         visitedChunks.add(playerChunk);
         recordContainerChunkIfNeeded(playerChunk);
 
-        if (!isBack) {
-            if (mc.player.getChunkPos().equals(targetChunk)) {
-                isBack = true;
-            }
-            setScanForwardKey(false);
-            return;
-        }
+        saveNormalScanProgress(false);
 
         if (currentCircle > circleLimit.get()) {
             setScanForwardKey(false);
@@ -742,7 +744,6 @@ private final Setting<String> xaeroWaypointPrefix = sgXaeroWaypoints.add(new Str
         if (currentPath == SweepRoute.NEXT_CIRCLE) {
             advanceSweepRoute();
             currentCircle++;
-            info("Scanning ring " + currentCircle + "...");
 
             int maxPreloadCircle = currentCircle + preloadCircles.get();
             if (maxPreloadCircle <= circleLimit.get()) {
@@ -778,7 +779,6 @@ private final Setting<String> xaeroWaypointPrefix = sgXaeroWaypoints.add(new Str
 
             if (turnDelayTimer == 1) {
                 advanceSweepRoute();
-                info("Finished ring " + currentCircle + ": " + currentPath);
             }
 
             turnDelayTimer--;
@@ -838,24 +838,18 @@ private final Setting<String> xaeroWaypointPrefix = sgXaeroWaypoints.add(new Str
             return;
         }
 
-        info("Scan progress can be reused next time:");
-        if (originChunk != null) {
-            info("Origin Chunk X: " + originChunk.x);
-            info("Origin Chunk Z: " + originChunk.z);
-        }
-        info("Ring: " + currentCircle);
-        info("Route: " + currentPath);
+        boolean scanCompleted = currentCircle > circleLimit.get();
+        saveNormalScanProgress(true);
 
-        // 保存进度信息
-        if (originChunk != null && mc.player != null) {
-            lastOriginX.set(originChunk.x);
-            lastOriginZ.set(originChunk.z);
-            lastChunkX.set(mc.player.getChunkPos().x);
-            lastChunkZ.set(mc.player.getChunkPos().z);
-            lastCircle.set(currentCircle);
-            lastPath.set(currentPath);
-        }
+        if (!scanCompleted) {
+            if (lastBegin.get() && mc.player != null) {
+                ChunkPos playerChunk = mc.player.getChunkPos();
+                info("Normal scan stopped. Saved checkpoint: (%d, %d), ring %d, route %s.", playerChunk.x, playerChunk.z, currentCircle, currentPath);
+            } else {
+                info("Normal scan stopped.");
 
+            }
+        }
         // 清空区块数据
         targetChunks.clear();
         visitedChunks.clear();
@@ -867,6 +861,29 @@ private final Setting<String> xaeroWaypointPrefix = sgXaeroWaypoints.add(new Str
         currentPath = null;
         turnDelayTimer = 0;
         activeScanMethod = null;
+    }
+
+    private void saveNormalScanProgress(boolean force) {
+        if (!lastBegin.get() || originChunk == null || currentPath == null || mc.player == null) return;
+
+        ChunkPos playerChunk = mc.player.getChunkPos();
+        if (!force && playerChunk.equals(savedNormalScanChunk)
+            && currentCircle == savedNormalScanCircle
+            && currentPath == savedNormalScanPath) {
+            return;
+        }
+
+        lastOriginX.set(originChunk.x);
+        lastOriginZ.set(originChunk.z);
+        lastChunkX.set(playerChunk.x);
+        lastChunkZ.set(playerChunk.z);
+        lastCircle.set(currentCircle);
+        lastPath.set(currentPath);
+
+        savedNormalScanChunk = playerChunk;
+        savedNormalScanCircle = currentCircle;
+        savedNormalScanPath = currentPath;
+        Modules.get().save();
     }
 
     private void stopScanForMethodChange(ScanMethod ignored) {
