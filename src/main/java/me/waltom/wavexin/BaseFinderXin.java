@@ -35,8 +35,26 @@ import java.util.HashSet;
 import java.util.Set;
 
 public class BaseFinderXin extends WaveXinModule {
+    public enum ScanMethod { SPIRAL("Spiral Scan"), NORMAL("Normal Scan"); private final String title; ScanMethod(String title) { this.title = title; } @Override public String toString() { return title; } }
     private static final Path CONTAINER_RECORD_PATH = MeteorClient.FOLDER.toPath().resolve("base-finder-xin").resolve("container-records.txt");
     private static final DateTimeFormatter RECORD_TIME_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+
+    public enum SpiralStartMode {
+        CURRENT("Current Position"),
+        RESUME("Resume Saved Progress"),
+        CALCULATE("Calculate from Origin");
+
+        private final String title;
+
+        SpiralStartMode(String title) {
+            this.title = title;
+        }
+
+        @Override
+        public String toString() {
+            return title;
+        }
+    }
 
     public enum XaeroWaypointColor {
         RANDOM("Random", -1, 170, 170, 170),
@@ -76,10 +94,12 @@ public class BaseFinderXin extends WaveXinModule {
             return title;
         }
     }
-    private final SettingGroup sgGeneral = this.settings.getDefaultGroup();
+    private final SettingGroup sgScanMode = settings.createGroup("Scan Mode");
+    private final SettingGroup sgNormalScan = settings.createGroup("Normal Scan");
+    private final SettingGroup sgSpiralScan = settings.createGroup("Spiral Scan");
+    private final SettingGroup sgContainerRecording = settings.createGroup("Container Recording");
     private final SettingGroup sgRender = settings.createGroup("Render");
     private final SettingGroup sgRestart = settings.createGroup("Restart");
-    private final SettingGroup sgXaeroWaypoints = settings.createGroup("Xaero Waypoints");
     private ChunkPos originChunk;
     private ChunkPos targetChunk;
     private int currentCircle;
@@ -95,63 +115,134 @@ public class BaseFinderXin extends WaveXinModule {
     private final Set<ChunkPos> visitedChunks = Collections.synchronizedSet(new HashSet<>());
     private final Set<ChunkPos> currentPathChunks = Collections.synchronizedSet(new HashSet<>());
 
+    private MapScanDirection spiralDirection = MapScanDirection.EAST;
+    private int spiralStepsInCurrentLength;
+    private int spiralStepLength = 1;
+    private int spiralSegments;
+    private ChunkPos spiralStartChunk;
+    private ChunkPos spiralTargetChunk;
+    private float spiralTargetYaw;
+    private boolean spiralRotating;
+    private boolean spiralNeedsInitialRotation;
     private final Set<Long> recordedContainerChunks = new HashSet<>();
     private final List<BlockPos> createdWaypointPositions = new ArrayList<>();
     private int nextWaypointNumber = 1;
 
+    private final Setting<ScanMethod> scanMethod = sgScanMode.add(new EnumSetting.Builder<ScanMethod>()
+        .name("Scan Method")
+        .description("Selects the scan route and its settings.")
+        .defaultValue(ScanMethod.NORMAL)
+        .build()
+    );
+
+    private final Setting<Integer> spiralChunkStep = sgSpiralScan.add(new IntSetting.Builder()
+        .name("Chunk Step")
+        .description("Chunks travelled on each spiral segment.")
+        .defaultValue(6)
+        .min(1)
+        .sliderRange(1, 32)
+        .visible(this::isSpiralScan)
+        .build()
+    );
+
+    private final Setting<Integer> spiralMaximumSegments = sgSpiralScan.add(new IntSetting.Builder()
+        .name("Maximum Segments")
+        .description("Stops after this many spiral segments. Set to 0 for no limit.")
+        .defaultValue(0)
+        .min(0)
+        .sliderRange(0, 10000)
+        .visible(this::isSpiralScan)
+        .build()
+    );
+
+    private final Setting<SpiralStartMode> spiralStartMode = sgSpiralScan.add(new EnumSetting.Builder<SpiralStartMode>()
+        .name("Start Mode")
+        .description("Starts at the current chunk, resumes saved progress, or calculates a route from spawn coordinates.")
+        .defaultValue(SpiralStartMode.CURRENT)
+        .visible(this::isSpiralScan)
+        .build()
+    );
+
+    private final Setting<Boolean> spiralDebug = sgSpiralScan.add(new BoolSetting.Builder()
+        .name("Debug Messages")
+        .description("Shows spiral route progress messages.")
+        .defaultValue(true)
+        .visible(this::isSpiralScan)
+        .build()
+    );
+
+    private final Setting<Boolean> spiralLockView = sgSpiralScan.add(new BoolSetting.Builder()
+        .name("Lock View")
+        .description("Locks the view to the current spiral direction.")
+        .defaultValue(true)
+        .visible(this::isSpiralScan)
+        .build()
+    );
+
     // 设置玩家当前世界的加载的区块范围
-    public final Setting<Integer> chunkLoadRadius = sgGeneral.add(new IntSetting.Builder()
-            .name("区块加载范围")
-            .description("当前世界加载的区块范围")
+    public final Setting<Integer> chunkLoadRadius = sgNormalScan.add(new IntSetting.Builder()
+            .name("Chunk Load Radius")
+            .description("Radius of chunks that must be loaded before continuing.")
             .defaultValue(5)
             .min(2)
             .max(10)
             .sliderMin(2)
             .sliderMax(10)
+            .visible(this::isNormalScan)
             .build());
 
     // 设置搜索圈数
-    public final Setting<Integer> circleLimit = sgGeneral.add(new IntSetting.Builder()
-            .name("搜索圈数限制")
-            .description("到达搜索圈数限制停止")
+    public final Setting<Integer> circleLimit = sgNormalScan.add(new IntSetting.Builder()
+            .name("Maximum Scan Rings")
+            .description("Stops after this many outward scan rings.")
             .defaultValue(50)
             .min(2)
             .max(Integer.MAX_VALUE)
             .sliderMin(2)
             .sliderMax(100)
+            .visible(this::isNormalScan)
             .build());
 
-    // 移动速度设置
-    private final Setting<Double> moveSpeed = sgGeneral.add(new DoubleSetting.Builder()
-            .name("移动速度")
-            .description("移动速度")
+    // Move Speed设置
+    private final Setting<Double> moveSpeed = sgNormalScan.add(new DoubleSetting.Builder()
+            .name("Move Speed")
+            .description("Forward movement speed while scanning.")
             .defaultValue(3.0)
             .min(0.01)
             .max(3.0)
             .sliderMin(0.01)
             .sliderMax(3.0)
+            .visible(this::isNormalScan)
             .build());
 
-    // 转向延迟tick
-    private final Setting<Integer> turnDelay = sgGeneral.add(new IntSetting.Builder()
-            .name("转向延迟")
-            .description("转向的延迟确保区块加载")
+    // Turn Delaytick
+    private final Setting<Boolean> lockView = sgNormalScan.add(new BoolSetting.Builder()
+            .name("Lock View")
+            .description("Turns the camera toward the current scan target.")
+            .defaultValue(false)
+            .visible(this::isNormalScan)
+            .build());
+    private final Setting<Integer> turnDelay = sgNormalScan.add(new IntSetting.Builder()
+            .name("Turn Delay")
+            .description("Ticks to wait after reaching a scan target.")
             .defaultValue(40)
             .min(1)
             .max(100)
             .sliderMin(1)
             .sliderMax(100)
+            .visible(this::isNormalScan)
             .build());
 
     // 修复卡顿
-    private final Setting<Boolean> waitChunkLoad = sgGeneral.add(new BoolSetting.Builder()
-            .name("等待区块加载")
-            .description("等待区块加载确保搜索到的区块加载")
+    private final Setting<Boolean> waitChunkLoad = sgNormalScan.add(new BoolSetting.Builder()
+            .name("Wait for Chunk Loading")
+            .description("Stops movement until the required chunks have loaded.")
             .defaultValue(true)
+            .visible(this::isNormalScan)
             .build());
 
-    // 是否从上次开始
-    private final Setting<Integer> containerThreshold = sgGeneral.add(new IntSetting.Builder()
+    // 是否Resume Previous Scan
+    private final Setting<Integer> containerThreshold = sgContainerRecording.add(new IntSetting.Builder()
         .name("Container Threshold")
         .description("Records the current chunk when it contains at least this many selected containers.")
         .defaultValue(10)
@@ -161,12 +252,14 @@ public class BaseFinderXin extends WaveXinModule {
         .build()
     );
 
-    private final Setting<List<BlockEntityType<?>>> containerBlocks = sgGeneral.add(new StorageBlockListSetting.Builder()
+    private final Setting<List<BlockEntityType<?>>> containerBlocks = sgContainerRecording.add(new StorageBlockListSetting.Builder()
         .name("Container Blocks")
         .description("Container block entity types to count, matching Meteor Storage ESP defaults.")
         .defaultValue(StorageBlockListSetting.STORAGE_BLOCKS)
         .build()
     );
+
+    private final SettingGroup sgXaeroWaypoints = settings.createGroup("Xaero Waypoints");
 
     private final Setting<Boolean> xaeroWaypoints = sgXaeroWaypoints.add(new BoolSetting.Builder()
         .name("Xaero Waypoints")
@@ -202,16 +295,17 @@ private final Setting<String> xaeroWaypointPrefix = sgXaeroWaypoints.add(new Str
 
 
     private final Setting<Boolean> lastBegin = sgRestart.add(new BoolSetting.Builder()
-            .name("从上次开始")
-            .description("是否使用进度")
+            .name("Resume Previous Scan")
+            .description("Resumes from the saved scan progress.")
             .defaultValue(false)
+            .visible(this::isNormalScan)
             .build());
 
     // 上次的圈数
     private final Setting<Integer> lastCircle = sgRestart.add(new IntSetting.Builder()
-            .name("上次圈数")
-            .description("上次圈数")
-            .visible(lastBegin::get)
+            .name("Previous Ring")
+            .description("Saved ring number for resuming.")
+            .visible(() -> isNormalScan() && lastBegin.get())
             .defaultValue(0)
             .min(0)
             .max(1000)
@@ -219,11 +313,11 @@ private final Setting<String> xaeroWaypointPrefix = sgXaeroWaypoints.add(new Str
             .sliderMax(100)
             .build());
 
-    // 上次暂停的区块X
+    // Previous Chunk X
     private final Setting<Integer> lastChunkX = sgRestart.add(new IntSetting.Builder()
-            .name("上次暂停的区块X")
-            .description("上次暂停的区块X")
-            .visible(lastBegin::get)
+            .name("Previous Chunk X")
+            .description("Saved chunk X position for resuming.")
+            .visible(() -> isNormalScan() && lastBegin.get())
             .defaultValue(0)
             .min(Integer.MIN_VALUE)
             .max(Integer.MAX_VALUE)
@@ -231,11 +325,11 @@ private final Setting<String> xaeroWaypointPrefix = sgXaeroWaypoints.add(new Str
             .sliderMax(Integer.MAX_VALUE)
             .build());
 
-    // 上次暂停的区块Z
+    // Previous Chunk Z
     private final Setting<Integer> lastChunkZ = sgRestart.add(new IntSetting.Builder()
-            .name("上次暂停的区块Z")
-            .description("上次暂停的区块Z")
-            .visible(lastBegin::get)
+            .name("Previous Chunk Z")
+            .description("Saved chunk Z position for resuming.")
+            .visible(() -> isNormalScan() && lastBegin.get())
             .defaultValue(0)
             .min(Integer.MIN_VALUE)
             .max(Integer.MAX_VALUE)
@@ -245,17 +339,17 @@ private final Setting<String> xaeroWaypointPrefix = sgXaeroWaypoints.add(new Str
 
     // 上次到哪个方向了
     private final Setting<SweepRoute> lastPath = sgRestart.add(new EnumSetting.Builder<SweepRoute>()
-            .name("上次的路径点")
-            .description("上次的路径点")
-            .visible(lastBegin::get)
+            .name("Previous Route")
+            .description("Saved route point for resuming.")
+            .visible(() -> isNormalScan() && lastBegin.get())
             .defaultValue(SweepRoute.NEXT_CIRCLE)
             .build());
 
-    // 上次开始的原点区块X
+    // Origin Chunk X
     private final Setting<Integer> lastOriginX = sgRestart.add(new IntSetting.Builder()
-            .name("上次开始的原点区块X")
-            .description("上次开始的原点区块X")
-            .visible(lastBegin::get)
+            .name("Origin Chunk X")
+            .description("Saved origin chunk X for resuming.")
+            .visible(() -> isNormalScan() && lastBegin.get())
             .defaultValue(0)
             .min(Integer.MIN_VALUE)
             .max(Integer.MAX_VALUE)
@@ -263,11 +357,11 @@ private final Setting<String> xaeroWaypointPrefix = sgXaeroWaypoints.add(new Str
             .sliderMax(Integer.MAX_VALUE)
             .build());
 
-    // 上次开始的原点区块Z
+    // Origin Chunk Z
     private final Setting<Integer> lastOriginZ = sgRestart.add(new IntSetting.Builder()
-            .name("上次开始的原点区块Z")
-            .description("上次开始的原点区块Z")
-            .visible(lastBegin::get)
+            .name("Origin Chunk Z")
+            .description("Saved origin chunk Z for resuming.")
+            .visible(() -> isNormalScan() && lastBegin.get())
             .defaultValue(0)
             .min(Integer.MIN_VALUE)
             .max(Integer.MAX_VALUE)
@@ -275,107 +369,121 @@ private final Setting<String> xaeroWaypointPrefix = sgXaeroWaypoints.add(new Str
             .sliderMax(Integer.MAX_VALUE)
             .build());
 
-    // 渲染距离设置
+    // Render Distance设置
     public final Setting<Integer> renderDistance = sgRender.add(new IntSetting.Builder()
-            .name("渲染距离")
-            .description("渲染距离（区块）")
+            .name("Render Distance")
+            .description("Maximum route render distance in chunks.")
             .defaultValue(32)
             .min(6)
             .max(128)
             .sliderMin(6)
             .sliderMax(128)
+            .visible(this::isNormalScan)
             .build());
 
-    // 渲染高度设置
+    // Render Height设置
     public final Setting<Integer> renderHeight = sgRender.add(new IntSetting.Builder()
-            .name("渲染高度")
-            .description("渲染高度")
+            .name("Render Height")
+            .description("Route marker render height.")
             .defaultValue(0)
             .min(-64)
             .max(320)
             .sliderMin(-64)
             .sliderMax(320)
+            .visible(this::isNormalScan)
             .build());
 
     // 形状模式设置
     private final Setting<ShapeMode> shapeMode = sgRender.add(new EnumSetting.Builder<ShapeMode>()
-            .name("渲染模式")
-            .description("渲染形状模式")
+            .name("Shape Mode")
+            .description("Route rendering shape mode.")
             .defaultValue(ShapeMode.Both)
+            .visible(this::isNormalScan)
             .build());
 
-    // 预加载圈数设置
+    // Preload Rings设置
     private final Setting<Integer> preloadCircles = sgRender.add(new IntSetting.Builder()
-            .name("预加载圈数")
-            .description("预加载的圈数")
+            .name("Preload Rings")
+            .description("Number of scan rings to prepare ahead of time.")
             .defaultValue(3)
             .min(1)
             .max(10)
             .sliderMin(1)
             .sliderMax(10)
+            .visible(this::isNormalScan)
             .build());
 
     // 目标区块颜色设置
     private final Setting<SettingColor> targetChunksSideColor = sgRender.add(new ColorSetting.Builder()
-            .name("目标区块面颜色")
-            .description("目标区块面颜色")
+            .name("Target Chunk Side Color")
+            .description("Target chunk fill color.")
             .defaultValue(new SettingColor(255, 0, 0, 95))
-            .visible(() -> (shapeMode.get() == ShapeMode.Sides || shapeMode.get() == ShapeMode.Both))
+            .visible(() -> isNormalScan() && (shapeMode.get() == ShapeMode.Sides || shapeMode.get() == ShapeMode.Both))
             .build());
 
     private final Setting<SettingColor> targetChunksLineColor = sgRender.add(new ColorSetting.Builder()
-            .name("目标区块线颜色")
-            .description("目标区块线条颜色")
+            .name("Target Chunk Line Color")
+            .description("Target chunk outline color.")
             .defaultValue(new SettingColor(255, 0, 0, 205))
-            .visible(() -> (shapeMode.get() == ShapeMode.Lines || shapeMode.get() == ShapeMode.Both))
+            .visible(() -> isNormalScan() && (shapeMode.get() == ShapeMode.Lines || shapeMode.get() == ShapeMode.Both))
             .build());
 
     // 已访问区块颜色设置
     private final Setting<SettingColor> visitedChunksSideColor = sgRender.add(new ColorSetting.Builder()
-            .name("已访问区块面颜色")
-            .description("已访问区块面颜色")
+            .name("Visited Chunk Side Color")
+            .description("Visited chunk fill color.")
             .defaultValue(new SettingColor(0, 255, 0, 40))
-            .visible(() -> (shapeMode.get() == ShapeMode.Sides || shapeMode.get() == ShapeMode.Both))
+            .visible(() -> isNormalScan() && (shapeMode.get() == ShapeMode.Sides || shapeMode.get() == ShapeMode.Both))
             .build());
 
     private final Setting<SettingColor> visitedChunksLineColor = sgRender.add(new ColorSetting.Builder()
-            .name("已访问区块线颜色")
-            .description("已访问区块线颜色")
+            .name("Visited Chunk Line Color")
+            .description("Visited chunk outline color.")
             .defaultValue(new SettingColor(0, 255, 0, 80))
-            .visible(() -> (shapeMode.get() == ShapeMode.Lines || shapeMode.get() == ShapeMode.Both))
+            .visible(() -> isNormalScan() && (shapeMode.get() == ShapeMode.Lines || shapeMode.get() == ShapeMode.Both))
             .build());
 
     // 当前路径区块颜色设置
     private final Setting<SettingColor> currentPathSideColor = sgRender.add(new ColorSetting.Builder()
-            .name("当前路径区块面颜色")
-            .description("当前路径区块面颜色")
+            .name("Current Path Side Color")
+            .description("Current path chunk fill color.")
             .defaultValue(new SettingColor(255, 255, 0, 60))
-            .visible(() -> (shapeMode.get() == ShapeMode.Sides || shapeMode.get() == ShapeMode.Both))
+            .visible(() -> isNormalScan() && (shapeMode.get() == ShapeMode.Sides || shapeMode.get() == ShapeMode.Both))
             .build());
 
     private final Setting<SettingColor> currentPathLineColor = sgRender.add(new ColorSetting.Builder()
-            .name("当前路径区块线颜色")
-            .description("当前路径区块线颜色")
+            .name("Current Path Line Color")
+            .description("Current path chunk outline color.")
             .defaultValue(new SettingColor(255, 255, 0, 100))
-            .visible(() -> (shapeMode.get() == ShapeMode.Lines || shapeMode.get() == ShapeMode.Both))
+            .visible(() -> isNormalScan() && (shapeMode.get() == ShapeMode.Lines || shapeMode.get() == ShapeMode.Both))
             .build());
 
     public BaseFinderXin() {
         super(WaveXinAddon.CATEGORY, "base-finder", "Outward map scanner with chunk-loading pauses.");
     }
 
+    private boolean isNormalScan() {
+        return scanMethod.get() == ScanMethod.NORMAL;
+    }
+
+    private boolean isSpiralScan() {
+        return scanMethod.get() == ScanMethod.SPIRAL;
+    }
+
     @Override
     public void onActivate() {
         if (mc.player == null)
             return;
+        setScanForwardKey(false);
         recordedContainerChunks.clear();
         createdWaypointPositions.clear();
         nextWaypointNumber = 1;
         validateXaeroWaypointSetting();
+        if (scanMethod.get() == ScanMethod.SPIRAL) { startSpiralScan(); return; }
 
-        // 检查是否从上次开始,加载参数
+        // 检查是否Resume Previous Scan,加载参数
         if (lastBegin.get()) {
-            // 从上次开始,加载参数
+            // Resume Previous Scan,加载参数
             currentCircle = lastCircle.get();
             currentPath = lastPath.get();
             originChunk = new ChunkPos(lastOriginX.get(), lastOriginZ.get());
@@ -394,7 +502,7 @@ private final Setting<String> xaeroWaypointPrefix = sgXaeroWaypoints.add(new Str
         // 预先计算目标区块
         primeScanTargets();
 
-        // 如果设置了从上次开始，设置目标区块 targetChunk
+        // 如果设置了Resume Previous Scan，设置目标区块 targetChunk
         isBack = !lastBegin.get();
         if (!isBack) {
             targetChunk = new ChunkPos(lastChunkX.get(), lastChunkZ.get());
@@ -405,7 +513,7 @@ private final Setting<String> xaeroWaypointPrefix = sgXaeroWaypoints.add(new Str
     private void primeScanTargets() {
         targetChunks.clear();
 
-        // 预加载当前圈数+预加载圈数的区块
+        // 预加载当前圈数+Preload Rings的区块
         int maxPreloadCircle = Math.min(currentCircle + preloadCircles.get(), circleLimit.get());
         for (int circle = currentCircle; circle <= maxPreloadCircle; circle++) {
             appendRingTargets(circle);
@@ -519,6 +627,7 @@ private final Setting<String> xaeroWaypointPrefix = sgXaeroWaypoints.add(new Str
 
     @EventHandler
     private void onTick(TickEvent.Pre event) {
+        if (scanMethod.get() == ScanMethod.SPIRAL) { runSpiralScan(); return; }
         if (mc.player == null || mc.world == null) {
             setScanForwardKey(false);
             return;
@@ -540,7 +649,7 @@ private final Setting<String> xaeroWaypointPrefix = sgXaeroWaypoints.add(new Str
 
         if (currentCircle > circleLimit.get()) {
             setScanForwardKey(false);
-            info("搜索完成");
+            info("Scan complete.");
             toggle();
             return;
         }
@@ -548,7 +657,7 @@ private final Setting<String> xaeroWaypointPrefix = sgXaeroWaypoints.add(new Str
         if (currentPath == SweepRoute.NEXT_CIRCLE) {
             advanceSweepRoute();
             currentCircle++;
-            info("前往第" + currentCircle + "圈...");
+            info("Scanning ring " + currentCircle + "...");
 
             int maxPreloadCircle = currentCircle + preloadCircles.get();
             if (maxPreloadCircle <= circleLimit.get()) {
@@ -584,7 +693,7 @@ private final Setting<String> xaeroWaypointPrefix = sgXaeroWaypoints.add(new Str
 
             if (turnDelayTimer == 1) {
                 advanceSweepRoute();
-                info("已完成第" + currentCircle + "圈的 " + currentPath);
+                info("Finished ring " + currentCircle + ": " + currentPath);
             }
 
             turnDelayTimer--;
@@ -609,7 +718,7 @@ private final Setting<String> xaeroWaypointPrefix = sgXaeroWaypoints.add(new Str
         }
 
         targetYaw = (float) Math.toDegrees(Math.atan2(-deltaX, deltaZ));
-        mc.player.setYaw(targetYaw);
+        if (lockView.get()) mc.player.setYaw(targetYaw);
 
         if (waitChunkLoad.get()) {
             if (!areNeighborChunksLoaded(targetYaw)) {
@@ -635,13 +744,18 @@ private final Setting<String> xaeroWaypointPrefix = sgXaeroWaypoints.add(new Str
     @Override
     public void onDeactivate() {
         setScanForwardKey(false);
-        info("你可以保存此信息以便于下次重新开始: ");
-        if (originChunk != null) {
-            info("originX（起始区块X）: " + originChunk.x);
-            info("originZ（起始区块Z）: " + originChunk.z);
+        if (isSpiralScan()) {
+            saveSpiralProgress();
+            return;
         }
-        info("circle（圈数）: " + currentCircle);
-        info("currentPath（圈进度）: " + currentPath);
+
+        info("Scan progress can be reused next time:");
+        if (originChunk != null) {
+            info("Origin Chunk X: " + originChunk.x);
+            info("Origin Chunk Z: " + originChunk.z);
+        }
+        info("Ring: " + currentCircle);
+        info("Route: " + currentPath);
 
         // 保存进度信息
         if (originChunk != null && mc.player != null) {
@@ -855,14 +969,271 @@ private final Setting<String> xaeroWaypointPrefix = sgXaeroWaypoints.add(new Str
     }
 
 
+    private void startSpiralScan() {
+        if (mc.player == null) return;
+
+        switch (spiralStartMode.get()) {
+            case CURRENT -> startNewSpiralScan(mc.player.getChunkPos());
+            case RESUME -> resumeSpiralScan();
+            case CALCULATE -> calculateSpiralScanFromOrigin();
+        }
+    }
+
+    private void startNewSpiralScan(ChunkPos startChunk) {
+        spiralStartChunk = startChunk;
+        spiralDirection = MapScanDirection.EAST;
+        spiralStepsInCurrentLength = 0;
+        spiralStepLength = 1;
+        spiralSegments = 0;
+        spiralRotating = false;
+        spiralNeedsInitialRotation = false;
+        updateSpiralTarget();
+        applySpiralRotation(spiralDirection.yaw);
+        saveSpiralProgress();
+
+        if (spiralDebug.get()) {
+            info("Spiral scan started at chunk (%d, %d).", startChunk.x, startChunk.z);
+            info("Next spiral target: (%d, %d).", spiralTargetChunk.x, spiralTargetChunk.z);
+        }
+    }
+
+    private void resumeSpiralScan() {
+        ScanProgressManager.ScanProgress progress = ScanProgressManager.loadProgress();
+        if (progress == null) {
+            if (spiralDebug.get()) info("No saved spiral progress was found. Starting from the current chunk.");
+            startNewSpiralScan(mc.player.getChunkPos());
+            return;
+        }
+
+        if (progress.chunkStep != spiralChunkStep.get()) {
+            info("Saved spiral chunk step is %d. Using it to resume this scan.", progress.chunkStep);
+            spiralChunkStep.set(progress.chunkStep);
+        }
+
+        applySpiralProgress(progress);
+        calibrateSpiralDirection();
+
+        if (spiralDebug.get()) {
+            info("Resumed spiral scan from chunk (%d, %d) after %d segments.", spiralStartChunk.x, spiralStartChunk.z, spiralSegments);
+            info("Next spiral target: (%d, %d).", spiralTargetChunk.x, spiralTargetChunk.z);
+        }
+    }
+
+    private void calculateSpiralScanFromOrigin() {
+        ChunkPos playerChunk = mc.player.getChunkPos();
+        ScanProgressManager.ScanProgress progress = ScanProgressManager.calculateProgressFromPosition(
+            playerChunk.x, playerChunk.z, 0, 0, spiralChunkStep.get()
+        );
+
+        if (progress == null) {
+            startNewSpiralScan(new ChunkPos(0, 0));
+            return;
+        }
+
+        ChunkPos corner = getSpiralCorner(progress.totalSegments);
+        int differenceX = Math.abs(Math.abs(playerChunk.x) - Math.abs(corner.x));
+        int differenceZ = Math.abs(Math.abs(playerChunk.z) - Math.abs(corner.z));
+        if (differenceX > 2 || differenceZ > 2) {
+            warning("Current position is too far from the calculated spiral route.");
+            info("Recommended chunk: (%d, %d).", corner.x, corner.z);
+            info("Recommended block position: (%d, %d).", corner.x * 16, corner.z * 16);
+            toggle();
+            return;
+        }
+
+        applySpiralProgress(progress);
+        calibrateSpiralDirection();
+
+        if (spiralDebug.get()) {
+            info("Calculated spiral progress after %d segments.", spiralSegments);
+            info("Next spiral target: (%d, %d).", spiralTargetChunk.x, spiralTargetChunk.z);
+        }
+    }
+
+    private void applySpiralProgress(ScanProgressManager.ScanProgress progress) {
+        MapScanDirection[] directions = MapScanDirection.values();
+        if (progress.currentDir < 0 || progress.currentDir >= directions.length) {
+            progress.currentDir = MapScanDirection.EAST.ordinal();
+        }
+
+        spiralStartChunk = new ChunkPos(progress.startX, progress.startZ);
+        spiralDirection = directions[progress.currentDir];
+        spiralStepsInCurrentLength = progress.stepsInCurrentLength;
+        spiralStepLength = Math.max(1, progress.currentStepLength);
+        spiralSegments = Math.max(0, progress.totalSegments);
+        spiralRotating = false;
+        spiralNeedsInitialRotation = false;
+        updateSpiralTarget();
+    }
+
+    private void calibrateSpiralDirection() {
+        if (spiralDirection.isFacingDirection(mc.player.getYaw())) {
+            if (spiralLockView.get()) applySpiralRotation(spiralDirection.yaw);
+            return;
+        }
+
+        spiralNeedsInitialRotation = true;
+        spiralTargetYaw = spiralDirection.yaw;
+        spiralRotating = true;
+        if (spiralDebug.get()) info("Calibrating view toward %s.", spiralDirection);
+    }
+
+    private void runSpiralScan() {
+        if (mc.player == null || mc.world == null || spiralTargetChunk == null) {
+            setScanForwardKey(false);
+            return;
+        }
+
+        setScanForwardKey(false);
+        ChunkPos playerChunk = mc.player.getChunkPos();
+        recordContainerChunkIfNeeded(playerChunk);
+
+        if (spiralMaximumSegments.get() > 0 && spiralSegments >= spiralMaximumSegments.get()) {
+            info("Maximum segments reached. Spiral scan complete.");
+            toggle();
+            return;
+        }
+
+        if (spiralNeedsInitialRotation && spiralRotating) {
+            smoothSpiralRotation();
+            if (spiralRotating) return;
+        }
+
+        if (spiralRotating) {
+            smoothSpiralRotation();
+            if (!spiralLockView.get()) return;
+        }
+
+        if (spiralLockView.get() && !spiralRotating && !spiralNeedsInitialRotation) {
+            applySpiralRotation(spiralDirection.yaw);
+        }
+
+        if (!hasReachedSpiralTarget(playerChunk)) return;
+
+        boolean smoothRotation = advanceSpiralDirection();
+        updateSpiralTarget();
+        if (smoothRotation) {
+            spiralTargetYaw = spiralDirection.yaw;
+            spiralRotating = true;
+        }
+
+        if (spiralDebug.get()) {
+            info("Spiral direction: %s. Next target: (%d, %d).", spiralDirection, spiralTargetChunk.x, spiralTargetChunk.z);
+        }
+    }
+
+    private boolean hasReachedSpiralTarget(ChunkPos currentChunk) {
+        boolean mainAxisReached = switch (spiralDirection) {
+            case EAST -> currentChunk.x >= spiralTargetChunk.x;
+            case WEST -> currentChunk.x <= spiralTargetChunk.x;
+            case NORTH -> currentChunk.z <= spiralTargetChunk.z;
+            case SOUTH -> currentChunk.z >= spiralTargetChunk.z;
+        };
+        if (!mainAxisReached) return false;
+
+        return switch (spiralDirection) {
+            case EAST, WEST -> Math.abs(currentChunk.z - spiralTargetChunk.z) <= 1;
+            case NORTH, SOUTH -> Math.abs(currentChunk.x - spiralTargetChunk.x) <= 1;
+        };
+    }
+
+    private boolean advanceSpiralDirection() {
+        spiralDirection = spiralDirection.getNext();
+        spiralStepsInCurrentLength++;
+        spiralSegments++;
+
+        if (spiralStepsInCurrentLength >= 2) {
+            spiralStepLength++;
+            spiralStepsInCurrentLength = 0;
+        }
+
+        if (spiralLockView.get()) {
+            applySpiralRotation(spiralDirection.yaw);
+            return false;
+        }
+        return true;
+    }
+
+    private void updateSpiralTarget() {
+        if (spiralStartChunk == null) return;
+
+        ScanProgressManager.ScanProgress progress = new ScanProgressManager.ScanProgress(
+            spiralStartChunk.x,
+            spiralStartChunk.z,
+            spiralSegments,
+            spiralDirection.ordinal(),
+            spiralStepsInCurrentLength,
+            spiralStepLength,
+            spiralChunkStep.get()
+        );
+        spiralTargetChunk = ScanProgressManager.calculateTargetChunkPos(progress, spiralChunkStep.get());
+    }
+
+    private ChunkPos getSpiralCorner(int completedSegments) {
+        int x = 0;
+        int z = 0;
+        MapScanDirection direction = MapScanDirection.EAST;
+        int length = 1;
+        int stepsAtLength = 0;
+
+        for (int segment = 0; segment < completedSegments; segment++) {
+            int distance = length * spiralChunkStep.get();
+            x += direction.dx * distance;
+            z += direction.dz * distance;
+            stepsAtLength++;
+            if (stepsAtLength >= 2) {
+                length++;
+                stepsAtLength = 0;
+            }
+            direction = direction.getNext();
+        }
+
+        return new ChunkPos(x, z);
+    }
+
+    private void smoothSpiralRotation() {
+        if (mc.player == null) {
+            spiralRotating = false;
+            return;
+        }
+
+        float currentYaw = mc.player.getYaw();
+        float difference = spiralTargetYaw - currentYaw;
+        if (difference > 180f) difference -= 360f;
+        if (difference < -180f) difference += 360f;
+
+        float rotationSpeed = 15f;
+        if (Math.abs(difference) < rotationSpeed) {
+            applySpiralRotation(spiralTargetYaw);
+            spiralRotating = false;
+        } else {
+            applySpiralRotation(currentYaw + Math.signum(difference) * rotationSpeed);
+        }
+    }
+
+    private void applySpiralRotation(float yaw) {
+        mc.player.setYaw(yaw);
+        mc.player.headYaw = yaw;
+        mc.player.bodyYaw = yaw;
+    }
+
+    private void saveSpiralProgress() {
+        if (spiralStartChunk == null) return;
+
+        ScanProgressManager.saveProgress(new ScanProgressManager.ScanProgress(
+            spiralStartChunk.x,
+            spiralStartChunk.z,
+            spiralSegments,
+            spiralDirection.ordinal(),
+            spiralStepsInCurrentLength,
+            spiralStepLength,
+            spiralChunkStep.get()
+        ));
+    }
+
     @EventHandler
     private void onRender(Render3DEvent event) {
-        if (mc.player == null)
-            return;
-        recordedContainerChunks.clear();
-        createdWaypointPositions.clear();
-        nextWaypointNumber = 1;
-        validateXaeroWaypointSetting();
+        if (mc.player == null || isSpiralScan()) return;
 
         BlockPos playerPos = new BlockPos(mc.player.getBlockX(), renderHeight.get(), mc.player.getBlockZ());
         double renderDistanceBlocks = renderDistance.get() * 16.0;
