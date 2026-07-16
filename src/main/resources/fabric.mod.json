@@ -4,6 +4,10 @@
   "version": "${version}",
   "name": "WaveXinAddon",
   "description": "Meteor Addon for 2b2t.xin.",
+  "license": "GPL-3.0-only",
+  "contact": {
+    "sources": "https://github.com/WaltomAdaam2/WaveXinAddon"
+  },
   "authors": [
     "WaltomAdaam"
   ],

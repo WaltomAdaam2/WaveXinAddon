@@ -4,13 +4,13 @@ import meteordevelopment.meteorclient.events.game.ReceiveMessageEvent;
 import meteordevelopment.meteorclient.settings.BoolSetting;
 import meteordevelopment.meteorclient.settings.Setting;
 import meteordevelopment.meteorclient.settings.SettingGroup;
-import meteordevelopment.meteorclient.systems.modules.Module;
+
 import meteordevelopment.orbit.EventHandler;
 
 import java.util.Locale;
 import java.util.regex.Pattern;
 
-public class ChatFilterXin extends Module {
+public class ChatFilterXin extends WaveXinModule {
     private static final Pattern PRIVATE_MESSAGE_PATTERN = Pattern.compile("(?i)(?:^\\s*(?:from|to)\\s+[^:]+:|\\b(?:whispers|tells you|private message|私信|密语|悄悄话)\\b)");
     private static final Pattern PUBLIC_MESSAGE_PATTERN = Pattern.compile("(?:^\\s*<[^>]+>\\s+.+|^\\s*[^\\s:]{1,32}:\\s+.+)");
 

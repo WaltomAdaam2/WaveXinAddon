@@ -13,7 +13,7 @@ import meteordevelopment.meteorclient.gui.GuiTheme;
 import meteordevelopment.meteorclient.gui.utils.SettingsWidgetFactory;
 import meteordevelopment.meteorclient.gui.widgets.containers.WTable;
 import meteordevelopment.meteorclient.settings.*;
-import meteordevelopment.meteorclient.systems.modules.Module;
+
 import meteordevelopment.meteorclient.utils.player.ChatUtils;
 import meteordevelopment.orbit.EventHandler;
 import net.minecraft.client.MinecraftClient;
@@ -61,7 +61,7 @@ import javax.crypto.spec.SecretKeySpec;
  * Source: https://github.com/2698269088/XinAutoLogin
  * License: MIT
  */
-public class AutoLogin extends Module {
+public class AutoLogin extends WaveXinModule {
     private static final MinecraftClient mc = MinecraftClient.getInstance();
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
     private static final Path CONFIG_DIRECTORY = Path.of("D:\\.Others\\.Minecraft\\.minecraft\\versions\\1.21.11_Meteor Client 2b2t\\meteor-client\\wavexin");
@@ -678,9 +678,6 @@ public class AutoLogin extends Module {
     }
 
     private void beginQueueWait() {
-        if (state != LoginState.WAITING_FOR_QUEUE) {
-            feedback("Queue detected. Waiting without retrying login or join.");
-        }
         setState(LoginState.WAITING_FOR_QUEUE);
     }
 

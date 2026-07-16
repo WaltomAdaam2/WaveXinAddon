@@ -5,8 +5,10 @@ import meteordevelopment.meteorclient.events.render.Render3DEvent;
 import meteordevelopment.meteorclient.renderer.ShapeMode;
 import meteordevelopment.meteorclient.settings.*;
 import meteordevelopment.meteorclient.MeteorClient;
-import meteordevelopment.meteorclient.systems.modules.Module;
+
 import meteordevelopment.meteorclient.utils.player.ChatUtils;
+import meteordevelopment.meteorclient.utils.render.color.Color;
+import meteordevelopment.meteorclient.utils.render.color.RainbowColors;
 import meteordevelopment.meteorclient.utils.render.color.SettingColor;
 import meteordevelopment.orbit.EventHandler;
 import meteordevelopment.orbit.EventPriority;
@@ -30,7 +32,7 @@ import java.util.List;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.Set;
 
-public class BaseFinderXin extends Module {
+public class BaseFinderXin extends WaveXinModule {
     private static final Path CONTAINER_RECORD_PATH = MeteorClient.FOLDER.toPath().resolve("base-finder-xin").resolve("container-records.txt");
     private static final DateTimeFormatter RECORD_TIME_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
@@ -53,10 +55,42 @@ public class BaseFinderXin extends Module {
 
 
     public enum XaeroWaypointColor {
-        RANDOM("Random", -1), RED("Red", 0), ORANGE("Orange", 1), YELLOW("Yellow", 2), LIME("Lime", 3), GREEN("Green", 4), CYAN("Cyan", 5), LIGHT_BLUE("Light Blue", 6), BLUE("Blue", 7), PURPLE("Purple", 8), MAGENTA("Magenta", 9), PINK("Pink", 10), WHITE("White", 11), LIGHT_GRAY("Light Gray", 12), GRAY("Gray", 13), BROWN("Brown", 14), BLACK("Black", 15);
-        private final String title; private final int colorId;
-        XaeroWaypointColor(String title, int colorId) { this.title = title; this.colorId = colorId; }
-        @Override public String toString() { return title; }
+        RANDOM("Random", -1, 170, 170, 170),
+        RED("Red", 0, 255, 85, 85),
+        ORANGE("Orange", 1, 255, 170, 0),
+        YELLOW("Yellow", 2, 255, 255, 85),
+        LIME("Lime", 3, 85, 255, 85),
+        GREEN("Green", 4, 0, 170, 0),
+        CYAN("Cyan", 5, 0, 170, 170),
+        LIGHT_BLUE("Light Blue", 6, 85, 255, 255),
+        BLUE("Blue", 7, 85, 85, 255),
+        PURPLE("Purple", 8, 170, 0, 170),
+        MAGENTA("Magenta", 9, 255, 85, 255),
+        PINK("Pink", 10, 255, 85, 170),
+        WHITE("White", 11, 255, 255, 255),
+        LIGHT_GRAY("Light Gray", 12, 170, 170, 170),
+        GRAY("Gray", 13, 85, 85, 85),
+        BROWN("Brown", 14, 170, 85, 0),
+        BLACK("Black", 15, 0, 0, 0);
+
+        private final String title;
+        private final int colorId;
+        private final Color displayColor;
+
+        XaeroWaypointColor(String title, int colorId, int red, int green, int blue) {
+            this.title = title;
+            this.colorId = colorId;
+            this.displayColor = new Color(red, green, blue);
+        }
+
+        public Color displayColor() {
+            return this == RANDOM ? RainbowColors.GLOBAL : displayColor;
+        }
+
+        @Override
+        public String toString() {
+            return title;
+        }
     }
     private final SettingGroup sgGeneral = settings.getDefaultGroup();
     private final SettingGroup sgXaeroWaypoints = settings.createGroup("Xaero Waypoints");
@@ -148,14 +182,14 @@ public class BaseFinderXin extends Module {
         .build()
     );
 
-    private final Setting<XaeroWaypointColor> xaeroWaypointColor = sgXaeroWaypoints.add(new EnumSetting.Builder<XaeroWaypointColor>()
+    private final Setting<XaeroWaypointColor> xaeroWaypointColor = sgXaeroWaypoints.add(new XaeroWaypointColorSetting.Builder()
         .name("Waypoint Color").description("Xaero waypoint color, or a random supported color for each waypoint.").defaultValue(XaeroWaypointColor.RANDOM).visible(xaeroWaypoints::get).build()
     );
     private final Setting<Integer> waypointLimitRadius = sgXaeroWaypoints.add(new IntSetting.Builder()
-        .name("Waypoint Limit Radius").description("Chunk radius used to group nearby waypoints into one base area.").defaultValue(8).range(1, 64).sliderRange(1, 32).visible(xaeroWaypoints::get).build()
+        .name("Area Radius").description("Chunk radius used to group nearby waypoints into one base area.").defaultValue(8).range(1, 64).sliderRange(1, 32).visible(xaeroWaypoints::get).build()
     );
     private final Setting<Integer> maximumWaypointsPerArea = sgXaeroWaypoints.add(new IntSetting.Builder()
-        .name("Maximum Waypoints Per Area").description("Maximum waypoints created within one base area during the current scan.").defaultValue(3).range(1, 100).sliderRange(1, 20).visible(xaeroWaypoints::get).build()
+        .name("Waypoints per Area").description("Maximum waypoints created within one base area during the current scan.").defaultValue(3).range(1, 100).sliderRange(1, 20).visible(xaeroWaypoints::get).build()
     );
 private final Setting<String> xaeroWaypointPrefix = sgXaeroWaypoints.add(new StringSetting.Builder()
         .name("Waypoint Prefix")
@@ -234,6 +268,7 @@ private final Setting<String> xaeroWaypointPrefix = sgXaeroWaypoints.add(new Str
     private boolean forcingForward = false;
     private final Set<Long> recordedContainerChunks = new HashSet<>();
     private final List<BlockPos> createdWaypointPositions = new ArrayList<>();
+    private int nextWaypointNumber = 1;
     
     // 閺夆晜绋戠€规娊骞侀姀鐙€妲婚悹浣稿⒔閻?
     private boolean needsInitialRotation = false; // 闁哄嫷鍨伴幆渚€妫侀埀顒傛啺娴ｇ鐏ュ┑顔碱儐濡棙娼浣哄ⅰ闁?
@@ -644,7 +679,6 @@ private final Setting<String> xaeroWaypointPrefix = sgXaeroWaypoints.add(new Str
 
             count++;
             if (firstPos == null) firstPos = blockEntity.getPos();
-            if (count >= containerThreshold.get()) break;
         }
 
         if (count < containerThreshold.get()) return;
@@ -671,7 +705,7 @@ private final Setting<String> xaeroWaypointPrefix = sgXaeroWaypoints.add(new Str
     }
 
     private void announceBaseDiscovery(ChunkPos chunkPos, BlockPos recordPos, int count) {
-        ChatUtils.warning("(highlight)(bold)Base found! (default)Chunk: (highlight)%d, %d(default) | Position: (highlight)%d, %d, %d(default) | Containers: (highlight)%d+(default)",
+        ChatUtils.warning("(highlight)(bold)Base found! (default)Chunk: (highlight)%d, %d(default) | Position: (highlight)%d, %d, %d(default) | Containers: (highlight)%d(default)",
             chunkPos.x, chunkPos.z, recordPos.getX(), recordPos.getY(), recordPos.getZ(), count);
     }
 
@@ -693,7 +727,7 @@ private final Setting<String> xaeroWaypointPrefix = sgXaeroWaypoints.add(new Str
         return color == XaeroWaypointColor.RANDOM ? ThreadLocalRandom.current().nextInt(16) : color.colorId;
     }
     private void appendContainerRecord(ChunkPos chunkPos, BlockPos recordPos, BlockPos playerPos, int count) {
-        String line = "%s | chunk=(%d,%d) | first-container=(%d,%d,%d) | player=(%d,%d,%d) | count>=%d%n".formatted(
+        String line = "%s | chunk=(%d,%d) | first-container=(%d,%d,%d) | player=(%d,%d,%d) | count=%d%n".formatted(
             LocalDateTime.now().format(RECORD_TIME_FORMAT),
             chunkPos.x,
             chunkPos.z,
@@ -723,7 +757,7 @@ private final Setting<String> xaeroWaypointPrefix = sgXaeroWaypoints.add(new Str
         try {
             if (hasReachedWaypointLimit(pos)) return;
 
-            String name = xaeroWaypointPrefix.get() + xaeroWaypointSuffix.get();
+            String name = xaeroWaypointPrefix.get() + nextWaypointNumber + xaeroWaypointSuffix.get();
             String initials = makeWaypointInitials(name);
 
             Class<?> sessionClass = Class.forName("xaero.common.XaeroMinimapSession");
@@ -757,6 +791,7 @@ private final Setting<String> xaeroWaypointPrefix = sgXaeroWaypoints.add(new Str
             Object waypointSession = minimapSession.getClass().getMethod("getWaypointSession").invoke(minimapSession);
             waypointSession.getClass().getMethod("setSetChangedTime", long.class).invoke(waypointSession, System.currentTimeMillis());
             createdWaypointPositions.add(pos.toImmutable());
+            nextWaypointNumber++;
             info("Created Xaero waypoint: " + name);
         } catch (ReflectiveOperationException | RuntimeException e) {
             warning("Failed to create Xaero waypoint: %s", e.getMessage());
