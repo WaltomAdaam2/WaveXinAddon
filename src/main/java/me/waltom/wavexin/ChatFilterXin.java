@@ -26,7 +26,7 @@ public class ChatFilterXin extends Module {
     private final Setting<Boolean> hidePublicMessages = sgGeneral.add(new BoolSetting.Builder()
         .name("Hide Public Messages")
         .description("Hides normal public chat messages")
-        .defaultValue(false)
+        .defaultValue(true)
         .build()
     );
 

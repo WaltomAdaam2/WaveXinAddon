@@ -129,7 +129,7 @@ public class ElytraFlyXin extends Module {
     private final Setting<Boolean> elytraReplace = sgElytraReplace.add(new BoolSetting.Builder()
         .name("Enabled")
         .description("Automatically replaces damaged elytra")
-        .defaultValue(false)
+        .defaultValue(true)
         .build()
     );
 

@@ -111,7 +111,7 @@ public class AutoLogin extends Module {
     public final Setting<Boolean> autoAnswer = sgGeneral.add(new BoolSetting.Builder()
         .name("Auto Answer")
         .description("Automatically answers 2b2t.xin quiz questions after a fixed 5-tick delay")
-        .defaultValue(false)
+        .defaultValue(true)
         .build()
     );
 
@@ -262,6 +262,11 @@ public class AutoLogin extends Module {
             return;
         }
 
+        if (loginSent && (!dailyFlowerCheckIn.get() || checkInSent) && isQueuePositionText(text)) {
+            beginQueueWait();
+            return;
+        }
+
         if (autoLogin.get() && !loginSent && isLoginPromptText(text)) {
             AccountRecord account = config.getAccount(getCurrentPlayerName());
             if (account != null && account.type == AccountType.Microsoft) {
@@ -397,6 +402,7 @@ public class AutoLogin extends Module {
             case JOIN_CLICKED -> runJoinClicked();
             case IN_GAME -> runInGame();
             case WAITING_FOR_CHECKIN -> runCheckIn();
+            case WAITING_FOR_QUEUE -> { }
             default -> {
             }
         }
@@ -544,6 +550,7 @@ public class AutoLogin extends Module {
     }
 
     private void beginPostLoginFlow() {
+        if (state == LoginState.WAITING_FOR_QUEUE) return;
         if (shouldCheckIn()) {
             setState(LoginState.WAITING_FOR_CHECKIN);
         } else if (!afterLoginActionDone) {
@@ -668,6 +675,22 @@ public class AutoLogin extends Module {
             if (!trimmed.isEmpty() && lower.contains(trimmed)) return true;
         }
         return false;
+    }
+
+    private void beginQueueWait() {
+        if (state != LoginState.WAITING_FOR_QUEUE) {
+            feedback("Queue detected. Waiting without retrying login or join.");
+        }
+        setState(LoginState.WAITING_FOR_QUEUE);
+    }
+
+    private boolean isQueuePositionText(String text) {
+        String lower = text.toLowerCase(Locale.ROOT);
+        return lower.contains("position in queue")
+            || lower.contains("queue position")
+            || text.contains("排队位置")
+            || text.contains("队列位置")
+            || text.contains("正在排队");
     }
 
     private boolean isLoginPromptText(String text) {
@@ -816,6 +839,7 @@ public class AutoLogin extends Module {
         JOIN_CLICKED,
         IN_GAME,
         WAITING_FOR_CHECKIN,
+        WAITING_FOR_QUEUE,
         COMPLETED
     }
 
