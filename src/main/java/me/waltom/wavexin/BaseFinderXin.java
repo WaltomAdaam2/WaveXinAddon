@@ -343,25 +343,23 @@ public class BaseFinderXin extends WaveXinModule {
         .build()
     );
 
-    private final SettingGroup sgXaeroWaypoints = settings.createGroup("Xaero Waypoints");
-
-    private final Setting<Boolean> xaeroWaypoints = sgXaeroWaypoints.add(new BoolSetting.Builder()
+    private final Setting<Boolean> xaeroWaypoints = sgContainerRecording.add(new BoolSetting.Builder()
         .name("Xaero Waypoints")
         .description("Creates a Xaero waypoint when a container chunk is recorded. Requires Xaero's Minimap at runtime.")
         .defaultValue(false)
         .build()
     );
 
-    private final Setting<XaeroWaypointColor> xaeroWaypointColor = sgXaeroWaypoints.add(new XaeroWaypointColorSetting.Builder()
+    private final Setting<XaeroWaypointColor> xaeroWaypointColor = sgContainerRecording.add(new XaeroWaypointColorSetting.Builder()
         .name("Waypoint Color").description("Xaero waypoint color, or a random supported color for each waypoint.").defaultValue(XaeroWaypointColor.RANDOM).visible(xaeroWaypoints::get).build()
     );
-    private final Setting<Integer> waypointLimitRadius = sgXaeroWaypoints.add(new IntSetting.Builder()
+    private final Setting<Integer> waypointLimitRadius = sgContainerRecording.add(new IntSetting.Builder()
         .name("Area Radius").description("Chunk radius used to group nearby waypoints into one base area.").defaultValue(8).range(1, 64).sliderRange(1, 32).visible(xaeroWaypoints::get).build()
     );
-    private final Setting<Integer> maximumWaypointsPerArea = sgXaeroWaypoints.add(new IntSetting.Builder()
+    private final Setting<Integer> maximumWaypointsPerArea = sgContainerRecording.add(new IntSetting.Builder()
         .name("Waypoints per Area").description("Maximum waypoints created within one base area during the current scan.").defaultValue(3).range(1, 100).sliderRange(1, 20).visible(xaeroWaypoints::get).build()
     );
-private final Setting<String> xaeroWaypointPrefix = sgXaeroWaypoints.add(new StringSetting.Builder()
+private final Setting<String> xaeroWaypointPrefix = sgContainerRecording.add(new StringSetting.Builder()
         .name("Waypoint Prefix")
         .description("Text before the waypoint name.")
         .defaultValue("Base ")
@@ -369,7 +367,7 @@ private final Setting<String> xaeroWaypointPrefix = sgXaeroWaypoints.add(new Str
         .build()
     );
 
-    private final Setting<String> xaeroWaypointSuffix = sgXaeroWaypoints.add(new StringSetting.Builder()
+    private final Setting<String> xaeroWaypointSuffix = sgContainerRecording.add(new StringSetting.Builder()
         .name("Waypoint Suffix")
         .description("Text after the waypoint name.")
         .defaultValue("")
