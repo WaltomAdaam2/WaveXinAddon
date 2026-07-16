@@ -2,7 +2,7 @@
 
 **语言 / Language:** 中文 | [English](README_EN.md)
 
-WaveXinAddon 是一个为 **2b2t.xin** 服务器设计的 Meteor Client Addon (彗星段扩展)，主要提供鞘翅飞行、路径飞行、自动登录、自动答题、实体名牌显示等辅助功能。
+WaveXinAddon 是一个为 **2b2t.xin** 服务器设计的 Meteor Client Addon (彗星段扩展)，主要提供鞘翅飞行、路径飞行、自动登录、自动答题、自动每日小红花（月卡）、基地扫描、聊天过滤和实体名牌显示等辅助功能。
 
 <p align="center">
   <img src="assets/wavexin_readme_preview.png" alt="WaveXinAddon Preview" width="850">
@@ -11,14 +11,12 @@ WaveXinAddon 是一个为 **2b2t.xin** 服务器设计的 Meteor Client Addon (�
 ## 功能
 
 * ElytraFlyXin：鞘翅飞行辅助
-* ElytraReplace：自动更换低耐久鞘翅
 * SimpleElytraFlyPath：简单坐标路径飞行
-* AutoAnswerXin：自动答题
 * ChickenNametags：鸡实体名牌显示
 * SnifferNametags：嗅探兽实体名牌显示
-* AutoLoginXin：2b2t.xin 自动登录
-* BaseFinderXin：螺旋扫图 / 基地狩猎
-* NetherElytraPath：下界鞘翅路径飞行辅助
+* AutoLogin：2b2t.xin 自动登录、自动加入和每日小红花签到
+* ChatFilterXin：私信、公共聊天和死亡消息过滤
+* BaseFinderXin：普通扫描 / 螺旋扫描、容器记录和可选 Xaero 路径点
 
 ## 环境要求
 
@@ -59,12 +57,12 @@ build/libs/
 * Meteor Client
 * Baritone
 
-## 题库文件
+## 配置文件
 
-AutoAnswerXin 的题库文件位于：
+WaveXinAddon 的配置文件会自动保存到：
 
 ```text
-src/main/resources/assets/wavexin/questions.json
+meteor-client/wavexin/
 ```
 
 ## 说明
@@ -73,9 +71,11 @@ src/main/resources/assets/wavexin/questions.json
 
 ## Credits
 
-WaveXinAddon was originally inspired by EasyAddon by IDhammaI.
+WaveXinAddon was originally inspired by [EasyAddon](https://github.com/IDhammaI/easyaddon) by IDhammaI.
 
-WaveXinAddon is now independently modified and maintained by WaltomAdaam.
+Spiral Scan is inspired by [WTmbp](https://github.com/2698269088/WTmbp) by 2698269088.
+
+WaveXinAddon is now **independently** modified and maintained by WaltomAdaam.
 
 ## License
 

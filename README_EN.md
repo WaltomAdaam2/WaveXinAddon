@@ -2,7 +2,7 @@
 
 **Language / 语言:** [中文](README.md) | English
 
-WaveXinAddon is a Meteor Client addon designed for the **2b2t.xin** server. It provides elytra flight, path flight, auto login, auto answer, entity nametags, and other utility modules.
+WaveXinAddon is a Meteor Client addon designed for the **2b2t.xin** server. It provides elytra flight, path flight, auto login, auto answer, automatic Daily Flower (monthly pass) check-ins, base scanning, chat filtering, entity nametags, and other utility modules.
 
 <p align="center">
   <img src="assets/wavexin_readme_preview.png" alt="WaveXinAddon Preview" width="850">
@@ -11,14 +11,12 @@ WaveXinAddon is a Meteor Client addon designed for the **2b2t.xin** server. It p
 ## Features
 
 * ElytraFlyXin: Elytra flight helper
-* ElytraReplace: Automatically replaces low-durability elytras
 * SimpleElytraFlyPath: Simple coordinate-based elytra path flight
-* AutoAnswerXin: Automatic quiz answer helper
 * ChickenNametags: Chicken entity nametags
 * SnifferNametags: Sniffer entity nametags
-* AutoLoginXin: 2b2t.xin auto login and queue helper
-* BaseFinderXin: Square spiral map scanning / base finding helper
-* NetherElytraPath: Nether elytra path flight helper
+* AutoLogin: 2b2t.xin auto login, auto join, and daily flower check-in
+* ChatFilterXin: Private message, public chat, and death message filtering
+* BaseFinderXin: Normal / spiral scanning, container recording, and optional Xaero waypoints
 
 ## Requirements
 
@@ -59,12 +57,12 @@ Place the built WaveXinAddon jar into your Minecraft `mods` folder together with
 * Meteor Client
 * Baritone
 
-## Question Database
+## Configuration
 
-The question database for AutoAnswerXin is located at:
+WaveXinAddon configuration files are automatically saved in:
 
 ```text
-src/main/resources/assets/wavexin/questions.json
+meteor-client/wavexin/
 ```
 
 ## Notice
@@ -73,9 +71,11 @@ This project is mainly designed for the 2b2t.xin use case. Please check server r
 
 ## Credits
 
-WaveXinAddon was originally inspired by EasyAddon by IDhammaI.
+WaveXinAddon was originally inspired by [EasyAddon](https://github.com/IDhammaI/easyaddon) by IDhammaI.
 
-WaveXinAddon is now independently modified and maintained by WaltomAdaam.
+Spiral Scan is inspired by [WTmbp](https://github.com/2698269088/WTmbp) by 2698269088.
+
+WaveXinAddon is now **independently** modified and maintained by WaltomAdaam.
 
 ## License
 
