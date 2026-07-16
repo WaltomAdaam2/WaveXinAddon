@@ -159,14 +159,24 @@ public class AutoLogin extends WaveXinModule {
         .build()
     );
 
-    public final Setting<String> passwordInput = sgAccount.add(new StringSetting.Builder()
-        .name("Password Input")
-        .description("Temporary input for Offline Account. It is encrypted before saving")
-        .defaultValue("")
-        .visible(() -> accountType.get() == AccountType.Offline)
-        .build()
-    );
+    public final Setting<String> passwordInput = sgAccount.add(new StringSetting(
+        "Password Input",
+        "Temporary input for Offline Account. It is encrypted before saving",
+        "",
+        null,
+        null,
+        () -> accountType.get() == AccountType.Offline,
+        null,
+        null,
+        null,
+        false
+    ) {
+        @Override
+        public boolean wasChanged() {
+            return false;
+        }
 
+    });
     public final Setting<Boolean> addOrUpdateAccount = sgAccount.add(new ActionButtonSetting.Builder()
         .name("Add / Update Account")
         .description("Saves Account Name with the selected account type")
