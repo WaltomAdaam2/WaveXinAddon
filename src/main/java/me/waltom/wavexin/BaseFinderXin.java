@@ -109,6 +109,8 @@ public class BaseFinderXin extends WaveXinModule {
     private SweepRoute currentPath;
     private int turnDelayTimer;
     private float targetYaw;
+    private float normalViewYaw;
+    private boolean normalViewRestorePending;
 
     private boolean forcingForward;
 
@@ -130,6 +132,7 @@ public class BaseFinderXin extends WaveXinModule {
     private SweepRoute savedNormalScanPath;
     private boolean spiralNeedsInitialRotation;
     private ScanMethod activeScanMethod;
+    private boolean scanStartPending;
     private final Set<Long> recordedContainerChunks = new HashSet<>();
     private final List<BlockPos> createdWaypointPositions = new ArrayList<>();
     private int nextWaypointNumber = 1;
@@ -266,9 +269,9 @@ public class BaseFinderXin extends WaveXinModule {
             .description("Radius of chunks that must be loaded before continuing.")
             .defaultValue(5)
             .min(2)
-            .max(10)
+            .max(30)
             .sliderMin(2)
-            .sliderMax(10)
+            .sliderMax(30)
             .visible(this::isNormalScan)
             .build());
 
@@ -280,14 +283,14 @@ public class BaseFinderXin extends WaveXinModule {
             .min(2)
             .max(Integer.MAX_VALUE)
             .sliderMin(2)
-            .sliderMax(100)
+            .sliderMax(10000)
             .visible(this::isNormalScan)
             .build());
 
     // Move Speed设置
     private final Setting<Double> moveSpeed = sgNormalScan.add(new DoubleSetting.Builder()
             .name("Move Speed")
-            .description("Forward movement speed while scanning.")
+            .description("Enables sprinting above 1.0; vanilla movement speed is otherwise unchanged.")
             .defaultValue(3.0)
             .min(0.01)
             .max(3.0)
@@ -553,39 +556,41 @@ private final Setting<String> xaeroWaypointPrefix = sgXaeroWaypoints.add(new Str
 
     @Override
     public void onActivate() {
-        if (mc.player == null)
-            return;
         activeScanMethod = scanMethod.get();
         setScanForwardKey(false);
+        scanStartPending = true;
+        if (mc.player != null && mc.world != null) initializeActiveScan();
+    }
+
+    private void initializeActiveScan() {
+        if (!scanStartPending || mc.player == null || mc.world == null) return;
+
+        scanStartPending = false;
         recordedContainerChunks.clear();
         createdWaypointPositions.clear();
         nextWaypointNumber = 1;
         validateXaeroWaypointSetting();
-        if (activeScanMethod == ScanMethod.SPIRAL) { startSpiralScan(); return; }
-        turnDelayTimer = 0;
+        if (activeScanMethod == ScanMethod.SPIRAL) {
+            startSpiralScan();
+            return;
+        }
 
-        // 检查是否Resume Previous Scan,加载参数
+        turnDelayTimer = 0;
+        normalViewRestorePending = false;
         if (lastBegin.get()) {
-            // Resume Previous Scan,加载参数
             currentCircle = lastCircle.get();
             currentPath = lastPath.get();
             originChunk = new ChunkPos(lastOriginX.get(), lastOriginZ.get());
         } else {
-            // 从当前位置开始
             currentCircle = 0;
             currentPath = SweepRoute.NEXT_CIRCLE;
             originChunk = mc.player.getChunkPos();
         }
 
-        // 清空之前的区块数据
         targetChunks.clear();
         visitedChunks.clear();
         currentPathChunks.clear();
-
-        // 预先计算目标区块
         primeScanTargets();
-
-        // 如果设置了Resume Previous Scan，设置目标区块 targetChunk
         targetChunk = null;
         savedNormalScanChunk = null;
         savedNormalScanCircle = -1;
@@ -596,8 +601,6 @@ private final Setting<String> xaeroWaypointPrefix = sgXaeroWaypoints.add(new Str
             info("Normal scan started at origin chunk (%d, %d).", originChunk.x, originChunk.z);
         }
     }
-
-    // 预先计算目标区块的方法
     private void primeScanTargets() {
         targetChunks.clear();
 
@@ -715,6 +718,7 @@ private final Setting<String> xaeroWaypointPrefix = sgXaeroWaypoints.add(new Str
 
     @EventHandler
     private void onTick(TickEvent.Pre event) {
+        if (scanStartPending) initializeActiveScan();
         if (activeScanMethod == ScanMethod.SPIRAL) return;
 
         if (activeScanMethod == null) {
@@ -803,7 +807,6 @@ private final Setting<String> xaeroWaypointPrefix = sgXaeroWaypoints.add(new Str
         }
 
         targetYaw = (float) Math.toDegrees(Math.atan2(-deltaX, deltaZ));
-        if (lockView.get()) mc.player.setYaw(targetYaw);
 
         if (waitChunkLoad.get()) {
             if (!areNeighborChunksLoaded(targetYaw)) {
@@ -823,12 +826,20 @@ private final Setting<String> xaeroWaypointPrefix = sgXaeroWaypoints.add(new Str
             mc.player.setSprinting(true);
         }
 
+        applyNormalMovementYaw(targetYaw);
         setScanForwardKey(true);
+    }
+
+    @EventHandler
+    private void onPostTick(TickEvent.Post event) {
+        if (activeScanMethod == ScanMethod.NORMAL) restoreNormalViewYaw();
     }
 
     @Override
     public void onDeactivate() {
         setScanForwardKey(false);
+        restoreNormalViewYaw();
+        scanStartPending = false;
         ScanMethod stoppedScanMethod = activeScanMethod;
         activeScanMethod = null;
 
@@ -893,6 +904,24 @@ private final Setting<String> xaeroWaypointPrefix = sgXaeroWaypoints.add(new Str
         toggle();
     }
 
+    private void applyNormalMovementYaw(float yaw) {
+        if (lockView.get()) {
+            restoreNormalViewYaw();
+            mc.player.setYaw(yaw);
+            return;
+        }
+
+        normalViewYaw = mc.player.getYaw();
+        mc.player.setYaw(yaw);
+        normalViewRestorePending = true;
+    }
+
+    private void restoreNormalViewYaw() {
+        if (!normalViewRestorePending) return;
+        if (mc.player != null) mc.player.setYaw(normalViewYaw);
+        normalViewRestorePending = false;
+    }
+
     private void setScanForwardKey(boolean pressed) {
         if (mc.options == null) return;
 
@@ -907,10 +936,13 @@ private final Setting<String> xaeroWaypointPrefix = sgXaeroWaypoints.add(new Str
 
     // 检查当前区块左右两边区块是否已完全加载
     private boolean areNeighborChunksLoaded(float yaw) {
+        if (mc.options == null) return true;
+
         ChunkPos currentChunk = mc.player.getChunkPos();
         boolean movingAlongZ = Math.abs(Math.cos(Math.toRadians(yaw))) >= Math.abs(Math.sin(Math.toRadians(yaw)));
+        int loadedRadius = Math.min(chunkLoadRadius.get(), Math.max(0, mc.options.getViewDistance().getValue() - 1));
 
-        for (int offset = -chunkLoadRadius.get(); offset <= chunkLoadRadius.get(); offset++) {
+        for (int offset = -loadedRadius; offset <= loadedRadius; offset++) {
             int chunkX = movingAlongZ ? currentChunk.x + offset : currentChunk.x;
             int chunkZ = movingAlongZ ? currentChunk.z : currentChunk.z + offset;
             if (!mc.world.getChunkManager().isChunkLoaded(chunkX, chunkZ)) return false;
@@ -1233,6 +1265,7 @@ private final Setting<String> xaeroWaypointPrefix = sgXaeroWaypoints.add(new Str
         if (!hasReachedSpiralTarget(playerChunk)) return;
         boolean smoothRotation = advanceSpiralDirection();
         updateSpiralTarget();
+        saveSpiralProgress();
         if (smoothRotation) {
             spiralTargetYaw = spiralDirection.yaw;
             spiralRotating = true;
@@ -1254,17 +1287,11 @@ private final Setting<String> xaeroWaypointPrefix = sgXaeroWaypoints.add(new Str
     }
 
     private boolean hasReachedSpiralTarget(ChunkPos currentChunk) {
-        boolean mainAxisReached = switch (spiralDirection) {
+        return switch (spiralDirection) {
             case EAST -> currentChunk.x >= spiralTargetChunk.x;
             case WEST -> currentChunk.x <= spiralTargetChunk.x;
             case NORTH -> currentChunk.z <= spiralTargetChunk.z;
             case SOUTH -> currentChunk.z >= spiralTargetChunk.z;
-        };
-        if (!mainAxisReached) return false;
-
-        return switch (spiralDirection) {
-            case EAST, WEST -> Math.abs(currentChunk.z - spiralTargetChunk.z) <= 1;
-            case NORTH, SOUTH -> Math.abs(currentChunk.x - spiralTargetChunk.x) <= 1;
         };
     }
 
@@ -1375,7 +1402,9 @@ private final Setting<String> xaeroWaypointPrefix = sgXaeroWaypoints.add(new Str
 
     @EventHandler(priority = EventPriority.HIGHEST)
     private void onSpiralTick(TickEvent.Pre event) {
-        if (activeScanMethod == ScanMethod.SPIRAL) runSpiralScan();
+        if (activeScanMethod != ScanMethod.SPIRAL) return;
+        if (scanStartPending) initializeActiveScan();
+        if (!scanStartPending) runSpiralScan();
     }
 
     @EventHandler
