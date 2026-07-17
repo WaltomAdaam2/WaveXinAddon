@@ -18,6 +18,8 @@ WaveXinAddon 是一个为 **2b2t.xin** 服务器设计的 Meteor Client Addon (�
 * Chat Filter：私信、公共聊天和死亡消息过滤
 * Base Finder：普通扫描 / 螺旋扫描、容器记录和可选 Xaero 路径点
 
+更多实现逻辑与注意事项请参阅 [功能逻辑说明](README_LOGIC.md)。
+
 ## 环境要求
 
 * Minecraft 1.21.11
