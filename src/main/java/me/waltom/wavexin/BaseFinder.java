@@ -116,6 +116,7 @@ public class BaseFinder extends WaveXinModule {
     private final SettingGroup sgRestart = settings.createGroup("Restart");
     private ChunkPos originChunk;
     private ChunkPos targetChunk;
+    private ChunkPos resumeCheckpointChunk;
     private int currentCircle;
     private SweepRoute currentPath;
     private int turnDelayTimer;
@@ -587,6 +588,7 @@ private final Setting<String> xaeroWaypointPrefix = sgContainerRecording.add(new
         createdWaypointPositions.clear();
         nextWaypointNumber = 1;
         validateXaeroWaypointSetting();
+        warnIfUnsafeScanHeight();
         if (activeScanMethod == ScanMethod.SPIRAL) {
             startSpiralScan();
             return;
@@ -595,6 +597,7 @@ private final Setting<String> xaeroWaypointPrefix = sgContainerRecording.add(new
         turnDelayTimer = 0;
         normalViewRestorePending = false;
         lastCompletedNormalRing = -1;
+        resumeCheckpointChunk = null;
         if (lastBegin.get()) {
             restoreNormalScanProgress();
         } else {
@@ -633,6 +636,7 @@ private final Setting<String> xaeroWaypointPrefix = sgContainerRecording.add(new
 
         currentCircle = Math.max(0, progress.ring);
         originChunk = new ChunkPos(progress.originX, progress.originZ);
+        resumeCheckpointChunk = new ChunkPos(progress.playerX, progress.playerZ);
         try {
             currentPath = SweepRoute.valueOf(progress.route);
         } catch (IllegalArgumentException | NullPointerException ignored) {
@@ -768,6 +772,14 @@ private final Setting<String> xaeroWaypointPrefix = sgContainerRecording.add(new
             return;
         }
 
+        if (resumeCheckpointChunk != null) {
+            if (moveToResumeCheckpoint()) {
+                info("Reached saved Normal Scan checkpoint at chunk (%d, %d).", resumeCheckpointChunk.x, resumeCheckpointChunk.z);
+                resumeCheckpointChunk = null;
+            }
+            return;
+        }
+
         refreshActivePathChunks();
 
         ChunkPos playerChunk = mc.player.getChunkPos();
@@ -893,15 +905,17 @@ private final Setting<String> xaeroWaypointPrefix = sgContainerRecording.add(new
         }
 
         boolean scanCompleted = currentCircle > circleLimit.get();
-        saveNormalScanProgress(true);
+        boolean returningToResumeCheckpoint = resumeCheckpointChunk != null;
+        if (!returningToResumeCheckpoint) saveNormalScanProgress(true);
 
         if (!scanCompleted) {
-            if (lastBegin.get() && mc.player != null) {
+            if (returningToResumeCheckpoint) {
+                info("Normal scan stopped while returning to its saved checkpoint. Saved progress was preserved.");
+            } else if (lastBegin.get() && mc.player != null) {
                 ChunkPos playerChunk = mc.player.getChunkPos();
                 info("Normal scan stopped. Saved checkpoint: (%d, %d), ring %d, route %s.", playerChunk.x, playerChunk.z, currentCircle, currentPath);
             } else {
                 info("Normal scan stopped.");
-
             }
         }
         // 清空区块数据
@@ -912,6 +926,7 @@ private final Setting<String> xaeroWaypointPrefix = sgContainerRecording.add(new
         // 还原变量
         originChunk = null;
         targetChunk = null;
+        resumeCheckpointChunk = null;
         currentPath = null;
         lastCompletedNormalRing = -1;
         turnDelayTimer = 0;
@@ -943,6 +958,57 @@ private final Setting<String> xaeroWaypointPrefix = sgContainerRecording.add(new
     }
 
 
+    private void warnIfUnsafeScanHeight() {
+        if (mc.player == null || mc.world == null || isSafeScanHeight()) return;
+        ChatUtils.error("Recommended to use above each dimension height limit: Nether (Y > 128), Overworld (Y > 320), End (Y > 256)");
+    }
+
+    private boolean isSafeScanHeight() {
+        String dimensionName = mc.world.getRegistryKey().getValue().toString();
+        return switch (dimensionName) {
+            case "minecraft:the_nether" -> mc.player.getY() > 128;
+            case "minecraft:overworld" -> mc.player.getY() > 320;
+            case "minecraft:the_end" -> mc.player.getY() > 256;
+            default -> false;
+        };
+    }
+
+    private boolean moveToResumeCheckpoint() {
+        Vec3d playerPos = new Vec3d(mc.player.getX(), mc.player.getY(), mc.player.getZ());
+        Vec3d checkpointCenter = new Vec3d(
+            resumeCheckpointChunk.getStartX() + 8,
+            mc.player.getY(),
+            resumeCheckpointChunk.getStartZ() + 8
+        );
+        double deltaX = checkpointCenter.x - playerPos.x;
+        double deltaZ = checkpointCenter.z - playerPos.z;
+        double distance = Math.sqrt(deltaX * deltaX + deltaZ * deltaZ);
+
+        if (distance < 1.0) {
+            setScanForwardKey(false);
+            return true;
+        }
+
+        targetYaw = (float) Math.toDegrees(Math.atan2(-deltaX, deltaZ));
+        if (waitChunkLoad.get()) {
+            if (!areNeighborChunksLoaded(targetYaw)) {
+                setScanForwardKey(false);
+                return false;
+            }
+
+            int chunkX = (int) (mc.player.getX() / 16);
+            int chunkZ = (int) (mc.player.getZ() / 16);
+            if (!mc.world.getChunkManager().isChunkLoaded(chunkX, chunkZ)) {
+                setScanForwardKey(false);
+                return false;
+            }
+        }
+
+        if (moveSpeed.get() > 1.0) mc.player.setSprinting(true);
+        applyNormalMovementYaw(targetYaw);
+        setScanForwardKey(true);
+        return false;
+    }
     private void resetPreviousNormalScan() {
         if (activeScanMethod == ScanMethod.NORMAL) {
             warning("Stop Normal Scan before resetting its saved progress.");
