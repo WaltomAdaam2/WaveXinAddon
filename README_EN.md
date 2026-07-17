@@ -18,7 +18,7 @@ WaveXinAddon is a Meteor Client addon designed for the **2b2t.xin** server. It p
 * Chat Filter: Private message, public chat, and death message filtering
 * Base Finder: Normal / spiral scanning, container recording, and optional Xaero waypoints
 
-For implementation details and feature-specific notes, see the [Feature Logic Guide](README_LOGIC.md).
+For implementation details and feature-specific notes, see the [Feature Logic Guide](docs/README_LOGIC_EN.md).
 
 ## Requirements
 
@@ -27,7 +27,6 @@ For implementation details and feature-specific notes, see the [Feature Logic Gu
 * Fabric Loader
 * Fabric API
 * Meteor Client
-* Baritone
 
 ## Build
 
@@ -57,7 +56,6 @@ Place the built WaveXinAddon jar into your Minecraft `mods` folder together with
 
 * Fabric API
 * Meteor Client
-* Baritone
 
 ## Configuration
 
