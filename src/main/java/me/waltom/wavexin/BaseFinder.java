@@ -1,7 +1,9 @@
 package me.waltom.wavexin;
 
 import meteordevelopment.meteorclient.MeteorClient;
-import meteordevelopment.meteorclient.systems.modules.Modules;
+import meteordevelopment.meteorclient.gui.GuiTheme;
+import meteordevelopment.meteorclient.gui.utils.SettingsWidgetFactory;
+import meteordevelopment.meteorclient.gui.widgets.containers.WTable;
 import meteordevelopment.meteorclient.utils.player.ChatUtils;
 import meteordevelopment.meteorclient.utils.render.color.Color;
 import meteordevelopment.meteorclient.utils.render.color.RainbowColors;
@@ -20,6 +22,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ThreadLocalRandom;
+import java.util.function.Consumer;
 import meteordevelopment.meteorclient.events.render.Render3DEvent;
 import meteordevelopment.meteorclient.events.world.TickEvent;
 import meteordevelopment.meteorclient.renderer.ShapeMode;
@@ -31,12 +34,19 @@ import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Box;
 import net.minecraft.util.math.ChunkPos;
 import net.minecraft.util.math.Vec3d;
+import net.minecraft.nbt.NbtCompound;
 
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.Set;
 
 public class BaseFinder extends WaveXinModule {
+    static {
+        SettingsWidgetFactory.registerCustomFactory(ConfirmedActionSetting.class, theme -> (table, setting) -> {
+            ConfirmedActionSetting actionSetting = (ConfirmedActionSetting) setting;
+            actionSetting.create(table, theme);
+        });
+    }
     public enum ScanMethod { SPIRAL("Spiral Scan"), NORMAL("Normal Scan"); private final String title; ScanMethod(String title) { this.title = title; } @Override public String toString() { return title; } }
     private static final Path CONTAINER_RECORD_PATH = WaveXinDataPaths.CONTAINER_DIRECTORY.resolve("container-records.txt");
     private static final Path LEGACY_CONTAINER_RECORD_PATH = MeteorClient.FOLDER.toPath().resolve("base-finder-xin").resolve("container-records.txt");
@@ -303,7 +313,7 @@ public class BaseFinder extends WaveXinModule {
     private final Setting<Boolean> lockView = sgNormalScan.add(new BoolSetting.Builder()
             .name("Lock View")
             .description("Turns the camera toward the current scan target.")
-            .defaultValue(false)
+            .defaultValue(true)
             .visible(this::isNormalScan)
             .build());
     private final Setting<Integer> turnDelay = sgNormalScan.add(new IntSetting.Builder()
@@ -449,6 +459,14 @@ private final Setting<String> xaeroWaypointPrefix = sgContainerRecording.add(new
             .max(Integer.MAX_VALUE)
             .sliderMin(Integer.MIN_VALUE)
             .sliderMax(Integer.MAX_VALUE)
+            .build());
+    private final Setting<Boolean> resetPreviousScan = sgRestart.add(new ConfirmedActionSetting.Builder()
+            .name("")
+            .description("Clears the saved Normal Scan checkpoint.")
+            .buttonLabel("Reset Previous Scan")
+            .confirmationText("Reset saved Normal Scan progress?")
+            .action(this::resetPreviousNormalScan)
+            .visible(this::isNormalScan)
             .build());
 
     // Render Distance设置
@@ -925,6 +943,22 @@ private final Setting<String> xaeroWaypointPrefix = sgContainerRecording.add(new
     }
 
 
+    private void resetPreviousNormalScan() {
+        if (activeScanMethod == ScanMethod.NORMAL) {
+            warning("Stop Normal Scan before resetting its saved progress.");
+            return;
+        }
+
+        ScanProgressManager.clearNormalProgress();
+        lastBegin.set(false);
+        lastCircle.set(0);
+        lastChunkX.set(0);
+        lastChunkZ.set(0);
+        lastPath.set(SweepRoute.NEXT_CIRCLE);
+        lastOriginX.set(0);
+        lastOriginZ.set(0);
+        info("Cleared saved Normal Scan progress.");
+    }
     private void applyNormalMovementYaw(float yaw) {
         if (lockView.get()) {
             restoreNormalViewYaw();
@@ -1600,6 +1634,98 @@ private final Setting<String> xaeroWaypointPrefix = sgContainerRecording.add(new
         return spiralSegments + " | " + spiralDirection.name();
     }
 
+    private static class ConfirmedActionSetting extends Setting<Boolean> {
+        private final String buttonLabel;
+        private final String confirmationText;
+        private final Runnable action;
+
+        private ConfirmedActionSetting(String name, String description, String buttonLabel, String confirmationText, Runnable action, Consumer<Boolean> onChanged, Consumer<Setting<Boolean>> onModuleActivated, IVisible visible) {
+            super(name, description, false, onChanged, onModuleActivated, visible);
+            this.buttonLabel = buttonLabel;
+            this.confirmationText = confirmationText;
+            this.action = action;
+        }
+
+        private void create(WTable table, GuiTheme theme) {
+            WTable actions = table.add(theme.table()).expandX().widget();
+            showReset(actions, theme);
+        }
+
+        private void showReset(WTable table, GuiTheme theme) {
+            table.clear();
+            var reset = table.add(theme.button(buttonLabel)).expandX().widget();
+            reset.action = () -> showConfirmation(table, theme);
+            reset.tooltip = description;
+        }
+
+        private void showConfirmation(WTable table, GuiTheme theme) {
+            table.clear();
+            table.add(theme.label(confirmationText)).expandX().centerX();
+            table.row();
+
+            var confirm = table.add(theme.button("Confirm")).expandX().group("reset-actions").widget();
+            confirm.action = () -> {
+                if (action != null) action.run();
+                showReset(table, theme);
+            };
+
+            var cancel = table.add(theme.button("Cancel")).expandX().group("reset-actions").widget();
+            cancel.action = () -> showReset(table, theme);
+            table.row();
+        }
+
+        @Override
+        protected Boolean parseImpl(String str) {
+            return false;
+        }
+
+        @Override
+        protected boolean isValueValid(Boolean value) {
+            return true;
+        }
+
+        @Override
+        protected NbtCompound save(NbtCompound tag) {
+            tag.putBoolean("value", false);
+            return tag;
+        }
+
+        @Override
+        protected Boolean load(NbtCompound tag) {
+            set(false);
+            return false;
+        }
+
+        private static class Builder extends SettingBuilder<Builder, Boolean, ConfirmedActionSetting> {
+            private String buttonLabel = "Reset";
+            private String confirmationText = "Confirm reset?";
+            private Runnable action;
+
+            private Builder() {
+                super(false);
+            }
+
+            private Builder buttonLabel(String buttonLabel) {
+                this.buttonLabel = buttonLabel;
+                return this;
+            }
+
+            private Builder confirmationText(String confirmationText) {
+                this.confirmationText = confirmationText;
+                return this;
+            }
+
+            private Builder action(Runnable action) {
+                this.action = action;
+                return this;
+            }
+
+            @Override
+            public ConfirmedActionSetting build() {
+                return new ConfirmedActionSetting(name, description, buttonLabel, confirmationText, action, onChanged, onModuleActivated, visible);
+            }
+        }
+    }
     public enum SweepRoute {
         NEXT_CIRCLE,
         CENTER_TO_LEFT,

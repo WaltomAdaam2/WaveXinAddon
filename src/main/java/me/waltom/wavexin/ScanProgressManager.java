@@ -107,6 +107,12 @@ public class ScanProgressManager {
     public static NormalScanProgress loadNormalProgress() {
         return readDocument().normal;
     }
+    public static void clearNormalProgress() {
+        ProgressDocument document = readDocument();
+        if (document.normal == null) return;
+        document.normal = null;
+        writeDocument(document);
+    }
 
     public static void clearProgress() {
         try {
