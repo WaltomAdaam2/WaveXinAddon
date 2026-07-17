@@ -12,14 +12,14 @@ import java.util.regex.Pattern;
 
 public class ChatFilter extends WaveXinModule {
     private static final Pattern LEGACY_FORMATTING_PATTERN = Pattern.compile("(?i)\\xA7[0-9A-FK-OR]");
-    private static final String PLAYER_NAME = "[^\\s:：\\[\\]<>（）()]{1,64}";
-    private static final String DEATH_COUNT = "(?:\\s*[（(]\\d+[）)])?";
+    private static final String PLAYER_NAME = "[^\\s:\\[\\]<>\\uFF08\\uFF09()]{1,64}";
+    private static final String DEATH_COUNT = "(?:\\s*[\\(\\uFF08]\\d+[\\)\\uFF09])?";
     private static final Pattern CHINESE_DEATH_MESSAGE_PATTERN = Pattern.compile(
         "^" + PLAYER_NAME + "\\s+(?:"
-            + "自杀"
-            + "|被\\s+.+?\\s+(?:击杀|杀死|射杀|射死|炸死|摔死|淹死|烧死|窒息|冻死|饿死)"
-            + "|被\\s+.+?(?:而死亡|死亡)"
-            + "|(?:因|从)\\s+.+?(?:死亡|摔死|淹死|烧死|窒息|冻死|饿死)"
+            + "\\u81EA\\u6740"
+            + "|\\u88AB\\s+.+?\\s+(?:\\u51FB\\u6740|\\u6740\\u6B7B|\\u5C04\\u6740|\\u5C04\\u6B7B|\\u70B8\\u6B7B|\\u6454\\u6B7B|\\u6EBA\\u6B7B|\\u70E7\\u6B7B|\\u7A92\\u606F|\\u51BB\\u6B7B|\\u997F\\u6B7B)"
+            + "|\\u88AB\\s+.+?(?:\\u800C\\u6B7B\\u4EA1|\\u6B7B\\u4EA1)"
+            + "|(?:\\u56E0|\\u4ECE)\\s+.+?(?:\\u6B7B\\u4EA1|\\u6454\\u6B7B|\\u6EBA\\u6B7B|\\u70E7\\u6B7B|\\u7A92\\u606F|\\u51BB\\u6B7B|\\u997F\\u6B7B)"
             + ")" + DEATH_COUNT + "$"
     );
     private static final Pattern ENGLISH_DEATH_MESSAGE_PATTERN = Pattern.compile(
@@ -68,7 +68,7 @@ public class ChatFilter extends WaveXinModule {
 
     @EventHandler
     private void filterIncomingMessage(ReceiveMessageEvent event) {
-        if (event.getMessage() != null && shouldHideRegularMessage(event.getMessage().getString())) event.cancel();
+        if (event.getMessage() != null && shouldHideServerMessageInternal(event.getMessage())) event.cancel();
     }
 
     private boolean shouldHideServerMessageInternal(Text message) {
