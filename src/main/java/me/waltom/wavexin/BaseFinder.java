@@ -142,7 +142,6 @@ public class BaseFinder extends WaveXinModule {
         .name("Scan Method")
         .description("Selects the scan route and its settings.")
         .defaultValue(ScanMethod.NORMAL)
-        .onChanged(this::stopScanForMethodChange)
         .build()
     );
 
@@ -903,12 +902,6 @@ private final Setting<String> xaeroWaypointPrefix = sgContainerRecording.add(new
         Modules.get().save();
     }
 
-    private void stopScanForMethodChange(ScanMethod ignored) {
-        if (!isActive() || activeScanMethod == null) return;
-
-        info("Scan method changed. Current scan stopped.");
-        toggle();
-    }
 
     private void applyNormalMovementYaw(float yaw) {
         if (lockView.get()) {
