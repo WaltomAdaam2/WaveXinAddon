@@ -32,9 +32,6 @@ dependencies {
     // Meteor Client
     modImplementation "meteordevelopment:meteor-client:${project.meteor_version}"
 
-    // Baritone is required by NetherElytraPath.
-    modCompileOnly "meteordevelopment:baritone:${project.baritone_version}-SNAPSHOT"
-    modLocalRuntime "meteordevelopment:baritone:${project.baritone_version}-SNAPSHOT"
 }
 
 tasks {

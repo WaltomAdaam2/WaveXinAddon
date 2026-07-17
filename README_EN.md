@@ -10,13 +10,15 @@ WaveXinAddon is a Meteor Client addon designed for the **2b2t.xin** server. It p
 
 ## Features
 
-* ElytraFlyXin: Elytra flight helper
-* SimpleElytraFlyPath: Simple coordinate-based elytra path flight
+* Better Elytra Fly: Elytra flight helper
+* Simple Elytra Fly Path: Simple coordinate-based elytra path flight
 * ChickenNametags: Chicken entity nametags
 * SnifferNametags: Sniffer entity nametags
-* AutoLogin: 2b2t.xin auto login, auto join, and daily flower check-in
-* ChatFilterXin: Private message, public chat, and death message filtering
-* BaseFinderXin: Normal / spiral scanning, container recording, and optional Xaero waypoints
+* Auto Login: 2b2t.xin auto login, auto join, and daily flower check-in
+* Chat Filter: Private message, public chat, and death message filtering
+* Base Finder: Normal / spiral scanning, container recording, and optional Xaero waypoints
+
+For implementation details and feature-specific notes, see the [Feature Logic Guide](docs/README_LOGIC_EN.md).
 
 ## Requirements
 
@@ -25,7 +27,6 @@ WaveXinAddon is a Meteor Client addon designed for the **2b2t.xin** server. It p
 * Fabric Loader
 * Fabric API
 * Meteor Client
-* Baritone
 
 ## Build
 
@@ -55,7 +56,6 @@ Place the built WaveXinAddon jar into your Minecraft `mods` folder together with
 
 * Fabric API
 * Meteor Client
-* Baritone
 
 ## Configuration
 

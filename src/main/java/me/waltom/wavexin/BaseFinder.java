@@ -1,7 +1,9 @@
 package me.waltom.wavexin;
 
 import meteordevelopment.meteorclient.MeteorClient;
-import meteordevelopment.meteorclient.systems.modules.Modules;
+import meteordevelopment.meteorclient.gui.GuiTheme;
+import meteordevelopment.meteorclient.gui.utils.SettingsWidgetFactory;
+import meteordevelopment.meteorclient.gui.widgets.containers.WTable;
 import meteordevelopment.meteorclient.utils.player.ChatUtils;
 import meteordevelopment.meteorclient.utils.render.color.Color;
 import meteordevelopment.meteorclient.utils.render.color.RainbowColors;
@@ -20,6 +22,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ThreadLocalRandom;
+import java.util.function.Consumer;
 import meteordevelopment.meteorclient.events.render.Render3DEvent;
 import meteordevelopment.meteorclient.events.world.TickEvent;
 import meteordevelopment.meteorclient.renderer.ShapeMode;
@@ -31,14 +34,22 @@ import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Box;
 import net.minecraft.util.math.ChunkPos;
 import net.minecraft.util.math.Vec3d;
+import net.minecraft.nbt.NbtCompound;
 
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.Set;
 
-public class BaseFinderXin extends WaveXinModule {
+public class BaseFinder extends WaveXinModule {
+    static {
+        SettingsWidgetFactory.registerCustomFactory(ConfirmedActionSetting.class, theme -> (table, setting) -> {
+            ConfirmedActionSetting actionSetting = (ConfirmedActionSetting) setting;
+            actionSetting.create(table, theme);
+        });
+    }
     public enum ScanMethod { SPIRAL("Spiral Scan"), NORMAL("Normal Scan"); private final String title; ScanMethod(String title) { this.title = title; } @Override public String toString() { return title; } }
-    private static final Path CONTAINER_RECORD_PATH = MeteorClient.FOLDER.toPath().resolve("base-finder-xin").resolve("container-records.txt");
+    private static final Path CONTAINER_RECORD_PATH = WaveXinDataPaths.CONTAINER_DIRECTORY.resolve("container-records.txt");
+    private static final Path LEGACY_CONTAINER_RECORD_PATH = MeteorClient.FOLDER.toPath().resolve("base-finder-xin").resolve("container-records.txt");
     private static final DateTimeFormatter RECORD_TIME_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
     public enum SpiralStartMode {
@@ -105,6 +116,7 @@ public class BaseFinderXin extends WaveXinModule {
     private final SettingGroup sgRestart = settings.createGroup("Restart");
     private ChunkPos originChunk;
     private ChunkPos targetChunk;
+    private ChunkPos resumeCheckpointChunk;
     private int currentCircle;
     private SweepRoute currentPath;
     private int turnDelayTimer;
@@ -133,6 +145,7 @@ public class BaseFinderXin extends WaveXinModule {
     private boolean spiralNeedsInitialRotation;
     private ScanMethod activeScanMethod;
     private boolean scanStartPending;
+    private int lastCompletedNormalRing = -1;
     private final Set<Long> recordedContainerChunks = new HashSet<>();
     private final List<BlockPos> createdWaypointPositions = new ArrayList<>();
     private int nextWaypointNumber = 1;
@@ -141,7 +154,6 @@ public class BaseFinderXin extends WaveXinModule {
         .name("Scan Method")
         .description("Selects the scan route and its settings.")
         .defaultValue(ScanMethod.NORMAL)
-        .onChanged(this::stopScanForMethodChange)
         .build()
     );
 
@@ -280,10 +292,9 @@ public class BaseFinderXin extends WaveXinModule {
             .name("Maximum Scan Rings")
             .description("Stops after this many outward scan rings.")
             .defaultValue(50)
-            .min(2)
-            .max(Integer.MAX_VALUE)
-            .sliderMin(2)
-            .sliderMax(10000)
+            .min(1)
+            .sliderMin(1)
+            .sliderMax(1500)
             .visible(this::isNormalScan)
             .build());
 
@@ -303,7 +314,7 @@ public class BaseFinderXin extends WaveXinModule {
     private final Setting<Boolean> lockView = sgNormalScan.add(new BoolSetting.Builder()
             .name("Lock View")
             .description("Turns the camera toward the current scan target.")
-            .defaultValue(false)
+            .defaultValue(true)
             .visible(this::isNormalScan)
             .build());
     private final Setting<Integer> turnDelay = sgNormalScan.add(new IntSetting.Builder()
@@ -450,6 +461,14 @@ private final Setting<String> xaeroWaypointPrefix = sgContainerRecording.add(new
             .sliderMin(Integer.MIN_VALUE)
             .sliderMax(Integer.MAX_VALUE)
             .build());
+    private final Setting<Boolean> resetPreviousScan = sgRestart.add(new ConfirmedActionSetting.Builder()
+            .name("")
+            .description("Clears the saved Normal Scan checkpoint.")
+            .buttonLabel("Reset Previous Scan")
+            .confirmationText("Reset saved Normal Scan progress?")
+            .action(this::resetPreviousNormalScan)
+            .visible(this::isNormalScan)
+            .build());
 
     // Render Distance设置
     public final Setting<Integer> renderDistance = sgRender.add(new IntSetting.Builder()
@@ -540,7 +559,7 @@ private final Setting<String> xaeroWaypointPrefix = sgContainerRecording.add(new
             .visible(() -> isNormalScan() && (shapeMode.get() == ShapeMode.Lines || shapeMode.get() == ShapeMode.Both))
             .build());
 
-    public BaseFinderXin() {
+    public BaseFinder() {
         super(WaveXinAddon.CATEGORY, "base-finder", "Outward map scanner with chunk-loading pauses.");
     }
 
@@ -554,6 +573,7 @@ private final Setting<String> xaeroWaypointPrefix = sgContainerRecording.add(new
 
     @Override
     public void onActivate() {
+        migrateLegacyContainerRecords();
         activeScanMethod = scanMethod.get();
         setScanForwardKey(false);
         scanStartPending = true;
@@ -568,6 +588,7 @@ private final Setting<String> xaeroWaypointPrefix = sgContainerRecording.add(new
         createdWaypointPositions.clear();
         nextWaypointNumber = 1;
         validateXaeroWaypointSetting();
+        warnIfUnsafeScanHeight();
         if (activeScanMethod == ScanMethod.SPIRAL) {
             startSpiralScan();
             return;
@@ -575,10 +596,10 @@ private final Setting<String> xaeroWaypointPrefix = sgContainerRecording.add(new
 
         turnDelayTimer = 0;
         normalViewRestorePending = false;
+        lastCompletedNormalRing = -1;
+        resumeCheckpointChunk = null;
         if (lastBegin.get()) {
-            currentCircle = lastCircle.get();
-            currentPath = lastPath.get();
-            originChunk = new ChunkPos(lastOriginX.get(), lastOriginZ.get());
+            restoreNormalScanProgress();
         } else {
             currentCircle = 0;
             currentPath = SweepRoute.NEXT_CIRCLE;
@@ -597,6 +618,29 @@ private final Setting<String> xaeroWaypointPrefix = sgContainerRecording.add(new
             info("Resumed normal scan at ring %d, route %s.", currentCircle, currentPath);
         } else {
             info("Normal scan started at origin chunk (%d, %d).", originChunk.x, originChunk.z);
+        }
+    }
+    private void restoreNormalScanProgress() {
+        ScanProgressManager.NormalScanProgress progress = ScanProgressManager.loadNormalProgress();
+        if (progress == null) {
+            progress = new ScanProgressManager.NormalScanProgress(
+                lastOriginX.get(),
+                lastOriginZ.get(),
+                lastChunkX.get(),
+                lastChunkZ.get(),
+                lastCircle.get(),
+                lastPath.get().name()
+            );
+            ScanProgressManager.saveNormalProgress(progress);
+        }
+
+        currentCircle = Math.max(0, progress.ring);
+        originChunk = new ChunkPos(progress.originX, progress.originZ);
+        resumeCheckpointChunk = new ChunkPos(progress.playerX, progress.playerZ);
+        try {
+            currentPath = SweepRoute.valueOf(progress.route);
+        } catch (IllegalArgumentException | NullPointerException ignored) {
+            currentPath = SweepRoute.NEXT_CIRCLE;
         }
     }
     private void primeScanTargets() {
@@ -728,6 +772,14 @@ private final Setting<String> xaeroWaypointPrefix = sgContainerRecording.add(new
             return;
         }
 
+        if (resumeCheckpointChunk != null) {
+            if (moveToResumeCheckpoint()) {
+                info("Reached saved Normal Scan checkpoint at chunk (%d, %d).", resumeCheckpointChunk.x, resumeCheckpointChunk.z);
+                resumeCheckpointChunk = null;
+            }
+            return;
+        }
+
         refreshActivePathChunks();
 
         ChunkPos playerChunk = mc.player.getChunkPos();
@@ -744,6 +796,11 @@ private final Setting<String> xaeroWaypointPrefix = sgContainerRecording.add(new
         }
 
         if (currentPath == SweepRoute.NEXT_CIRCLE) {
+            if (currentCircle > 0 && currentCircle != lastCompletedNormalRing) {
+                info("Completed normal scan ring %d.", currentCircle);
+                lastCompletedNormalRing = currentCircle;
+            }
+
             advanceSweepRoute();
             currentCircle++;
 
@@ -848,15 +905,17 @@ private final Setting<String> xaeroWaypointPrefix = sgContainerRecording.add(new
         }
 
         boolean scanCompleted = currentCircle > circleLimit.get();
-        saveNormalScanProgress(true);
+        boolean returningToResumeCheckpoint = resumeCheckpointChunk != null;
+        if (!returningToResumeCheckpoint) saveNormalScanProgress(true);
 
         if (!scanCompleted) {
-            if (lastBegin.get() && mc.player != null) {
+            if (returningToResumeCheckpoint) {
+                info("Normal scan stopped while returning to its saved checkpoint. Saved progress was preserved.");
+            } else if (lastBegin.get() && mc.player != null) {
                 ChunkPos playerChunk = mc.player.getChunkPos();
                 info("Normal scan stopped. Saved checkpoint: (%d, %d), ring %d, route %s.", playerChunk.x, playerChunk.z, currentCircle, currentPath);
             } else {
                 info("Normal scan stopped.");
-
             }
         }
         // 清空区块数据
@@ -867,7 +926,9 @@ private final Setting<String> xaeroWaypointPrefix = sgContainerRecording.add(new
         // 还原变量
         originChunk = null;
         targetChunk = null;
+        resumeCheckpointChunk = null;
         currentPath = null;
+        lastCompletedNormalRing = -1;
         turnDelayTimer = 0;
         activeScanMethod = null;
     }
@@ -882,26 +943,88 @@ private final Setting<String> xaeroWaypointPrefix = sgContainerRecording.add(new
             return;
         }
 
-        lastOriginX.set(originChunk.x);
-        lastOriginZ.set(originChunk.z);
-        lastChunkX.set(playerChunk.x);
-        lastChunkZ.set(playerChunk.z);
-        lastCircle.set(currentCircle);
-        lastPath.set(currentPath);
+        ScanProgressManager.saveNormalProgress(new ScanProgressManager.NormalScanProgress(
+            originChunk.x,
+            originChunk.z,
+            playerChunk.x,
+            playerChunk.z,
+            currentCircle,
+            currentPath.name()
+        ));
 
         savedNormalScanChunk = playerChunk;
         savedNormalScanCircle = currentCircle;
         savedNormalScanPath = currentPath;
-        Modules.get().save();
     }
 
-    private void stopScanForMethodChange(ScanMethod ignored) {
-        if (!isActive() || activeScanMethod == null) return;
 
-        info("Scan method changed. Current scan stopped.");
-        toggle();
+    private void warnIfUnsafeScanHeight() {
+        if (mc.player == null || mc.world == null || isSafeScanHeight()) return;
+        ChatUtils.error("Recommended to use above each dimension height limit: Nether (Y > 128), Overworld (Y > 320), End (Y > 256)");
     }
 
+    private boolean isSafeScanHeight() {
+        String dimensionName = mc.world.getRegistryKey().getValue().toString();
+        return switch (dimensionName) {
+            case "minecraft:the_nether" -> mc.player.getY() > 128;
+            case "minecraft:overworld" -> mc.player.getY() > 320;
+            case "minecraft:the_end" -> mc.player.getY() > 256;
+            default -> false;
+        };
+    }
+
+    private boolean moveToResumeCheckpoint() {
+        Vec3d playerPos = new Vec3d(mc.player.getX(), mc.player.getY(), mc.player.getZ());
+        Vec3d checkpointCenter = new Vec3d(
+            resumeCheckpointChunk.getStartX() + 8,
+            mc.player.getY(),
+            resumeCheckpointChunk.getStartZ() + 8
+        );
+        double deltaX = checkpointCenter.x - playerPos.x;
+        double deltaZ = checkpointCenter.z - playerPos.z;
+        double distance = Math.sqrt(deltaX * deltaX + deltaZ * deltaZ);
+
+        if (distance < 1.0) {
+            setScanForwardKey(false);
+            return true;
+        }
+
+        targetYaw = (float) Math.toDegrees(Math.atan2(-deltaX, deltaZ));
+        if (waitChunkLoad.get()) {
+            if (!areNeighborChunksLoaded(targetYaw)) {
+                setScanForwardKey(false);
+                return false;
+            }
+
+            int chunkX = (int) (mc.player.getX() / 16);
+            int chunkZ = (int) (mc.player.getZ() / 16);
+            if (!mc.world.getChunkManager().isChunkLoaded(chunkX, chunkZ)) {
+                setScanForwardKey(false);
+                return false;
+            }
+        }
+
+        if (moveSpeed.get() > 1.0) mc.player.setSprinting(true);
+        applyNormalMovementYaw(targetYaw);
+        setScanForwardKey(true);
+        return false;
+    }
+    private void resetPreviousNormalScan() {
+        if (activeScanMethod == ScanMethod.NORMAL) {
+            warning("Stop Normal Scan before resetting its saved progress.");
+            return;
+        }
+
+        ScanProgressManager.clearNormalProgress();
+        lastBegin.set(false);
+        lastCircle.set(0);
+        lastChunkX.set(0);
+        lastChunkZ.set(0);
+        lastPath.set(SweepRoute.NEXT_CIRCLE);
+        lastOriginX.set(0);
+        lastOriginZ.set(0);
+        info("Cleared saved Normal Scan progress.");
+    }
     private void applyNormalMovementYaw(float yaw) {
         if (lockView.get()) {
             restoreNormalViewYaw();
@@ -918,6 +1041,7 @@ private final Setting<String> xaeroWaypointPrefix = sgContainerRecording.add(new
         if (!normalViewRestorePending) return;
         if (mc.player != null) mc.player.setYaw(normalViewYaw);
         normalViewRestorePending = false;
+        lastCompletedNormalRing = -1;
     }
 
     private void setScanForwardKey(boolean pressed) {
@@ -949,6 +1073,17 @@ private final Setting<String> xaeroWaypointPrefix = sgContainerRecording.add(new
         return true;
     }
 
+    private void migrateLegacyContainerRecords() {
+        if (Files.exists(CONTAINER_RECORD_PATH) || !Files.exists(LEGACY_CONTAINER_RECORD_PATH)) return;
+
+        try {
+            Files.createDirectories(CONTAINER_RECORD_PATH.getParent());
+            Files.copy(LEGACY_CONTAINER_RECORD_PATH, CONTAINER_RECORD_PATH);
+            WaveXinAddon.LOG.info("Migrated container records to {}.", CONTAINER_RECORD_PATH);
+        } catch (IOException e) {
+            WaveXinAddon.LOG.error("Could not migrate container records to {}.", CONTAINER_RECORD_PATH, e);
+        }
+    }
     private void recordContainerChunkIfNeeded(ChunkPos chunkPos) {
         long key = chunkPos.toLong();
         if (recordedContainerChunks.contains(key)) return;
@@ -1565,6 +1700,98 @@ private final Setting<String> xaeroWaypointPrefix = sgContainerRecording.add(new
         return spiralSegments + " | " + spiralDirection.name();
     }
 
+    private static class ConfirmedActionSetting extends Setting<Boolean> {
+        private final String buttonLabel;
+        private final String confirmationText;
+        private final Runnable action;
+
+        private ConfirmedActionSetting(String name, String description, String buttonLabel, String confirmationText, Runnable action, Consumer<Boolean> onChanged, Consumer<Setting<Boolean>> onModuleActivated, IVisible visible) {
+            super(name, description, false, onChanged, onModuleActivated, visible);
+            this.buttonLabel = buttonLabel;
+            this.confirmationText = confirmationText;
+            this.action = action;
+        }
+
+        private void create(WTable table, GuiTheme theme) {
+            WTable actions = table.add(theme.table()).expandX().widget();
+            showReset(actions, theme);
+        }
+
+        private void showReset(WTable table, GuiTheme theme) {
+            table.clear();
+            var reset = table.add(theme.button(buttonLabel)).expandX().widget();
+            reset.action = () -> showConfirmation(table, theme);
+            reset.tooltip = description;
+        }
+
+        private void showConfirmation(WTable table, GuiTheme theme) {
+            table.clear();
+            table.add(theme.label(confirmationText)).expandX().centerX();
+            table.row();
+
+            var confirm = table.add(theme.button("Confirm")).expandX().group("reset-actions").widget();
+            confirm.action = () -> {
+                if (action != null) action.run();
+                showReset(table, theme);
+            };
+
+            var cancel = table.add(theme.button("Cancel")).expandX().group("reset-actions").widget();
+            cancel.action = () -> showReset(table, theme);
+            table.row();
+        }
+
+        @Override
+        protected Boolean parseImpl(String str) {
+            return false;
+        }
+
+        @Override
+        protected boolean isValueValid(Boolean value) {
+            return true;
+        }
+
+        @Override
+        protected NbtCompound save(NbtCompound tag) {
+            tag.putBoolean("value", false);
+            return tag;
+        }
+
+        @Override
+        protected Boolean load(NbtCompound tag) {
+            set(false);
+            return false;
+        }
+
+        private static class Builder extends SettingBuilder<Builder, Boolean, ConfirmedActionSetting> {
+            private String buttonLabel = "Reset";
+            private String confirmationText = "Confirm reset?";
+            private Runnable action;
+
+            private Builder() {
+                super(false);
+            }
+
+            private Builder buttonLabel(String buttonLabel) {
+                this.buttonLabel = buttonLabel;
+                return this;
+            }
+
+            private Builder confirmationText(String confirmationText) {
+                this.confirmationText = confirmationText;
+                return this;
+            }
+
+            private Builder action(Runnable action) {
+                this.action = action;
+                return this;
+            }
+
+            @Override
+            public ConfirmedActionSetting build() {
+                return new ConfirmedActionSetting(name, description, buttonLabel, confirmationText, action, onChanged, onModuleActivated, visible);
+            }
+        }
+    }
     public enum SweepRoute {
         NEXT_CIRCLE,
         CENTER_TO_LEFT,

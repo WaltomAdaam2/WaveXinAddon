@@ -2,7 +2,7 @@ package me.waltom.wavexin.mixins;
 
 import me.waltom.wavexin.AutoLoginTextEvent;
 import me.waltom.wavexin.CommandSuggestionsEvent;
-import me.waltom.wavexin.ChatFilterXin;
+import me.waltom.wavexin.ChatFilter;
 import meteordevelopment.meteorclient.MeteorClient;
 import net.minecraft.client.network.ClientPlayNetworkHandler;
 import net.minecraft.network.packet.s2c.play.GameMessageS2CPacket;
@@ -33,8 +33,8 @@ public class MixinClientPlayNetworkHandler {
 
     @Inject(method = "onGameMessage", at = @At("HEAD"), cancellable = true)
     private void onGameMessage(GameMessageS2CPacket packet, CallbackInfo ci) {
-        String message = packet.content().getString();
-        MeteorClient.EVENT_BUS.post(new AutoLoginTextEvent(message, AutoLoginTextEvent.Source.Chat));
-        if (ChatFilterXin.shouldHideServerMessage(message)) ci.cancel();
+        var content = packet.content();
+        MeteorClient.EVENT_BUS.post(new AutoLoginTextEvent(content.getString(), AutoLoginTextEvent.Source.Chat));
+        if (ChatFilter.shouldHideServerMessage(content)) ci.cancel();
     }
 }

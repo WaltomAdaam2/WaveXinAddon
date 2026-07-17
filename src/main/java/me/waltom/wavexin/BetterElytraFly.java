@@ -24,7 +24,7 @@ import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec2f;
 import net.minecraft.util.math.Vec3d;
 
-public class ElytraFlyXin extends WaveXinModule {
+public class BetterElytraFly extends WaveXinModule {
     static MinecraftClient mc = MinecraftClient.getInstance();
 
     private final SettingGroup sgGeneral = settings.getDefaultGroup();
@@ -181,7 +181,7 @@ public class ElytraFlyXin extends WaveXinModule {
     private boolean inventoryTweaksWasActive = false;
     private int reEnableCountdown = 0;
 
-    public ElytraFlyXin() {
+    public BetterElytraFly() {
         super(WaveXinAddon.CATEGORY, "better-elytra-fly", "Better Elytra Fly");
     }
 

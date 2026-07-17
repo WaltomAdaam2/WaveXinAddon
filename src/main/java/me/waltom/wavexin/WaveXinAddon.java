@@ -25,13 +25,13 @@ public class WaveXinAddon extends MeteorAddon {
         ChatUtils.registerCustomPrefix(getPackage(), WaveXinAddon::createChatPrefix);
         BetterChat.registerCustomHead("[WaveXin]", CHAT_AVATAR);
         MeteorClient.EVENT_BUS.subscribe(new WaveXinSettingsAutoSaver());
-        Modules.get().add(new ElytraFlyXin());
+        Modules.get().add(new BetterElytraFly());
         Modules.get().add(new SimpleElytraFlyPath());
         Modules.get().add(new ChickenNametags());
         Modules.get().add(new SnifferNametags());
         Modules.get().add(new AutoLogin());
-        Modules.get().add(new ChatFilterXin());
-        Modules.get().add(new BaseFinderXin());
+        Modules.get().add(new ChatFilter());
+        Modules.get().add(new BaseFinder());
     }
 
     private static Text createChatPrefix() {

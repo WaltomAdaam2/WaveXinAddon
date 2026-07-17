@@ -64,7 +64,7 @@ import javax.crypto.spec.SecretKeySpec;
 public class AutoLogin extends WaveXinModule {
     private static final MinecraftClient mc = MinecraftClient.getInstance();
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
-    private static final Path CONFIG_DIRECTORY = Path.of("D:\\.Others\\.Minecraft\\.minecraft\\versions\\1.21.11_Meteor Client 2b2t\\meteor-client\\wavexin");
+    private static final Path CONFIG_DIRECTORY = WaveXinDataPaths.DIRECTORY;
     private static final Path CONFIG_PATH = CONFIG_DIRECTORY.resolve("auto-login.json");
     private static final Path KEY_PATH = CONFIG_PATH.resolveSibling("auto-login.key");
     private static final PasswordCipher PASSWORD_CIPHER = new PasswordCipher(KEY_PATH);
