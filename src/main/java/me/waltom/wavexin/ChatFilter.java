@@ -6,18 +6,32 @@ import meteordevelopment.meteorclient.settings.Setting;
 import meteordevelopment.meteorclient.settings.SettingGroup;
 import meteordevelopment.meteorclient.systems.modules.Modules;
 import meteordevelopment.orbit.EventHandler;
-import net.minecraft.text.Style;
 import net.minecraft.text.Text;
-import net.minecraft.text.TextColor;
 
 import java.util.regex.Pattern;
 
 public class ChatFilter extends WaveXinModule {
-    private static final int DEATH_MESSAGE_GREEN = 0x55FF55;
-    private static final int DEATH_MESSAGE_RED = 0xFF5555;
     private static final Pattern LEGACY_FORMATTING_PATTERN = Pattern.compile("(?i)\\xA7[0-9A-FK-OR]");
-    private static final Pattern PRIVATE_MESSAGE_HEADER_PATTERN = Pattern.compile("(?im)(?:^|\\R)\\s*(?:(?:from|to)\\s+[^\\r\\n:\\uFF1A]{1,64}\\s*[:\\uFF1A]|\\u6765\\u81ea\\s*[^\\r\\n:\\uFF1A]{1,64}\\s*[:\\uFF1A]|[^\\r\\n:\\uFF1A]{1,64}\\s+(?:whispers|tells you)\\b)");
-    private static final Pattern PRIVATE_MESSAGE_TAG_PATTERN = Pattern.compile("(?i)\\[[^\\]]*(?:private\\s+message|\\u79c1\\u804a\\u4fe1\\u606f|\\u79c1\\u4fe1|\\u5bc6\\u8bed|\\u6084\\u6084\\u8bdd)[^\\]]*\\]");
+    private static final String PLAYER_NAME = "[^\\s:：\\[\\]<>（）()]{1,64}";
+    private static final String DEATH_COUNT = "(?:\\s*[（(]\\d+[）)])?";
+    private static final Pattern CHINESE_DEATH_MESSAGE_PATTERN = Pattern.compile(
+        "^" + PLAYER_NAME + "\\s+(?:"
+            + "自杀"
+            + "|被\\s+.+?\\s+(?:击杀|杀死|射杀|射死|炸死|摔死|淹死|烧死|窒息|冻死|饿死)"
+            + "|被\\s+.+?(?:而死亡|死亡)"
+            + "|(?:因|从)\\s+.+?(?:死亡|摔死|淹死|烧死|窒息|冻死|饿死)"
+            + ")" + DEATH_COUNT + "$"
+    );
+    private static final Pattern ENGLISH_DEATH_MESSAGE_PATTERN = Pattern.compile(
+        "^" + PLAYER_NAME + "\\s+(?:"
+            + "was (?:slain|shot|blown up|killed|doomed to fall|squashed|impaled|fireballed|stung|pummeled)"
+            + "|was (?:killed|blown up|shot|slain) by .+"
+            + "|drowned|fell from a high place|hit the ground too hard|went up in flames|burned to death|starved to death|froze to death"
+            + ")" + DEATH_COUNT + "$",
+        Pattern.CASE_INSENSITIVE
+    );
+    private static final Pattern PRIVATE_MESSAGE_HEADER_PATTERN = Pattern.compile("(?im)(?:^|\\R)\\s*(?:(?:from|to)\\s+[^\\r\\n:：]{1,64}\\s*[:：]|来自\\s*[^\\r\\n:：]{1,64}\\s*[:：]|[^\\r\\n:：]{1,64}\\s+(?:whispers|tells you)\\b)");
+    private static final Pattern PRIVATE_MESSAGE_TAG_PATTERN = Pattern.compile("(?i)\\[[^\\]]*(?:private\\s+message|私聊信息|私信|密语|悄悄话)[^\\]]*\\]");
     private static final Pattern PUBLIC_MESSAGE_PATTERN = Pattern.compile("(?:^\\s*<[^>]+>\\s+.+|^\\s*[^\\s:]{1,32}:\\s+.+)");
 
     private final SettingGroup sgGeneral = settings.getDefaultGroup();
@@ -38,7 +52,7 @@ public class ChatFilter extends WaveXinModule {
 
     private final Setting<Boolean> hideDeathMessages = sgGeneral.add(new BoolSetting.Builder()
         .name("Hide Death Messages")
-        .description("Hides red and green server death messages")
+        .description("Hides structured server death announcements")
         .defaultValue(false)
         .build()
     );
@@ -59,41 +73,28 @@ public class ChatFilter extends WaveXinModule {
 
     private boolean shouldHideServerMessageInternal(Text message) {
         if (message == null) return false;
-        if (hideDeathMessages.get() && hasDeathMessageColors(message)) return true;
-        return shouldHideRegularMessage(message.getString());
+        String normalized = normalize(message.getString());
+        if (hideDeathMessages.get() && isDeathMessage(normalized)) return true;
+        return shouldHideRegularMessage(normalized);
     }
 
     private boolean shouldHideRegularMessage(String message) {
         if (message == null) return false;
-        String normalized = LEGACY_FORMATTING_PATTERN.matcher(message).replaceAll("").trim();
+        String normalized = normalize(message);
         if (normalized.isEmpty()) return false;
 
         if (hidePrivateMessages.get() && isPrivateMessage(normalized)) return true;
         return hidePublicMessages.get() && PUBLIC_MESSAGE_PATTERN.matcher(normalized).find();
     }
 
-    private boolean hasDeathMessageColors(Text message) {
-        boolean hasGreen = hasLegacyColor(message.getString(), 'a');
-        boolean hasRed = hasLegacyColor(message.getString(), 'c');
-
-        for (Text part : message.getWithStyle(Style.EMPTY)) {
-            TextColor color = part.getStyle().getColor();
-            if (color == null) continue;
-
-            int rgb = color.getRgb();
-            if (rgb == DEATH_MESSAGE_GREEN) hasGreen = true;
-            if (rgb == DEATH_MESSAGE_RED) hasRed = true;
-        }
-
-        return hasGreen && hasRed;
+    private static String normalize(String message) {
+        return LEGACY_FORMATTING_PATTERN.matcher(message).replaceAll("").trim();
     }
 
-    private static boolean hasLegacyColor(String message, char color) {
-        for (int i = 0; i < message.length() - 1; i++) {
-            if (message.charAt(i) == '\u00A7' && Character.toLowerCase(message.charAt(i + 1)) == color) return true;
-        }
-
-        return false;
+    private static boolean isDeathMessage(String message) {
+        if (message.isEmpty() || message.contains("\n") || message.contains("\r")) return false;
+        return CHINESE_DEATH_MESSAGE_PATTERN.matcher(message).matches()
+            || ENGLISH_DEATH_MESSAGE_PATTERN.matcher(message).matches();
     }
 
     private boolean isPrivateMessage(String message) {
