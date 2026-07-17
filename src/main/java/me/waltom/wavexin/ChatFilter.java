@@ -5,16 +5,20 @@ import meteordevelopment.meteorclient.systems.modules.Modules;
 import meteordevelopment.meteorclient.settings.BoolSetting;
 import meteordevelopment.meteorclient.settings.Setting;
 import meteordevelopment.meteorclient.settings.SettingGroup;
-
 import meteordevelopment.orbit.EventHandler;
 
 import java.util.regex.Pattern;
 
 public class ChatFilter extends WaveXinModule {
+    private static final Pattern LEGACY_FORMATTING_PATTERN = Pattern.compile("(?i)\\xA7[0-9A-FK-OR]");
     private static final Pattern PRIVATE_MESSAGE_HEADER_PATTERN = Pattern.compile("(?im)(?:^|\\R)\\s*(?:(?:from|to)\\s+[^\\r\\n:\\uFF1A]{1,64}\\s*[:\\uFF1A]|\\u6765\\u81ea\\s*[^\\r\\n:\\uFF1A]{1,64}\\s*[:\\uFF1A]|[^\\r\\n:\\uFF1A]{1,64}\\s+(?:whispers|tells you)\\b)");
     private static final Pattern PRIVATE_MESSAGE_TAG_PATTERN = Pattern.compile("(?i)\\[[^\\]]*(?:private\\s+message|\\u79c1\\u804a\\u4fe1\\u606f|\\u79c1\\u4fe1|\\u5bc6\\u8bed|\\u6084\\u6084\\u8bdd)[^\\]]*\\]");
-    private static final Pattern ENGLISH_DEATH_MESSAGE_PATTERN = Pattern.compile("(?i)\\b.+\\s(?:was slain by|was shot by|was blown up by|was killed by|died|fell(?: from| off)?|burned to death|went up in flames|drowned|hit the ground too hard|was squashed by|was struck by lightning|starved to death|withered away|froze to death|experienced kinetic energy)\\b.*");
-    private static final Pattern CHINESE_DEATH_MESSAGE_PATTERN = Pattern.compile(".*(?:\\u6b7b\\u4ea1|\\u6b7b\\u4e86|\\u88ab.*\\u6740\\u6b7b|\\u88ab.*\\u51fb\\u6740|\\u88ab.*\\u5c04\\u6740|\\u88ab.*\\u5c04\\u6b7b|\\u88ab.*\\u6740\\u5bb3|\\u88ab.*\\u51fb\\u8d25|\\u6454\\u6b7b|\\u6dfa\\u6b7b|\\u70e7\\u6b7b|\\u70e7\\u70ed|\\u7206\\u70b8|\\u4ece.*\\u8dcc\\u843d|\\u7a92\\u606f|\\u51bb\\u6b7b|\\u997f\\u6b7b).*");
+    private static final String DEATH_SUBJECT = "[^\\s\\[\\]<>:\\uFF1A]{1,64}";
+    private static final String CHINESE_DEATH_ENDING = "(?:\\u6740\\u6b7b|\\u51fb\\u6740|\\u5c04\\u6740|\\u5c04\\u6b7b|\\u70b8\\u6b7b|\\u6454\\u6b7b|\\u6dfa\\u6b7b|\\u70e7\\u6b7b|\\u70e7\\u7126|\\u7a92\\u606f|\\u51bb\\u6b7b|\\u997f\\u6b7b|\\u6bd2\\u6b7b|\\u538b\\u6b7b|\\u523a\\u6b7b|\\u5bb3\\u6b7b|\\u81f4\\u6b7b|\\u79d2\\u6740|\\u65a9\\u6740|\\u800c\\u6b7b\\u4ea1|\\u800c\\u6b7b)";
+    private static final Pattern ENGLISH_DEATH_MESSAGE_PATTERN = Pattern.compile("(?i)^" + DEATH_SUBJECT + "\\s+(?:was slain by .+|was shot by .+|was blown up by .+|was killed by .+|died(?: .+)?|fell(?: from| off)? .+|burned to death(?: .+)?|went up in flames(?: .+)?|drowned(?: .+)?|hit the ground too hard(?: .+)?|was squashed by .+|was struck by lightning(?: .+)?|starved to death(?: .+)?|withered away(?: .+)?|froze to death(?: .+)?|experienced kinetic energy(?: .+)?)$");
+    private static final Pattern CHINESE_SUICIDE_MESSAGE_PATTERN = Pattern.compile("^" + DEATH_SUBJECT + "\\s+\\u81ea\\u6740$");
+    private static final Pattern CHINESE_KILL_MESSAGE_PATTERN = Pattern.compile("^" + DEATH_SUBJECT + "\\s+\\u88ab\\s+.+(?:" + CHINESE_DEATH_ENDING + ")$");
+    private static final Pattern CHINESE_ENVIRONMENT_DEATH_MESSAGE_PATTERN = Pattern.compile("^" + DEATH_SUBJECT + "\\s+(?:(?:\\u56e0|\\u4ece)\\s+.+(?:" + CHINESE_DEATH_ENDING + "|\\u6b7b\\u4ea1|\\u6b7b\\u4e86))$");
     private static final Pattern PUBLIC_MESSAGE_PATTERN = Pattern.compile("(?:^\\s*<[^>]+>\\s+.+|^\\s*[^\\s:]{1,32}:\\s+.+)");
 
     private final SettingGroup sgGeneral = settings.getDefaultGroup();
@@ -56,9 +60,12 @@ public class ChatFilter extends WaveXinModule {
 
     private boolean shouldHideMessage(String message) {
         if (message == null) return false;
-        if (hidePrivateMessages.get() && isPrivateMessage(message)) return true;
-        if (hideDeathMessages.get() && isDeathMessage(message)) return true;
-        return hidePublicMessages.get() && PUBLIC_MESSAGE_PATTERN.matcher(message).find();
+        String normalized = LEGACY_FORMATTING_PATTERN.matcher(message).replaceAll("").trim();
+        if (normalized.isEmpty()) return false;
+
+        if (hidePrivateMessages.get() && isPrivateMessage(normalized)) return true;
+        if (hideDeathMessages.get() && isDeathMessage(normalized)) return true;
+        return hidePublicMessages.get() && PUBLIC_MESSAGE_PATTERN.matcher(normalized).find();
     }
 
     private boolean isPrivateMessage(String message) {
@@ -68,6 +75,8 @@ public class ChatFilter extends WaveXinModule {
 
     private boolean isDeathMessage(String message) {
         return ENGLISH_DEATH_MESSAGE_PATTERN.matcher(message).matches()
-            || CHINESE_DEATH_MESSAGE_PATTERN.matcher(message).matches();
+            || CHINESE_SUICIDE_MESSAGE_PATTERN.matcher(message).matches()
+            || CHINESE_KILL_MESSAGE_PATTERN.matcher(message).matches()
+            || CHINESE_ENVIRONMENT_DEATH_MESSAGE_PATTERN.matcher(message).matches();
     }
 }

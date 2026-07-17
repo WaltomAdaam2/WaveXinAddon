@@ -133,6 +133,7 @@ public class BaseFinder extends WaveXinModule {
     private boolean spiralNeedsInitialRotation;
     private ScanMethod activeScanMethod;
     private boolean scanStartPending;
+    private int lastCompletedNormalRing = -1;
     private final Set<Long> recordedContainerChunks = new HashSet<>();
     private final List<BlockPos> createdWaypointPositions = new ArrayList<>();
     private int nextWaypointNumber = 1;
@@ -575,6 +576,7 @@ private final Setting<String> xaeroWaypointPrefix = sgContainerRecording.add(new
 
         turnDelayTimer = 0;
         normalViewRestorePending = false;
+        lastCompletedNormalRing = -1;
         if (lastBegin.get()) {
             currentCircle = lastCircle.get();
             currentPath = lastPath.get();
@@ -744,6 +746,11 @@ private final Setting<String> xaeroWaypointPrefix = sgContainerRecording.add(new
         }
 
         if (currentPath == SweepRoute.NEXT_CIRCLE) {
+            if (currentCircle > 0 && currentCircle != lastCompletedNormalRing) {
+                info("Completed normal scan ring %d.", currentCircle);
+                lastCompletedNormalRing = currentCircle;
+            }
+
             advanceSweepRoute();
             currentCircle++;
 
@@ -868,6 +875,7 @@ private final Setting<String> xaeroWaypointPrefix = sgContainerRecording.add(new
         originChunk = null;
         targetChunk = null;
         currentPath = null;
+        lastCompletedNormalRing = -1;
         turnDelayTimer = 0;
         activeScanMethod = null;
     }
@@ -918,6 +926,7 @@ private final Setting<String> xaeroWaypointPrefix = sgContainerRecording.add(new
         if (!normalViewRestorePending) return;
         if (mc.player != null) mc.player.setYaw(normalViewYaw);
         normalViewRestorePending = false;
+        lastCompletedNormalRing = -1;
     }
 
     private void setScanForwardKey(boolean pressed) {
