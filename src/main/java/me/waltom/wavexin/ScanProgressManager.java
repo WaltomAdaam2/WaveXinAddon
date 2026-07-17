@@ -1,49 +1,41 @@
 package me.waltom.wavexin;
 
+import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
+import com.google.gson.JsonSyntaxException;
+import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.nbt.NbtCompound;
 import net.minecraft.nbt.NbtIo;
 import net.minecraft.util.math.ChunkPos;
-import net.fabricmc.loader.api.FabricLoader;
 
-import java.io.File;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
+import java.time.Instant;
 
-/**
- * 扫描进度管理器
- * 负责保存和恢复地图扫描的进度数据
- */
 public class ScanProgressManager {
-    
-    private static final String PROGRESS_FILE = "mapscan_progress.dat";
-    
-    /**
-     * 扫描进度数据
-     */
+    private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
+    private static final String LEGACY_PROGRESS_FILE = "mapscan_progress.dat";
+
     public static class ScanProgress {
-        public int startX;           // 起始区块 X
-        public int startZ;           // 起始区块 Z
-        public int totalSegments;    // 已完成的段数
-        public int currentDir;       // 当前方向索引 (0=EAST, 1=NORTH, 2=WEST, 3=SOUTH)
-        public int stepsInCurrentLength; // 当前步长已走次数
-        public int currentStepLength;    // 当前步长
-        public int chunkStep;            // 区块步长（用于验证一致性）
-        
-        public ScanProgress() {}
-        
-        public ScanProgress(int startX, int startZ, int totalSegments, 
-                           int currentDir, int stepsInCurrentLength, int currentStepLength) {
-            this.startX = startX;
-            this.startZ = startZ;
-            this.totalSegments = totalSegments;
-            this.currentDir = currentDir;
-            this.stepsInCurrentLength = stepsInCurrentLength;
-            this.currentStepLength = currentStepLength;
-            this.chunkStep = 6;  // 默认值，向后兼容
+        public int startX;
+        public int startZ;
+        public int totalSegments;
+        public int currentDir;
+        public int stepsInCurrentLength;
+        public int currentStepLength;
+        public int chunkStep;
+
+        public ScanProgress() {
         }
-        
-        public ScanProgress(int startX, int startZ, int totalSegments, 
-                           int currentDir, int stepsInCurrentLength, int currentStepLength, int chunkStep) {
+
+        public ScanProgress(int startX, int startZ, int totalSegments, int currentDir, int stepsInCurrentLength, int currentStepLength) {
+            this(startX, startZ, totalSegments, currentDir, stepsInCurrentLength, currentStepLength, 6);
+        }
+
+        public ScanProgress(int startX, int startZ, int totalSegments, int currentDir, int stepsInCurrentLength, int currentStepLength, int chunkStep) {
             this.startX = startX;
             this.startZ = startZ;
             this.totalSegments = totalSegments;
@@ -52,99 +44,133 @@ public class ScanProgressManager {
             this.currentStepLength = currentStepLength;
             this.chunkStep = chunkStep;
         }
-        
-        /**
-         * 转换为 NBT 数据
-         */
-        public NbtCompound toNbt() {
-            NbtCompound nbt = new NbtCompound();
-            nbt.putInt("StartX", startX);
-            nbt.putInt("StartZ", startZ);
-            nbt.putInt("TotalSegments", totalSegments);
-            nbt.putInt("CurrentDir", currentDir);
-            nbt.putInt("StepsInCurrentLength", stepsInCurrentLength);
-            nbt.putInt("CurrentStepLength", currentStepLength);
-            nbt.putInt("ChunkStep", chunkStep);  // 保存 chunkStep
-            return nbt;
-        }
-        
-        /**
-         * 从 NBT 数据恢复
-         */
-        public static ScanProgress fromNbt(NbtCompound nbt) {
-            ScanProgress progress = new ScanProgress();
-            progress.startX = nbt.getInt("StartX").orElse(0);
-            progress.startZ = nbt.getInt("StartZ").orElse(0);
-            progress.totalSegments = nbt.getInt("TotalSegments").orElse(0);
-            progress.currentDir = nbt.getInt("CurrentDir").orElse(0);
-            progress.stepsInCurrentLength = nbt.getInt("StepsInCurrentLength").orElse(0);
-            progress.currentStepLength = nbt.getInt("CurrentStepLength").orElse(1);
-            progress.chunkStep = nbt.contains("ChunkStep") ? nbt.getInt("ChunkStep").orElse(6) : 6;  // 向后兼容
-            return progress;
+
+        static ScanProgress fromNbt(NbtCompound nbt) {
+            return new ScanProgress(
+                nbt.getInt("StartX").orElse(0),
+                nbt.getInt("StartZ").orElse(0),
+                nbt.getInt("TotalSegments").orElse(0),
+                nbt.getInt("CurrentDir").orElse(0),
+                nbt.getInt("StepsInCurrentLength").orElse(0),
+                nbt.getInt("CurrentStepLength").orElse(1),
+                nbt.contains("ChunkStep") ? nbt.getInt("ChunkStep").orElse(6) : 6
+            );
         }
     }
-    
-    /**
-     * 保存进度到文件
-     */
+
+    public static class NormalScanProgress {
+        public int originX;
+        public int originZ;
+        public int playerX;
+        public int playerZ;
+        public int ring;
+        public String route;
+
+        public NormalScanProgress() {
+        }
+
+        public NormalScanProgress(int originX, int originZ, int playerX, int playerZ, int ring, String route) {
+            this.originX = originX;
+            this.originZ = originZ;
+            this.playerX = playerX;
+            this.playerZ = playerZ;
+            this.ring = ring;
+            this.route = route;
+        }
+    }
+
     public static void saveProgress(ScanProgress progress) {
+        ProgressDocument document = readDocument();
+        document.spiral = progress;
+        writeDocument(document);
+    }
+
+    public static ScanProgress loadProgress() {
+        ProgressDocument document = readDocument();
+        if (document.spiral != null) return document.spiral;
+
+        ScanProgress legacyProgress = loadLegacySpiralProgress();
+        if (legacyProgress == null) return null;
+
+        document.spiral = legacyProgress;
+        writeDocument(document);
+        WaveXinAddon.LOG.info("Migrated legacy Spiral Scan progress to {}.", WaveXinDataPaths.SCAN_PROGRESS_PATH);
+        return legacyProgress;
+    }
+
+    public static void saveNormalProgress(NormalScanProgress progress) {
+        ProgressDocument document = readDocument();
+        document.normal = progress;
+        writeDocument(document);
+    }
+
+    public static NormalScanProgress loadNormalProgress() {
+        return readDocument().normal;
+    }
+
+    public static void clearProgress() {
         try {
-            Path filePath = getProgressFile().toPath();
-            NbtCompound nbt = new NbtCompound();
-            nbt.put("ScanProgress", progress.toNbt());
-            NbtIo.write(nbt, filePath);
+            Files.deleteIfExists(WaveXinDataPaths.SCAN_PROGRESS_PATH);
         } catch (IOException e) {
-            WaveXinAddon.LOG.error("保存扫描进度失败: {}", e.getMessage());
+            WaveXinAddon.LOG.error("Could not clear scan progress.", e);
         }
     }
-    
-    /**
-     * 从文件加载进度
-     */
-    public static ScanProgress loadProgress() {
+
+    private static ProgressDocument readDocument() {
+        if (!Files.exists(WaveXinDataPaths.SCAN_PROGRESS_PATH)) return new ProgressDocument();
+
         try {
-            Path filePath = getProgressFile().toPath();
-            if (!java.nio.file.Files.exists(filePath)) {
-                return null;
-            }
-            NbtCompound nbt = NbtIo.read(filePath);
+            ProgressDocument document = GSON.fromJson(Files.readString(WaveXinDataPaths.SCAN_PROGRESS_PATH, StandardCharsets.UTF_8), ProgressDocument.class);
+            return document == null ? new ProgressDocument() : document;
+        } catch (IOException | JsonSyntaxException e) {
+            backupCorruptProgress();
+            WaveXinAddon.LOG.error("Could not load scan progress from {}.", WaveXinDataPaths.SCAN_PROGRESS_PATH, e);
+            return new ProgressDocument();
+        }
+    }
+
+    private static void writeDocument(ProgressDocument document) {
+        try {
+            WaveXinSettingsStore.writeAtomically(WaveXinDataPaths.SCAN_PROGRESS_PATH, GSON.toJson(document));
+        } catch (IOException e) {
+            WaveXinAddon.LOG.error("Could not save scan progress to {}.", WaveXinDataPaths.SCAN_PROGRESS_PATH, e);
+        }
+    }
+
+    private static ScanProgress loadLegacySpiralProgress() {
+        Path legacyPath = FabricLoader.getInstance().getConfigDir().resolve("wavexin").resolve(LEGACY_PROGRESS_FILE);
+        if (!Files.exists(legacyPath)) return null;
+
+        try {
+            NbtCompound nbt = NbtIo.read(legacyPath);
             if (nbt != null && nbt.contains("ScanProgress")) {
                 return nbt.getCompound("ScanProgress").map(ScanProgress::fromNbt).orElse(null);
             }
         } catch (IOException e) {
-            WaveXinAddon.LOG.error("加载扫描进度失败: {}", e.getMessage());
+            WaveXinAddon.LOG.error("Could not read legacy Spiral Scan progress from {}.", legacyPath, e);
         }
+
         return null;
     }
-    
-    /**
-     * 删除进度文件
-     */
-    public static void clearProgress() {
+
+    private static void backupCorruptProgress() {
         try {
-            Path filePath = getProgressFile().toPath();
-            if (java.nio.file.Files.exists(filePath)) {
-                java.nio.file.Files.delete(filePath);
-            }
-        } catch (IOException e) {
-            WaveXinAddon.LOG.error("清除扫描进度失败: {}", e.getMessage());
+            if (!Files.exists(WaveXinDataPaths.SCAN_PROGRESS_PATH)) return;
+            Path backupPath = WaveXinDataPaths.SCAN_PROGRESS_PATH.resolveSibling(
+                "scan-progress-corrupt-" + Instant.now().toEpochMilli() + ".json"
+            );
+            Files.move(WaveXinDataPaths.SCAN_PROGRESS_PATH, backupPath, StandardCopyOption.REPLACE_EXISTING);
+            WaveXinAddon.LOG.warn("Backed up invalid scan progress to {}.", backupPath);
+        } catch (IOException backupError) {
+            WaveXinAddon.LOG.error("Could not back up invalid scan progress.", backupError);
         }
     }
-    
-    /**
-     * 获取进度文件路径
-     */
-    private static File getProgressFile() {
-        File dir = FabricLoader.getInstance().getConfigDir().resolve("wavexin").toFile();
-        if (!dir.exists() && !dir.mkdirs()) {
-            WaveXinAddon.LOG.warn("Could not create WaveXinAddon config directory: {}", dir);
-        }
-        return new File(dir, PROGRESS_FILE);
+
+    private static class ProgressDocument {
+        int version = 1;
+        ScanProgress spiral;
+        NormalScanProgress normal;
     }
-    
-    /**
-     * 计算指定进度下的目标区块坐标
-     */
     public static ChunkPos calculateTargetChunkPos(ScanProgress progress, int chunkStep) {
         if (progress == null) return null;
         

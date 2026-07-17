@@ -38,7 +38,8 @@ import java.util.Set;
 
 public class BaseFinder extends WaveXinModule {
     public enum ScanMethod { SPIRAL("Spiral Scan"), NORMAL("Normal Scan"); private final String title; ScanMethod(String title) { this.title = title; } @Override public String toString() { return title; } }
-    private static final Path CONTAINER_RECORD_PATH = MeteorClient.FOLDER.toPath().resolve("base-finder-xin").resolve("container-records.txt");
+    private static final Path CONTAINER_RECORD_PATH = WaveXinDataPaths.CONTAINER_DIRECTORY.resolve("container-records.txt");
+    private static final Path LEGACY_CONTAINER_RECORD_PATH = MeteorClient.FOLDER.toPath().resolve("base-finder-xin").resolve("container-records.txt");
     private static final DateTimeFormatter RECORD_TIME_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
     public enum SpiralStartMode {
@@ -280,10 +281,9 @@ public class BaseFinder extends WaveXinModule {
             .name("Maximum Scan Rings")
             .description("Stops after this many outward scan rings.")
             .defaultValue(50)
-            .min(2)
-            .max(Integer.MAX_VALUE)
-            .sliderMin(2)
-            .sliderMax(10000)
+            .min(1)
+            .sliderMin(1)
+            .sliderMax(1500)
             .visible(this::isNormalScan)
             .build());
 
@@ -554,6 +554,7 @@ private final Setting<String> xaeroWaypointPrefix = sgContainerRecording.add(new
 
     @Override
     public void onActivate() {
+        migrateLegacyContainerRecords();
         activeScanMethod = scanMethod.get();
         setScanForwardKey(false);
         scanStartPending = true;
@@ -577,9 +578,7 @@ private final Setting<String> xaeroWaypointPrefix = sgContainerRecording.add(new
         normalViewRestorePending = false;
         lastCompletedNormalRing = -1;
         if (lastBegin.get()) {
-            currentCircle = lastCircle.get();
-            currentPath = lastPath.get();
-            originChunk = new ChunkPos(lastOriginX.get(), lastOriginZ.get());
+            restoreNormalScanProgress();
         } else {
             currentCircle = 0;
             currentPath = SweepRoute.NEXT_CIRCLE;
@@ -598,6 +597,28 @@ private final Setting<String> xaeroWaypointPrefix = sgContainerRecording.add(new
             info("Resumed normal scan at ring %d, route %s.", currentCircle, currentPath);
         } else {
             info("Normal scan started at origin chunk (%d, %d).", originChunk.x, originChunk.z);
+        }
+    }
+    private void restoreNormalScanProgress() {
+        ScanProgressManager.NormalScanProgress progress = ScanProgressManager.loadNormalProgress();
+        if (progress == null) {
+            progress = new ScanProgressManager.NormalScanProgress(
+                lastOriginX.get(),
+                lastOriginZ.get(),
+                lastChunkX.get(),
+                lastChunkZ.get(),
+                lastCircle.get(),
+                lastPath.get().name()
+            );
+            ScanProgressManager.saveNormalProgress(progress);
+        }
+
+        currentCircle = Math.max(0, progress.ring);
+        originChunk = new ChunkPos(progress.originX, progress.originZ);
+        try {
+            currentPath = SweepRoute.valueOf(progress.route);
+        } catch (IllegalArgumentException | NullPointerException ignored) {
+            currentPath = SweepRoute.NEXT_CIRCLE;
         }
     }
     private void primeScanTargets() {
@@ -889,17 +910,18 @@ private final Setting<String> xaeroWaypointPrefix = sgContainerRecording.add(new
             return;
         }
 
-        lastOriginX.set(originChunk.x);
-        lastOriginZ.set(originChunk.z);
-        lastChunkX.set(playerChunk.x);
-        lastChunkZ.set(playerChunk.z);
-        lastCircle.set(currentCircle);
-        lastPath.set(currentPath);
+        ScanProgressManager.saveNormalProgress(new ScanProgressManager.NormalScanProgress(
+            originChunk.x,
+            originChunk.z,
+            playerChunk.x,
+            playerChunk.z,
+            currentCircle,
+            currentPath.name()
+        ));
 
         savedNormalScanChunk = playerChunk;
         savedNormalScanCircle = currentCircle;
         savedNormalScanPath = currentPath;
-        Modules.get().save();
     }
 
 
@@ -951,6 +973,17 @@ private final Setting<String> xaeroWaypointPrefix = sgContainerRecording.add(new
         return true;
     }
 
+    private void migrateLegacyContainerRecords() {
+        if (Files.exists(CONTAINER_RECORD_PATH) || !Files.exists(LEGACY_CONTAINER_RECORD_PATH)) return;
+
+        try {
+            Files.createDirectories(CONTAINER_RECORD_PATH.getParent());
+            Files.copy(LEGACY_CONTAINER_RECORD_PATH, CONTAINER_RECORD_PATH);
+            WaveXinAddon.LOG.info("Migrated container records to {}.", CONTAINER_RECORD_PATH);
+        } catch (IOException e) {
+            WaveXinAddon.LOG.error("Could not migrate container records to {}.", CONTAINER_RECORD_PATH, e);
+        }
+    }
     private void recordContainerChunkIfNeeded(ChunkPos chunkPos) {
         long key = chunkPos.toLong();
         if (recordedContainerChunks.contains(key)) return;
