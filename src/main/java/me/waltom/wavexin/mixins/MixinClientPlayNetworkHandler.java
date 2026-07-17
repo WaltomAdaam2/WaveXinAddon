@@ -33,8 +33,8 @@ public class MixinClientPlayNetworkHandler {
 
     @Inject(method = "onGameMessage", at = @At("HEAD"), cancellable = true)
     private void onGameMessage(GameMessageS2CPacket packet, CallbackInfo ci) {
-        String message = packet.content().getString();
-        MeteorClient.EVENT_BUS.post(new AutoLoginTextEvent(message, AutoLoginTextEvent.Source.Chat));
-        if (ChatFilter.shouldHideServerMessage(message)) ci.cancel();
+        var content = packet.content();
+        MeteorClient.EVENT_BUS.post(new AutoLoginTextEvent(content.getString(), AutoLoginTextEvent.Source.Chat));
+        if (ChatFilter.shouldHideServerMessage(content)) ci.cancel();
     }
 }
