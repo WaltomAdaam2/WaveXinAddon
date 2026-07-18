@@ -1,9 +1,6 @@
 package me.waltom.wavexin;
 
 import meteordevelopment.meteorclient.MeteorClient;
-import meteordevelopment.meteorclient.gui.GuiTheme;
-import meteordevelopment.meteorclient.gui.utils.SettingsWidgetFactory;
-import meteordevelopment.meteorclient.gui.widgets.containers.WTable;
 import meteordevelopment.meteorclient.utils.player.ChatUtils;
 import meteordevelopment.meteorclient.utils.render.color.Color;
 import meteordevelopment.meteorclient.utils.render.color.RainbowColors;
@@ -22,7 +19,6 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ThreadLocalRandom;
-import java.util.function.Consumer;
 import meteordevelopment.meteorclient.events.render.Render3DEvent;
 import meteordevelopment.meteorclient.events.world.TickEvent;
 import meteordevelopment.meteorclient.renderer.ShapeMode;
@@ -41,12 +37,6 @@ import java.util.HashSet;
 import java.util.Set;
 
 public class BaseFinder extends WaveXinModule {
-    static {
-        SettingsWidgetFactory.registerCustomFactory(ConfirmedActionSetting.class, theme -> (table, setting) -> {
-            ConfirmedActionSetting actionSetting = (ConfirmedActionSetting) setting;
-            actionSetting.create(table, theme);
-        });
-    }
     public enum ScanMethod { SPIRAL("Spiral Scan"), NORMAL("Normal Scan"); private final String title; ScanMethod(String title) { this.title = title; } @Override public String toString() { return title; } }
     private static final Path CONTAINER_RECORD_PATH = WaveXinDataPaths.CONTAINER_DIRECTORY.resolve("container-records.txt");
     private static final Path LEGACY_CONTAINER_RECORD_PATH = MeteorClient.FOLDER.toPath().resolve("base-finder-xin").resolve("container-records.txt");
@@ -460,14 +450,6 @@ private final Setting<String> xaeroWaypointPrefix = sgContainerRecording.add(new
             .max(Integer.MAX_VALUE)
             .sliderMin(Integer.MIN_VALUE)
             .sliderMax(Integer.MAX_VALUE)
-            .build());
-    private final Setting<Boolean> resetPreviousScan = sgRestart.add(new ConfirmedActionSetting.Builder()
-            .name("")
-            .description("Clears the saved Normal Scan checkpoint.")
-            .buttonLabel("Reset")
-            .confirmationText("Reset saved Normal Scan progress?")
-            .action(this::resetPreviousNormalScan)
-            .visible(this::isNormalScan)
             .build());
 
     // Render Distance设置
@@ -1008,22 +990,6 @@ private final Setting<String> xaeroWaypointPrefix = sgContainerRecording.add(new
         applyNormalMovementYaw(targetYaw);
         setScanForwardKey(true);
         return false;
-    }
-    private void resetPreviousNormalScan() {
-        if (activeScanMethod == ScanMethod.NORMAL) {
-            warning("Stop Normal Scan before resetting its saved progress.");
-            return;
-        }
-
-        ScanProgressManager.clearNormalProgress();
-        lastBegin.set(false);
-        lastCircle.set(0);
-        lastChunkX.set(0);
-        lastChunkZ.set(0);
-        lastPath.set(SweepRoute.NEXT_CIRCLE);
-        lastOriginX.set(0);
-        lastOriginZ.set(0);
-        info("Cleared saved Normal Scan progress.");
     }
     private void applyNormalMovementYaw(float yaw) {
         if (lockView.get()) {
@@ -1700,95 +1666,6 @@ private final Setting<String> xaeroWaypointPrefix = sgContainerRecording.add(new
         return spiralSegments + " | " + spiralDirection.name();
     }
 
-    private static class ConfirmedActionSetting extends Setting<Boolean> {
-        private final String buttonLabel;
-        private final String confirmationText;
-        private final Runnable action;
-
-        private ConfirmedActionSetting(String name, String description, String buttonLabel, String confirmationText, Runnable action, Consumer<Boolean> onChanged, Consumer<Setting<Boolean>> onModuleActivated, IVisible visible) {
-            super(name, description, false, onChanged, onModuleActivated, visible);
-            this.buttonLabel = buttonLabel;
-            this.confirmationText = confirmationText;
-            this.action = action;
-        }
-
-        private void create(WTable table, GuiTheme theme) {
-            showReset(table, theme);
-        }
-
-        private void showReset(WTable table, GuiTheme theme) {
-            table.clear();
-            var reset = table.add(theme.button(buttonLabel)).widget();
-            reset.action = () -> showConfirmation(table, theme);
-            reset.tooltip = description;
-        }
-
-        private void showConfirmation(WTable table, GuiTheme theme) {
-            table.clear();
-
-            var confirm = table.add(theme.button("Confirm")).group("reset-actions").widget();
-            confirm.tooltip = confirmationText;
-            confirm.action = () -> {
-                if (action != null) action.run();
-                showReset(table, theme);
-            };
-
-            var cancel = table.add(theme.button("Cancel")).group("reset-actions").widget();
-            cancel.action = () -> showReset(table, theme);
-        }
-
-        @Override
-        protected Boolean parseImpl(String str) {
-            return false;
-        }
-
-        @Override
-        protected boolean isValueValid(Boolean value) {
-            return true;
-        }
-
-        @Override
-        protected NbtCompound save(NbtCompound tag) {
-            tag.putBoolean("value", false);
-            return tag;
-        }
-
-        @Override
-        protected Boolean load(NbtCompound tag) {
-            set(false);
-            return false;
-        }
-
-        private static class Builder extends SettingBuilder<Builder, Boolean, ConfirmedActionSetting> {
-            private String buttonLabel = "Reset";
-            private String confirmationText = "Confirm reset?";
-            private Runnable action;
-
-            private Builder() {
-                super(false);
-            }
-
-            private Builder buttonLabel(String buttonLabel) {
-                this.buttonLabel = buttonLabel;
-                return this;
-            }
-
-            private Builder confirmationText(String confirmationText) {
-                this.confirmationText = confirmationText;
-                return this;
-            }
-
-            private Builder action(Runnable action) {
-                this.action = action;
-                return this;
-            }
-
-            @Override
-            public ConfirmedActionSetting build() {
-                return new ConfirmedActionSetting(name, description, buttonLabel, confirmationText, action, onChanged, onModuleActivated, visible);
-            }
-        }
-    }
     public enum SweepRoute {
         NEXT_CIRCLE,
         CENTER_TO_LEFT,
