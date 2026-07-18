@@ -465,6 +465,7 @@ private final Setting<String> xaeroWaypointPrefix = sgContainerRecording.add(new
             .name("")
             .description("Clears the saved Normal Scan checkpoint.")
             .buttonLabel("Reset")
+            .confirmationText("Reset saved Normal Scan progress?")
             .action(this::resetPreviousNormalScan)
             .visible(this::isNormalScan)
             .build());
@@ -1701,20 +1702,39 @@ private final Setting<String> xaeroWaypointPrefix = sgContainerRecording.add(new
 
     private static class ConfirmedActionSetting extends Setting<Boolean> {
         private final String buttonLabel;
+        private final String confirmationText;
         private final Runnable action;
 
-        private ConfirmedActionSetting(String name, String description, String buttonLabel, Runnable action, Consumer<Boolean> onChanged, Consumer<Setting<Boolean>> onModuleActivated, IVisible visible) {
+        private ConfirmedActionSetting(String name, String description, String buttonLabel, String confirmationText, Runnable action, Consumer<Boolean> onChanged, Consumer<Setting<Boolean>> onModuleActivated, IVisible visible) {
             super(name, description, false, onChanged, onModuleActivated, visible);
             this.buttonLabel = buttonLabel;
+            this.confirmationText = confirmationText;
             this.action = action;
         }
 
         private void create(WTable table, GuiTheme theme) {
-            var reset = table.add(theme.confirmedButton(buttonLabel, "Confirm")).widget();
-            reset.action = () -> {
-                if (action != null) action.run();
-            };
+            showReset(table, theme);
+        }
+
+        private void showReset(WTable table, GuiTheme theme) {
+            table.clear();
+            var reset = table.add(theme.button(buttonLabel)).widget();
+            reset.action = () -> showConfirmation(table, theme);
             reset.tooltip = description;
+        }
+
+        private void showConfirmation(WTable table, GuiTheme theme) {
+            table.clear();
+
+            var confirm = table.add(theme.button("Confirm")).group("reset-actions").widget();
+            confirm.tooltip = confirmationText;
+            confirm.action = () -> {
+                if (action != null) action.run();
+                showReset(table, theme);
+            };
+
+            var cancel = table.add(theme.button("Cancel")).group("reset-actions").widget();
+            cancel.action = () -> showReset(table, theme);
         }
 
         @Override
@@ -1741,6 +1761,7 @@ private final Setting<String> xaeroWaypointPrefix = sgContainerRecording.add(new
 
         private static class Builder extends SettingBuilder<Builder, Boolean, ConfirmedActionSetting> {
             private String buttonLabel = "Reset";
+            private String confirmationText = "Confirm reset?";
             private Runnable action;
 
             private Builder() {
@@ -1752,6 +1773,10 @@ private final Setting<String> xaeroWaypointPrefix = sgContainerRecording.add(new
                 return this;
             }
 
+            private Builder confirmationText(String confirmationText) {
+                this.confirmationText = confirmationText;
+                return this;
+            }
 
             private Builder action(Runnable action) {
                 this.action = action;
@@ -1760,7 +1785,7 @@ private final Setting<String> xaeroWaypointPrefix = sgContainerRecording.add(new
 
             @Override
             public ConfirmedActionSetting build() {
-                return new ConfirmedActionSetting(name, description, buttonLabel, action, onChanged, onModuleActivated, visible);
+                return new ConfirmedActionSetting(name, description, buttonLabel, confirmationText, action, onChanged, onModuleActivated, visible);
             }
         }
     }
