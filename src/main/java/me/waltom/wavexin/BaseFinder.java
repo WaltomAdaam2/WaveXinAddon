@@ -464,7 +464,7 @@ private final Setting<String> xaeroWaypointPrefix = sgContainerRecording.add(new
     private final Setting<Boolean> resetPreviousScan = sgRestart.add(new ConfirmedActionSetting.Builder()
             .name("")
             .description("Clears the saved Normal Scan checkpoint.")
-            .buttonLabel("Reset Previous Scan")
+            .buttonLabel("Reset")
             .confirmationText("Reset saved Normal Scan progress?")
             .action(this::resetPreviousNormalScan)
             .visible(this::isNormalScan)
@@ -1713,31 +1713,28 @@ private final Setting<String> xaeroWaypointPrefix = sgContainerRecording.add(new
         }
 
         private void create(WTable table, GuiTheme theme) {
-            WTable actions = table.add(theme.table()).expandX().widget();
-            showReset(actions, theme);
+            showReset(table, theme);
         }
 
         private void showReset(WTable table, GuiTheme theme) {
             table.clear();
-            var reset = table.add(theme.button(buttonLabel)).expandX().widget();
+            var reset = table.add(theme.button(buttonLabel)).widget();
             reset.action = () -> showConfirmation(table, theme);
             reset.tooltip = description;
         }
 
         private void showConfirmation(WTable table, GuiTheme theme) {
             table.clear();
-            table.add(theme.label(confirmationText)).expandX().centerX();
-            table.row();
 
-            var confirm = table.add(theme.button("Confirm")).expandX().group("reset-actions").widget();
+            var confirm = table.add(theme.button("Confirm")).group("reset-actions").widget();
+            confirm.tooltip = confirmationText;
             confirm.action = () -> {
                 if (action != null) action.run();
                 showReset(table, theme);
             };
 
-            var cancel = table.add(theme.button("Cancel")).expandX().group("reset-actions").widget();
+            var cancel = table.add(theme.button("Cancel")).group("reset-actions").widget();
             cancel.action = () -> showReset(table, theme);
-            table.row();
         }
 
         @Override
