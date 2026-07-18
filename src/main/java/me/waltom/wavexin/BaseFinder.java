@@ -32,7 +32,6 @@ import net.minecraft.util.math.ChunkPos;
 import net.minecraft.util.math.Vec3d;
 import net.minecraft.nbt.NbtCompound;
 
-import java.util.Collections;
 import java.util.HashSet;
 import java.util.Set;
 
@@ -116,10 +115,7 @@ public class BaseFinder extends WaveXinModule {
 
     private boolean forcingForward;
 
-    // 存储所有目标区块
-    private final Set<ChunkPos> targetChunks = Collections.synchronizedSet(new HashSet<>());
-    private final Set<ChunkPos> visitedChunks = Collections.synchronizedSet(new HashSet<>());
-    private final Set<ChunkPos> currentPathChunks = Collections.synchronizedSet(new HashSet<>());
+    private final Set<ChunkPos> visitedChunks = new HashSet<>();
 
     private MapScanDirection spiralDirection = MapScanDirection.EAST;
     private int spiralStepsInCurrentLength;
@@ -588,10 +584,7 @@ private final Setting<String> xaeroWaypointPrefix = sgContainerRecording.add(new
             originChunk = mc.player.getChunkPos();
         }
 
-        targetChunks.clear();
         visitedChunks.clear();
-        currentPathChunks.clear();
-        primeScanTargets();
         targetChunk = null;
         savedNormalScanChunk = null;
         savedNormalScanCircle = -1;
@@ -625,119 +618,52 @@ private final Setting<String> xaeroWaypointPrefix = sgContainerRecording.add(new
             currentPath = SweepRoute.NEXT_CIRCLE;
         }
     }
-    private void primeScanTargets() {
-        targetChunks.clear();
+    private boolean isChunkOnPreparedNormalRing(int chunkX, int chunkZ) {
+        if (originChunk == null) return false;
 
-        // 预加载当前圈数+Preload Rings的区块
-        int maxPreloadCircle = Math.min(currentCircle + preloadCircles.get(), circleLimit.get());
-        for (int circle = currentCircle; circle <= maxPreloadCircle; circle++) {
-            appendRingTargets(circle);
-        }
+        int minCircle = Math.max(0, currentCircle);
+        int maxCircle = getNormalRenderMaxCircle();
+        if (minCircle > maxCircle) return false;
+
+        int dx = chunkX - originChunk.x;
+        int dz = chunkZ - originChunk.z;
+        int maxAbs = Math.max(Math.abs(dx), Math.abs(dz));
+        if (maxAbs == 0) return minCircle == 0;
+
+        int step = Math.max(1, chunkLoadRadius.get() * 2);
+        if (maxAbs % step != 0) return false;
+
+        int circle = maxAbs / step;
+        return circle >= minCircle && circle <= maxCircle;
     }
 
-    // 添加指定圈数的所有区块
-    private void appendRingTargets(int circle) {
-        int radius = chunkLoadRadius.get() * circle * 2;
-
-        // 从中心到正左
-        ChunkPos centerLeft = new ChunkPos(originChunk.x - radius, originChunk.z);
-        targetChunks.add(centerLeft);
-
-        // 正左到左上
-        ChunkPos upLeft = new ChunkPos(originChunk.x - radius, originChunk.z - radius);
-        appendPathTargets(centerLeft, upLeft);
-
-        // 左上到右上
-        ChunkPos upRight = new ChunkPos(originChunk.x + radius, originChunk.z - radius);
-        appendPathTargets(upLeft, upRight);
-
-        // 右上到右下
-        ChunkPos downRight = new ChunkPos(originChunk.x + radius, originChunk.z + radius);
-        appendPathTargets(upRight, downRight);
-
-        // 右下到左下
-        ChunkPos downLeft = new ChunkPos(originChunk.x - radius, originChunk.z + radius);
-        appendPathTargets(downRight, downLeft);
-
-        // 左下到正左（完成一圈）
-        appendPathTargets(downLeft, centerLeft);
+    private int getNormalRenderMaxCircle() {
+        return Math.min(circleLimit.get(), currentCircle + Math.max(0, preloadCircles.get()));
     }
 
-    // 添加两点之间路径上的所有区块
-    private void appendPathTargets(ChunkPos from, ChunkPos to) {
-        int deltaX = to.x - from.x;
-        int deltaZ = to.z - from.z;
+    private boolean isChunkOnCurrentNormalPath(int chunkX, int chunkZ) {
+        if (originChunk == null || currentPath == null || currentPath == SweepRoute.NEXT_CIRCLE) return false;
 
-        int steps = Math.max(Math.abs(deltaX), Math.abs(deltaZ));
-
-        // 如果起点和终点相同，直接添加该区块
-        if (steps == 0) {
-            targetChunks.add(from);
-            return;
-        }
-
-        for (int i = 0; i <= steps; i++) {
-            int x = from.x + (deltaX * i) / steps;
-            int z = from.z + (deltaZ * i) / steps;
-            targetChunks.add(new ChunkPos(x, z));
-        }
+        int radius = Math.max(0, chunkLoadRadius.get() * currentCircle * 2);
+        return switch (currentPath) {
+            case CENTER_TO_LEFT -> isChunkOnSegment(chunkX, chunkZ, originChunk.x, originChunk.z, originChunk.x - radius, originChunk.z);
+            case CENTER_LEFT_TO_UP_LEFT -> isChunkOnSegment(chunkX, chunkZ, originChunk.x - radius, originChunk.z, originChunk.x - radius, originChunk.z - radius);
+            case UP_LEFT_TO_UP_RIGHT -> isChunkOnSegment(chunkX, chunkZ, originChunk.x - radius, originChunk.z - radius, originChunk.x + radius, originChunk.z - radius);
+            case UP_RIGHT_TO_DOWN_RIGHT -> isChunkOnSegment(chunkX, chunkZ, originChunk.x + radius, originChunk.z - radius, originChunk.x + radius, originChunk.z + radius);
+            case DOWN_RIGHT_TO_DOWN_LEFT -> isChunkOnSegment(chunkX, chunkZ, originChunk.x + radius, originChunk.z + radius, originChunk.x - radius, originChunk.z + radius);
+            case DOWN_LEFT_TO_LEFT -> isChunkOnSegment(chunkX, chunkZ, originChunk.x - radius, originChunk.z + radius, originChunk.x - radius, originChunk.z);
+            case NEXT_CIRCLE -> false;
+        };
     }
 
-    // 更新当前路径区块
-    private void refreshActivePathChunks() {
-        currentPathChunks.clear();
-
-        if (originChunk == null || currentPath == null)
-            return;
-
-        int radius = chunkLoadRadius.get() * currentCircle * 2;
-
-        switch (currentPath) {
-            case CENTER_TO_LEFT -> {
-                ChunkPos from = originChunk;
-                ChunkPos to = new ChunkPos(originChunk.x - radius, originChunk.z);
-                appendActivePathChunks(from, to);
-            }
-            case CENTER_LEFT_TO_UP_LEFT -> {
-                ChunkPos from = new ChunkPos(originChunk.x - radius, originChunk.z);
-                ChunkPos to = new ChunkPos(originChunk.x - radius, originChunk.z - radius);
-                appendActivePathChunks(from, to);
-            }
-            case UP_LEFT_TO_UP_RIGHT -> {
-                ChunkPos from = new ChunkPos(originChunk.x - radius, originChunk.z - radius);
-                ChunkPos to = new ChunkPos(originChunk.x + radius, originChunk.z - radius);
-                appendActivePathChunks(from, to);
-            }
-            case UP_RIGHT_TO_DOWN_RIGHT -> {
-                ChunkPos from = new ChunkPos(originChunk.x + radius, originChunk.z - radius);
-                ChunkPos to = new ChunkPos(originChunk.x + radius, originChunk.z + radius);
-                appendActivePathChunks(from, to);
-            }
-            case DOWN_RIGHT_TO_DOWN_LEFT -> {
-                ChunkPos from = new ChunkPos(originChunk.x + radius, originChunk.z + radius);
-                ChunkPos to = new ChunkPos(originChunk.x - radius, originChunk.z + radius);
-                appendActivePathChunks(from, to);
-            }
-            case DOWN_LEFT_TO_LEFT -> {
-                ChunkPos from = new ChunkPos(originChunk.x - radius, originChunk.z + radius);
-                ChunkPos to = new ChunkPos(originChunk.x - radius, originChunk.z);
-                appendActivePathChunks(from, to);
-            }
-        }
+    private boolean isChunkOnSegment(int chunkX, int chunkZ, int fromX, int fromZ, int toX, int toZ) {
+        if (fromX == toX) return chunkX == fromX && isBetween(chunkZ, fromZ, toZ);
+        if (fromZ == toZ) return chunkZ == fromZ && isBetween(chunkX, fromX, toX);
+        return false;
     }
 
-    // 添加当前路径区块
-    private void appendActivePathChunks(ChunkPos from, ChunkPos to) {
-        int deltaX = to.x - from.x;
-        int deltaZ = to.z - from.z;
-
-        int steps = Math.max(Math.abs(deltaX), Math.abs(deltaZ));
-
-        for (int i = 0; i <= steps; i++) {
-            int x = from.x + (deltaX * i) / steps;
-            int z = from.z + (deltaZ * i) / steps;
-            currentPathChunks.add(new ChunkPos(x, z));
-        }
+    private boolean isBetween(int value, int a, int b) {
+        return value >= Math.min(a, b) && value <= Math.max(a, b);
     }
 
     @EventHandler
@@ -762,7 +688,6 @@ private final Setting<String> xaeroWaypointPrefix = sgContainerRecording.add(new
             return;
         }
 
-        refreshActivePathChunks();
 
         ChunkPos playerChunk = mc.player.getChunkPos();
         visitedChunks.add(playerChunk);
@@ -786,12 +711,6 @@ private final Setting<String> xaeroWaypointPrefix = sgContainerRecording.add(new
             advanceSweepRoute();
             currentCircle++;
 
-            int maxPreloadCircle = currentCircle + preloadCircles.get();
-            if (maxPreloadCircle <= circleLimit.get()) {
-                for (int circle = currentCircle; circle <= maxPreloadCircle; circle++) {
-                    appendRingTargets(circle);
-                }
-            }
         }
 
         switch (currentPath) {
@@ -901,9 +820,7 @@ private final Setting<String> xaeroWaypointPrefix = sgContainerRecording.add(new
             }
         }
         // 清空区块数据
-        targetChunks.clear();
         visitedChunks.clear();
-        currentPathChunks.clear();
 
         // 还原变量
         originChunk = null;
@@ -1515,42 +1432,48 @@ private final Setting<String> xaeroWaypointPrefix = sgContainerRecording.add(new
         }
 
 
-        BlockPos playerPos = new BlockPos(mc.player.getBlockX(), renderHeight.get(), mc.player.getBlockZ());
-        double renderDistanceBlocks = renderDistance.get() * 16.0;
+        renderNormalRoute(event);
+    }
 
-        // 只渲染目标区块，根据状态使用不同颜色
-        synchronized (targetChunks) {
-            for (ChunkPos chunk : targetChunks) {
-                if (chunk != null && playerPos.isWithinDistance(
-                        new BlockPos(chunk.getCenterX(), renderHeight.get(), chunk.getCenterZ()),
-                        renderDistanceBlocks)) {
+    private void renderNormalRoute(Render3DEvent event) {
+        if (activeScanMethod != ScanMethod.NORMAL || originChunk == null || currentPath == null || mc.player == null) return;
 
-                    // 根据区块状态选择颜色
-                    SettingColor sideColor, lineColor;
+        ChunkPos playerChunk = mc.player.getChunkPos();
+        int renderRadius = Math.max(1, renderDistance.get());
+        double maxDistance = renderRadius * 16.0;
+        double maxDistanceSq = maxDistance * maxDistance;
 
-                    if (currentPathChunks.contains(chunk)) {
-                        // 当前路径区块
-                        sideColor = currentPathSideColor.get();
-                        lineColor = currentPathLineColor.get();
-                    } else if (visitedChunks.contains(chunk)) {
-                        // 已访问区块
-                        sideColor = visitedChunksSideColor.get();
-                        lineColor = visitedChunksLineColor.get();
-                    } else {
-                        // 未访问的目标区块
-                        sideColor = targetChunksSideColor.get();
-                        lineColor = targetChunksLineColor.get();
-                    }
+        for (int chunkX = playerChunk.x - renderRadius; chunkX <= playerChunk.x + renderRadius; chunkX++) {
+            for (int chunkZ = playerChunk.z - renderRadius; chunkZ <= playerChunk.z + renderRadius; chunkZ++) {
+                double deltaX = chunkX * 16.0 + 8.0 - mc.player.getX();
+                double deltaZ = chunkZ * 16.0 + 8.0 - mc.player.getZ();
+                if (deltaX * deltaX + deltaZ * deltaZ > maxDistanceSq) continue;
 
-                    if (sideColor.a > 5 || lineColor.a > 5) {
-                        renderScanChunk(chunk, sideColor, lineColor, event);
-                    }
+                boolean currentPathChunk = isChunkOnCurrentNormalPath(chunkX, chunkZ);
+                boolean targetPreviewChunk = isChunkOnPreparedNormalRing(chunkX, chunkZ);
+                if (!currentPathChunk && !targetPreviewChunk) continue;
+
+                ChunkPos chunk = new ChunkPos(chunkX, chunkZ);
+                SettingColor sideColor;
+                SettingColor lineColor;
+
+                if (currentPathChunk) {
+                    sideColor = currentPathSideColor.get();
+                    lineColor = currentPathLineColor.get();
+                } else if (visitedChunks.contains(chunk)) {
+                    sideColor = visitedChunksSideColor.get();
+                    lineColor = visitedChunksLineColor.get();
+                } else {
+                    sideColor = targetChunksSideColor.get();
+                    lineColor = targetChunksLineColor.get();
+                }
+
+                if (sideColor.a > 5 || lineColor.a > 5) {
+                    renderScanChunk(chunk, sideColor, lineColor, event);
                 }
             }
         }
     }
-
-    // 渲染单个区块的方法
     private void renderSpiralRoute(Render3DEvent event) {
         if (!spiralRenderRoute.get() || mc.world == null || spiralStartChunk == null || spiralTargetChunk == null) return;
 

@@ -52,7 +52,7 @@ build/libs/
 
 ## 安装方法
 
-将构建出的 WaveXinAddon jar 文件放入 Minecraft 的 `mods` 文件夹中，并确保同时安装：
+将构建出或从 Release 中下载的 WaveXinAddon jar 文件放入 Minecraft 的 `mods` 文件夹中，并确保同时安装：
 
 * Fabric API
 * Meteor Client
