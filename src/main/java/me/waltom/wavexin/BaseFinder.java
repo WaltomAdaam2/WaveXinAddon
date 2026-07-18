@@ -889,19 +889,6 @@ private final Setting<String> xaeroWaypointPrefix = sgContainerRecording.add(new
         }
 
         targetYaw = (float) Math.toDegrees(Math.atan2(-deltaX, deltaZ));
-        if (waitChunkLoad.get()) {
-            if (!areNeighborChunksLoaded(targetYaw)) {
-                setScanForwardKey(false);
-                return false;
-            }
-
-            int chunkX = (int) (mc.player.getX() / 16);
-            int chunkZ = (int) (mc.player.getZ() / 16);
-            if (!mc.world.getChunkManager().isChunkLoaded(chunkX, chunkZ)) {
-                setScanForwardKey(false);
-                return false;
-            }
-        }
 
         if (moveSpeed.get() > 1.0) mc.player.setSprinting(true);
         applyNormalMovementYaw(targetYaw);
