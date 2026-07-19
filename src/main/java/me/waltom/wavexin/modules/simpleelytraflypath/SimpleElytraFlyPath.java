@@ -236,17 +236,7 @@ public class SimpleElytraFlyPath extends WaveXinModule {
         if (mc.player == null || mc.world == null || mc.getNetworkHandler() == null) return;
 
         if (isArrive) {
-            boolean shouldDisconnect = autoQuitServer.get();
-
-            if (autoStopOnArrival.get()) {
-                toggle();
-            }
-
-            if (shouldDisconnect) {
-                mc.getNetworkHandler().getConnection().disconnect(Text.literal("Auto quit after arriving at target"));
-            }
-
-            isArrive = false;
+            finishArrival();
             return;
         }
 
@@ -284,30 +274,17 @@ public class SimpleElytraFlyPath extends WaveXinModule {
         
         double distance2D = Math.sqrt(deltaX * deltaX + deltaZ * deltaZ);
 
-        if (distance2D == 0) {
-            setX(0);
-            setY(0);
-            setZ(0);
-            isArrive = true;
-            event.cancel();
+        if (distance2D <= arrivalDistance2D.get()) {
+            markArrived(event);
             return;
         }
 
         
         Vec3d direction = new Vec3d(deltaX, 0, deltaZ).normalize();
-
-        if (distance2D > arrivalDistance2D.get()) {
-            double flightSpeed = Math.min(speed.get(), distance2D - arrivalDistance2D.get());
-            setX(direction.x * flightSpeed);
-            setY(0);
-            setZ(direction.z * flightSpeed);
-        }else{
-            setX(0);
-            setY(0);
-            setZ(0);
-
-            isArrive = true;
-        }
+        double flightSpeed = Math.min(speed.get(), distance2D - arrivalDistance2D.get());
+        setX(direction.x * flightSpeed);
+        setY(0);
+        setZ(direction.z * flightSpeed);
 
         
         setY(getY() * 0.9900000095367432D);
@@ -323,6 +300,34 @@ public class SimpleElytraFlyPath extends WaveXinModule {
 
     
 
+
+    private void markArrived(TravelEvent event) {
+        isArrive = true;
+        stopMotion();
+        event.cancel();
+        finishArrival();
+    }
+
+    private void finishArrival() {
+        boolean shouldDisconnect = autoQuitServer.get();
+        boolean shouldStop = autoStopOnArrival.get();
+
+        stopMotion();
+        isArrive = false;
+
+        if (shouldStop && isActive()) {
+            toggle();
+        }
+
+        if (shouldDisconnect && mc.getNetworkHandler() != null) {
+            mc.getNetworkHandler().getConnection().disconnect(Text.literal("Auto quit after arriving at target"));
+        }
+    }
+
+    private void stopMotion() {
+        if (mc.player == null) return;
+        mc.player.setVelocity(Vec3d.ZERO);
+    }
 
     private boolean hasWorkingElytra() {
         

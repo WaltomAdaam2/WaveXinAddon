@@ -65,6 +65,28 @@ WaveXinAddon configuration files are automatically saved in:
 meteor-client/wavexin/
 ```
 
+## Base Finder Recommended Settings
+
+Default configuration:
+
+```text
+Chunk Load Radius = 5
+Chunk Wait Distance = 4
+Recommended Render Distance = 2
+Recommended Simulation Distance = 5
+```
+
+Alternative recommended configuration:
+
+```text
+Chunk Load Radius = 8
+Chunk Wait Distance = 6
+Recommended Render Distance = 5
+Recommended Simulation Distance = 7
+```
+
+If you are not sure how to adjust these values, use the default or recommended configuration. Incorrect values can make scanning freeze.
+
 ## Notice
 
 This project is mainly designed for the 2b2t.xin use case. Please check server rules yourself and use this project at your own risk.

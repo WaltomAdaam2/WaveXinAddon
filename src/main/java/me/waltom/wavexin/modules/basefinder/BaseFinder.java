@@ -956,6 +956,12 @@ public class BaseFinder extends WaveXinModule {
     }
 
     private boolean moveToResumeCheckpoint() {
+        if (mc.player.getChunkPos().equals(resumeCheckpointChunk)) {
+            setScanForwardKey(false);
+            setNormalDebugState("AT_RESUME_CHECKPOINT", "checkpoint=" + chunkDebugLabel(resumeCheckpointChunk));
+            return true;
+        }
+
         Vec3d playerPos = new Vec3d(mc.player.getX(), mc.player.getY(), mc.player.getZ());
         Vec3d checkpointCenter = new Vec3d(
             resumeCheckpointChunk.getStartX() + 8,

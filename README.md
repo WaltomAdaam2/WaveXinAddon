@@ -65,6 +65,28 @@ WaveXinAddon 的配置文件会自动保存到：
 meteor-client/wavexin/
 ```
 
+## Base Finder 推荐配置
+
+默认配置：
+
+```text
+Chunk Load Radius = 5
+Chunk Wait Distance = 4
+Render Distance 建议 2
+Simulation Distance 建议 5
+```
+
+或者建议：
+
+```text
+Chunk Load Radius = 8
+Chunk Wait Distance = 6
+Render Distance 建议 5
+Simulation Distance 建议 7
+```
+
+如果不会调整，请按照默认配置或者推荐配置来，否则容易卡死。
+
 ## 说明
 
 本项目主要为 2b2t.xin 使用场景设计。请自行确认服务器规则，并自行承担使用风险。
