@@ -1,5 +1,13 @@
 package me.waltom.wavexin;
 
+import me.waltom.wavexin.modules.sniffernametags.SnifferNametags;
+import me.waltom.wavexin.modules.simpleelytraflypath.SimpleElytraFlyPath;
+import me.waltom.wavexin.modules.chickennametags.ChickenNametags;
+import me.waltom.wavexin.modules.chatfilter.ChatFilter;
+import me.waltom.wavexin.modules.betterelytrafly.BetterElytraFly;
+import me.waltom.wavexin.modules.basefinder.BaseFinder;
+import me.waltom.wavexin.modules.autologin.AutoLogin;
+import me.waltom.wavexin.core.WaveXinSettingsAutoSaver;
 import com.mojang.logging.LogUtils;
 import meteordevelopment.meteorclient.MeteorClient;
 import meteordevelopment.meteorclient.utils.player.ChatUtils;

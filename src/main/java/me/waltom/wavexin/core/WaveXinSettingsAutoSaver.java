@@ -1,11 +1,12 @@
-package me.waltom.wavexin;
+package me.waltom.wavexin.core;
 
+import me.waltom.wavexin.WaveXinAddon;
 import meteordevelopment.meteorclient.events.world.TickEvent;
 import meteordevelopment.meteorclient.systems.modules.Module;
 import meteordevelopment.meteorclient.systems.modules.Modules;
 import meteordevelopment.orbit.EventHandler;
 
-final class WaveXinSettingsAutoSaver {
+public final class WaveXinSettingsAutoSaver {
     private boolean initialized;
     private String lastSettingsSignature;
 

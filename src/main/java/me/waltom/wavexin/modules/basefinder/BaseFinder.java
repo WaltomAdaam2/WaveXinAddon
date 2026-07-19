@@ -1,16 +1,15 @@
-package me.waltom.wavexin;
+package me.waltom.wavexin.modules.basefinder;
 
+import me.waltom.wavexin.core.WaveXinModule;
+import me.waltom.wavexin.core.WaveXinDataPaths;
+import me.waltom.wavexin.WaveXinAddon;
 import meteordevelopment.meteorclient.MeteorClient;
-import meteordevelopment.meteorclient.gui.GuiTheme;
-import meteordevelopment.meteorclient.gui.utils.SettingsWidgetFactory;
-import meteordevelopment.meteorclient.gui.widgets.containers.WTable;
 import meteordevelopment.meteorclient.utils.player.ChatUtils;
 import meteordevelopment.meteorclient.utils.render.color.Color;
 import meteordevelopment.meteorclient.utils.render.color.RainbowColors;
 import net.minecraft.block.entity.BlockEntity;
 import net.minecraft.block.entity.BlockEntityType;
 import net.minecraft.world.chunk.WorldChunk;
-
 import java.io.IOException;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Method;
@@ -22,7 +21,6 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ThreadLocalRandom;
-import java.util.function.Consumer;
 import meteordevelopment.meteorclient.events.render.Render3DEvent;
 import meteordevelopment.meteorclient.events.world.TickEvent;
 import meteordevelopment.meteorclient.renderer.ShapeMode;
@@ -35,18 +33,10 @@ import net.minecraft.util.math.Box;
 import net.minecraft.util.math.ChunkPos;
 import net.minecraft.util.math.Vec3d;
 import net.minecraft.nbt.NbtCompound;
-
-import java.util.Collections;
 import java.util.HashSet;
 import java.util.Set;
 
 public class BaseFinder extends WaveXinModule {
-    static {
-        SettingsWidgetFactory.registerCustomFactory(ConfirmedActionSetting.class, theme -> (table, setting) -> {
-            ConfirmedActionSetting actionSetting = (ConfirmedActionSetting) setting;
-            actionSetting.create(table, theme);
-        });
-    }
     public enum ScanMethod { SPIRAL("Spiral Scan"), NORMAL("Normal Scan"); private final String title; ScanMethod(String title) { this.title = title; } @Override public String toString() { return title; } }
     private static final Path CONTAINER_RECORD_PATH = WaveXinDataPaths.CONTAINER_DIRECTORY.resolve("container-records.txt");
     private static final Path LEGACY_CONTAINER_RECORD_PATH = MeteorClient.FOLDER.toPath().resolve("base-finder-xin").resolve("container-records.txt");
@@ -126,10 +116,7 @@ public class BaseFinder extends WaveXinModule {
 
     private boolean forcingForward;
 
-    // 存储所有目标区块
-    private final Set<ChunkPos> targetChunks = Collections.synchronizedSet(new HashSet<>());
-    private final Set<ChunkPos> visitedChunks = Collections.synchronizedSet(new HashSet<>());
-    private final Set<ChunkPos> currentPathChunks = Collections.synchronizedSet(new HashSet<>());
+    private final Set<ChunkPos> visitedChunks = new HashSet<>();
 
     private MapScanDirection spiralDirection = MapScanDirection.EAST;
     private int spiralStepsInCurrentLength;
@@ -145,6 +132,10 @@ public class BaseFinder extends WaveXinModule {
     private boolean spiralNeedsInitialRotation;
     private ScanMethod activeScanMethod;
     private boolean scanStartPending;
+    private static final int NORMAL_DEBUG_HEARTBEAT_TICKS = 40;
+    private int normalDebugTicks;
+    private String normalDebugState = "INACTIVE";
+    private String syncedNormalProgressKey;
     private int lastCompletedNormalRing = -1;
     private final Set<Long> recordedContainerChunks = new HashSet<>();
     private final List<BlockPos> createdWaypointPositions = new ArrayList<>();
@@ -275,7 +266,7 @@ public class BaseFinder extends WaveXinModule {
         .build()
     );
 
-    // 设置玩家当前世界的加载的区块范围
+// Normal scan settings
     public final Setting<Integer> chunkLoadRadius = sgNormalScan.add(new IntSetting.Builder()
             .name("Chunk Load Radius")
             .description("Radius of chunks that must be loaded before continuing.")
@@ -287,7 +278,7 @@ public class BaseFinder extends WaveXinModule {
             .visible(this::isNormalScan)
             .build());
 
-    // 设置搜索圈数
+// Maximum scan rings
     public final Setting<Integer> circleLimit = sgNormalScan.add(new IntSetting.Builder()
             .name("Maximum Scan Rings")
             .description("Stops after this many outward scan rings.")
@@ -298,7 +289,7 @@ public class BaseFinder extends WaveXinModule {
             .visible(this::isNormalScan)
             .build());
 
-    // Move Speed设置
+// Move speed setting
     private final Setting<Double> moveSpeed = sgNormalScan.add(new DoubleSetting.Builder()
             .name("Move Speed")
             .description("Enables sprinting above 1.0; vanilla movement speed is otherwise unchanged.")
@@ -328,7 +319,7 @@ public class BaseFinder extends WaveXinModule {
             .visible(this::isNormalScan)
             .build());
 
-    // 修复卡顿
+// Chunk loading wait
     private final Setting<Boolean> waitChunkLoad = sgNormalScan.add(new BoolSetting.Builder()
             .name("Wait for Chunk Loading")
             .description("Stops movement until the required chunks have loaded.")
@@ -336,7 +327,18 @@ public class BaseFinder extends WaveXinModule {
             .visible(this::isNormalScan)
             .build());
 
-    // 是否Resume Previous Scan
+    private final Setting<Integer> chunkWaitDistance = sgNormalScan.add(new IntSetting.Builder()
+            .name("Chunk Wait Distance")
+            .description("Forward chunk distance checked while waiting for chunks to load.")
+            .defaultValue(7)
+            .min(1)
+            .max(30)
+            .sliderMin(1)
+            .sliderMax(30)
+            .visible(() -> isNormalScan() && waitChunkLoad.get())
+            .build());
+
+// Resume previous scan
     private final Setting<Integer> containerThreshold = sgContainerRecording.add(new IntSetting.Builder()
         .name("Container Threshold")
         .description("Records the current chunk when it contains at least this many selected containers.")
@@ -370,7 +372,7 @@ public class BaseFinder extends WaveXinModule {
     private final Setting<Integer> maximumWaypointsPerArea = sgContainerRecording.add(new IntSetting.Builder()
         .name("Waypoints per Area").description("Maximum waypoints created within one base area during the current scan.").defaultValue(3).range(1, 100).sliderRange(1, 20).visible(xaeroWaypoints::get).build()
     );
-private final Setting<String> xaeroWaypointPrefix = sgContainerRecording.add(new StringSetting.Builder()
+    private final Setting<String> xaeroWaypointPrefix = sgContainerRecording.add(new StringSetting.Builder()
         .name("Waypoint Prefix")
         .description("Text before the waypoint name.")
         .defaultValue("Base ")
@@ -394,11 +396,10 @@ private final Setting<String> xaeroWaypointPrefix = sgContainerRecording.add(new
             .visible(this::isNormalScan)
             .build());
 
-    // 上次的圈数
     private final Setting<Integer> lastCircle = sgRestart.add(new IntSetting.Builder()
             .name("Previous Ring")
             .description("Saved ring number for resuming.")
-            .visible(() -> isNormalScan() && lastBegin.get())
+            .visible(this::showNormalResumeProgressSettings)
             .defaultValue(0)
             .min(0)
             .max(1000)
@@ -410,7 +411,7 @@ private final Setting<String> xaeroWaypointPrefix = sgContainerRecording.add(new
     private final Setting<Integer> lastChunkX = sgRestart.add(new IntSetting.Builder()
             .name("Previous Chunk X")
             .description("Saved chunk X position for resuming.")
-            .visible(() -> isNormalScan() && lastBegin.get())
+            .visible(this::showNormalResumeProgressSettings)
             .defaultValue(0)
             .min(Integer.MIN_VALUE)
             .max(Integer.MAX_VALUE)
@@ -422,7 +423,7 @@ private final Setting<String> xaeroWaypointPrefix = sgContainerRecording.add(new
     private final Setting<Integer> lastChunkZ = sgRestart.add(new IntSetting.Builder()
             .name("Previous Chunk Z")
             .description("Saved chunk Z position for resuming.")
-            .visible(() -> isNormalScan() && lastBegin.get())
+            .visible(this::showNormalResumeProgressSettings)
             .defaultValue(0)
             .min(Integer.MIN_VALUE)
             .max(Integer.MAX_VALUE)
@@ -430,11 +431,11 @@ private final Setting<String> xaeroWaypointPrefix = sgContainerRecording.add(new
             .sliderMax(Integer.MAX_VALUE)
             .build());
 
-    // 上次到哪个方向了
+// Previous route
     private final Setting<SweepRoute> lastPath = sgRestart.add(new EnumSetting.Builder<SweepRoute>()
             .name("Previous Route")
             .description("Saved route point for resuming.")
-            .visible(() -> isNormalScan() && lastBegin.get())
+            .visible(this::showNormalResumeProgressSettings)
             .defaultValue(SweepRoute.NEXT_CIRCLE)
             .build());
 
@@ -442,7 +443,7 @@ private final Setting<String> xaeroWaypointPrefix = sgContainerRecording.add(new
     private final Setting<Integer> lastOriginX = sgRestart.add(new IntSetting.Builder()
             .name("Origin Chunk X")
             .description("Saved origin chunk X for resuming.")
-            .visible(() -> isNormalScan() && lastBegin.get())
+            .visible(this::showNormalResumeProgressSettings)
             .defaultValue(0)
             .min(Integer.MIN_VALUE)
             .max(Integer.MAX_VALUE)
@@ -454,23 +455,15 @@ private final Setting<String> xaeroWaypointPrefix = sgContainerRecording.add(new
     private final Setting<Integer> lastOriginZ = sgRestart.add(new IntSetting.Builder()
             .name("Origin Chunk Z")
             .description("Saved origin chunk Z for resuming.")
-            .visible(() -> isNormalScan() && lastBegin.get())
+            .visible(this::showNormalResumeProgressSettings)
             .defaultValue(0)
             .min(Integer.MIN_VALUE)
             .max(Integer.MAX_VALUE)
             .sliderMin(Integer.MIN_VALUE)
             .sliderMax(Integer.MAX_VALUE)
             .build());
-    private final Setting<Boolean> resetPreviousScan = sgRestart.add(new ConfirmedActionSetting.Builder()
-            .name("")
-            .description("Clears the saved Normal Scan checkpoint.")
-            .buttonLabel("Reset Previous Scan")
-            .confirmationText("Reset saved Normal Scan progress?")
-            .action(this::resetPreviousNormalScan)
-            .visible(this::isNormalScan)
-            .build());
 
-    // Render Distance设置
+// Render distance setting
     public final Setting<Integer> renderDistance = sgRender.add(new IntSetting.Builder()
             .name("Render Distance")
             .description("Maximum route render distance in chunks.")
@@ -482,7 +475,7 @@ private final Setting<String> xaeroWaypointPrefix = sgContainerRecording.add(new
             .visible(this::isNormalScan)
             .build());
 
-    // Render Height设置
+// Render height setting
     public final Setting<Integer> renderHeight = sgRender.add(new IntSetting.Builder()
             .name("Render Height")
             .description("Route marker render height.")
@@ -494,7 +487,7 @@ private final Setting<String> xaeroWaypointPrefix = sgContainerRecording.add(new
             .visible(this::isNormalScan)
             .build());
 
-    // 形状模式设置
+// Shape mode setting
     private final Setting<ShapeMode> shapeMode = sgRender.add(new EnumSetting.Builder<ShapeMode>()
             .name("Shape Mode")
             .description("Route rendering shape mode.")
@@ -502,7 +495,7 @@ private final Setting<String> xaeroWaypointPrefix = sgContainerRecording.add(new
             .visible(this::isNormalScan)
             .build());
 
-    // Preload Rings设置
+// Preload rings setting
     private final Setting<Integer> preloadCircles = sgRender.add(new IntSetting.Builder()
             .name("Preload Rings")
             .description("Number of scan rings to prepare ahead of time.")
@@ -514,7 +507,7 @@ private final Setting<String> xaeroWaypointPrefix = sgContainerRecording.add(new
             .visible(this::isNormalScan)
             .build());
 
-    // 目标区块颜色设置
+// Target chunk color settings
     private final Setting<SettingColor> targetChunksSideColor = sgRender.add(new ColorSetting.Builder()
             .name("Target Chunk Side Color")
             .description("Target chunk fill color.")
@@ -529,7 +522,6 @@ private final Setting<String> xaeroWaypointPrefix = sgContainerRecording.add(new
             .visible(() -> isNormalScan() && (shapeMode.get() == ShapeMode.Lines || shapeMode.get() == ShapeMode.Both))
             .build());
 
-    // 已访问区块颜色设置
     private final Setting<SettingColor> visitedChunksSideColor = sgRender.add(new ColorSetting.Builder()
             .name("Visited Chunk Side Color")
             .description("Visited chunk fill color.")
@@ -544,7 +536,7 @@ private final Setting<String> xaeroWaypointPrefix = sgContainerRecording.add(new
             .visible(() -> isNormalScan() && (shapeMode.get() == ShapeMode.Lines || shapeMode.get() == ShapeMode.Both))
             .build());
 
-    // 当前路径区块颜色设置
+// Current path chunk color settings
     private final Setting<SettingColor> currentPathSideColor = sgRender.add(new ColorSetting.Builder()
             .name("Current Path Side Color")
             .description("Current path chunk fill color.")
@@ -561,6 +553,7 @@ private final Setting<String> xaeroWaypointPrefix = sgContainerRecording.add(new
 
     public BaseFinder() {
         super(WaveXinAddon.CATEGORY, "base-finder", "Outward map scanner with chunk-loading pauses.");
+        syncRestartSettingsFromSavedProgress(true);
     }
 
     private boolean isNormalScan() {
@@ -571,17 +564,30 @@ private final Setting<String> xaeroWaypointPrefix = sgContainerRecording.add(new
         return scanMethod.get() == ScanMethod.SPIRAL;
     }
 
+    private boolean showNormalResumeProgressSettings() {
+        boolean visible = isNormalScan() && lastBegin.get();
+        if (visible) syncRestartSettingsFromSavedProgress(false);
+        return visible;
+    }
+
     @Override
     public void onActivate() {
         migrateLegacyContainerRecords();
         activeScanMethod = scanMethod.get();
         setScanForwardKey(false);
         scanStartPending = true;
+        normalDebugTicks = 0;
+        normalDebugState = "INACTIVE";
+        setNormalDebugState("ACTIVATED", "selectedMethod=" + activeScanMethod);
         if (mc.player != null && mc.world != null) initializeActiveScan();
     }
 
     private void initializeActiveScan() {
         if (!scanStartPending || mc.player == null || mc.world == null) return;
+        if (!isScanStartReady()) {
+            setNormalDebugState("WAITING_START_READY", describeStartReadiness());
+            return;
+        }
 
         scanStartPending = false;
         recordedContainerChunks.clear();
@@ -606,10 +612,7 @@ private final Setting<String> xaeroWaypointPrefix = sgContainerRecording.add(new
             originChunk = mc.player.getChunkPos();
         }
 
-        targetChunks.clear();
         visitedChunks.clear();
-        currentPathChunks.clear();
-        primeScanTargets();
         targetChunk = null;
         savedNormalScanChunk = null;
         savedNormalScanCircle = -1;
@@ -619,6 +622,7 @@ private final Setting<String> xaeroWaypointPrefix = sgContainerRecording.add(new
         } else {
             info("Normal scan started at origin chunk (%d, %d).", originChunk.x, originChunk.z);
         }
+        setNormalDebugState("INITIALIZED", "resume=" + lastBegin.get());
     }
     private void restoreNormalScanProgress() {
         ScanProgressManager.NormalScanProgress progress = ScanProgressManager.loadNormalProgress();
@@ -633,6 +637,7 @@ private final Setting<String> xaeroWaypointPrefix = sgContainerRecording.add(new
             );
             ScanProgressManager.saveNormalProgress(progress);
         }
+        syncRestartSettingsFromProgress(progress, true);
 
         currentCircle = Math.max(0, progress.ring);
         originChunk = new ChunkPos(progress.originX, progress.originZ);
@@ -643,124 +648,90 @@ private final Setting<String> xaeroWaypointPrefix = sgContainerRecording.add(new
             currentPath = SweepRoute.NEXT_CIRCLE;
         }
     }
-    private void primeScanTargets() {
-        targetChunks.clear();
-
-        // 预加载当前圈数+Preload Rings的区块
-        int maxPreloadCircle = Math.min(currentCircle + preloadCircles.get(), circleLimit.get());
-        for (int circle = currentCircle; circle <= maxPreloadCircle; circle++) {
-            appendRingTargets(circle);
-        }
+    private void syncRestartSettingsFromSavedProgress(boolean force) {
+        ScanProgressManager.NormalScanProgress progress = ScanProgressManager.loadNormalProgress();
+        if (progress == null) return;
+        syncRestartSettingsFromProgress(progress, force);
     }
 
-    // 添加指定圈数的所有区块
-    private void appendRingTargets(int circle) {
-        int radius = chunkLoadRadius.get() * circle * 2;
+    private void syncRestartSettingsFromProgress(ScanProgressManager.NormalScanProgress progress, boolean force) {
+        String key = getNormalProgressKey(progress);
+        if (!force && key.equals(syncedNormalProgressKey)) return;
 
-        // 从中心到正左
-        ChunkPos centerLeft = new ChunkPos(originChunk.x - radius, originChunk.z);
-        targetChunks.add(centerLeft);
-
-        // 正左到左上
-        ChunkPos upLeft = new ChunkPos(originChunk.x - radius, originChunk.z - radius);
-        appendPathTargets(centerLeft, upLeft);
-
-        // 左上到右上
-        ChunkPos upRight = new ChunkPos(originChunk.x + radius, originChunk.z - radius);
-        appendPathTargets(upLeft, upRight);
-
-        // 右上到右下
-        ChunkPos downRight = new ChunkPos(originChunk.x + radius, originChunk.z + radius);
-        appendPathTargets(upRight, downRight);
-
-        // 右下到左下
-        ChunkPos downLeft = new ChunkPos(originChunk.x - radius, originChunk.z + radius);
-        appendPathTargets(downRight, downLeft);
-
-        // 左下到正左（完成一圈）
-        appendPathTargets(downLeft, centerLeft);
+        lastCircle.set(Math.max(0, progress.ring));
+        lastChunkX.set(progress.playerX);
+        lastChunkZ.set(progress.playerZ);
+        lastOriginX.set(progress.originX);
+        lastOriginZ.set(progress.originZ);
+        try {
+            lastPath.set(SweepRoute.valueOf(progress.route));
+        } catch (IllegalArgumentException | NullPointerException ignored) {
+            lastPath.set(SweepRoute.NEXT_CIRCLE);
+        }
+        syncedNormalProgressKey = key;
     }
 
-    // 添加两点之间路径上的所有区块
-    private void appendPathTargets(ChunkPos from, ChunkPos to) {
-        int deltaX = to.x - from.x;
-        int deltaZ = to.z - from.z;
+    private String getNormalProgressKey(ScanProgressManager.NormalScanProgress progress) {
+        return progress.originX + ":" + progress.originZ + ":" + progress.playerX + ":" + progress.playerZ + ":" + progress.ring + ":" + progress.route;
+    }
+    private boolean isChunkOnPreparedNormalRing(int chunkX, int chunkZ) {
+        if (originChunk == null) return false;
 
-        int steps = Math.max(Math.abs(deltaX), Math.abs(deltaZ));
+        int minCircle = Math.max(0, currentCircle);
+        int maxCircle = getNormalRenderMaxCircle();
+        if (minCircle > maxCircle) return false;
 
-        // 如果起点和终点相同，直接添加该区块
-        if (steps == 0) {
-            targetChunks.add(from);
-            return;
-        }
+        int dx = chunkX - originChunk.x;
+        int dz = chunkZ - originChunk.z;
+        int maxAbs = Math.max(Math.abs(dx), Math.abs(dz));
+        if (maxAbs == 0) return minCircle == 0;
 
-        for (int i = 0; i <= steps; i++) {
-            int x = from.x + (deltaX * i) / steps;
-            int z = from.z + (deltaZ * i) / steps;
-            targetChunks.add(new ChunkPos(x, z));
-        }
+        int step = Math.max(1, chunkLoadRadius.get() * 2);
+        if (maxAbs % step != 0) return false;
+
+        int circle = maxAbs / step;
+        return circle >= minCircle && circle <= maxCircle;
     }
 
-    // 更新当前路径区块
-    private void refreshActivePathChunks() {
-        currentPathChunks.clear();
-
-        if (originChunk == null || currentPath == null)
-            return;
-
-        int radius = chunkLoadRadius.get() * currentCircle * 2;
-
-        switch (currentPath) {
-            case CENTER_TO_LEFT -> {
-                ChunkPos from = originChunk;
-                ChunkPos to = new ChunkPos(originChunk.x - radius, originChunk.z);
-                appendActivePathChunks(from, to);
-            }
-            case CENTER_LEFT_TO_UP_LEFT -> {
-                ChunkPos from = new ChunkPos(originChunk.x - radius, originChunk.z);
-                ChunkPos to = new ChunkPos(originChunk.x - radius, originChunk.z - radius);
-                appendActivePathChunks(from, to);
-            }
-            case UP_LEFT_TO_UP_RIGHT -> {
-                ChunkPos from = new ChunkPos(originChunk.x - radius, originChunk.z - radius);
-                ChunkPos to = new ChunkPos(originChunk.x + radius, originChunk.z - radius);
-                appendActivePathChunks(from, to);
-            }
-            case UP_RIGHT_TO_DOWN_RIGHT -> {
-                ChunkPos from = new ChunkPos(originChunk.x + radius, originChunk.z - radius);
-                ChunkPos to = new ChunkPos(originChunk.x + radius, originChunk.z + radius);
-                appendActivePathChunks(from, to);
-            }
-            case DOWN_RIGHT_TO_DOWN_LEFT -> {
-                ChunkPos from = new ChunkPos(originChunk.x + radius, originChunk.z + radius);
-                ChunkPos to = new ChunkPos(originChunk.x - radius, originChunk.z + radius);
-                appendActivePathChunks(from, to);
-            }
-            case DOWN_LEFT_TO_LEFT -> {
-                ChunkPos from = new ChunkPos(originChunk.x - radius, originChunk.z + radius);
-                ChunkPos to = new ChunkPos(originChunk.x - radius, originChunk.z);
-                appendActivePathChunks(from, to);
-            }
-        }
+    private int getNormalRenderMaxCircle() {
+        return Math.min(circleLimit.get(), currentCircle + Math.max(0, preloadCircles.get()));
     }
 
-    // 添加当前路径区块
-    private void appendActivePathChunks(ChunkPos from, ChunkPos to) {
-        int deltaX = to.x - from.x;
-        int deltaZ = to.z - from.z;
+    private boolean isChunkOnCurrentNormalPath(int chunkX, int chunkZ) {
+        if (originChunk == null || currentPath == null || currentPath == SweepRoute.NEXT_CIRCLE) return false;
 
-        int steps = Math.max(Math.abs(deltaX), Math.abs(deltaZ));
+        int radius = Math.max(0, chunkLoadRadius.get() * currentCircle * 2);
+        return switch (currentPath) {
+            case CENTER_TO_LEFT -> isChunkOnSegment(chunkX, chunkZ, originChunk.x, originChunk.z, originChunk.x - radius, originChunk.z);
+            case CENTER_LEFT_TO_UP_LEFT -> isChunkOnSegment(chunkX, chunkZ, originChunk.x - radius, originChunk.z, originChunk.x - radius, originChunk.z - radius);
+            case UP_LEFT_TO_UP_RIGHT -> isChunkOnSegment(chunkX, chunkZ, originChunk.x - radius, originChunk.z - radius, originChunk.x + radius, originChunk.z - radius);
+            case UP_RIGHT_TO_DOWN_RIGHT -> isChunkOnSegment(chunkX, chunkZ, originChunk.x + radius, originChunk.z - radius, originChunk.x + radius, originChunk.z + radius);
+            case DOWN_RIGHT_TO_DOWN_LEFT -> isChunkOnSegment(chunkX, chunkZ, originChunk.x + radius, originChunk.z + radius, originChunk.x - radius, originChunk.z + radius);
+            case DOWN_LEFT_TO_LEFT -> isChunkOnSegment(chunkX, chunkZ, originChunk.x - radius, originChunk.z + radius, originChunk.x - radius, originChunk.z);
+            case NEXT_CIRCLE -> false;
+        };
+    }
 
-        for (int i = 0; i <= steps; i++) {
-            int x = from.x + (deltaX * i) / steps;
-            int z = from.z + (deltaZ * i) / steps;
-            currentPathChunks.add(new ChunkPos(x, z));
-        }
+    private boolean isChunkOnSegment(int chunkX, int chunkZ, int fromX, int fromZ, int toX, int toZ) {
+        if (fromX == toX) return chunkX == fromX && isBetween(chunkZ, fromZ, toZ);
+        if (fromZ == toZ) return chunkZ == fromZ && isBetween(chunkX, fromX, toX);
+        return false;
+    }
+
+    private boolean isBetween(int value, int a, int b) {
+        return value >= Math.min(a, b) && value <= Math.max(a, b);
     }
 
     @EventHandler
     private void onTick(TickEvent.Pre event) {
-        if (scanStartPending) initializeActiveScan();
+        if (activeScanMethod == ScanMethod.NORMAL) normalDebugTicks++;
+        if (scanStartPending) {
+            initializeActiveScan();
+            if (scanStartPending) {
+                setScanForwardKey(false);
+                return;
+            }
+        }
         if (activeScanMethod == ScanMethod.SPIRAL) return;
 
         if (activeScanMethod == null) {
@@ -768,11 +739,15 @@ private final Setting<String> xaeroWaypointPrefix = sgContainerRecording.add(new
             return;
         }
         if (mc.player == null || mc.world == null) {
+            setNormalDebugState("WAITING_PLAYER_OR_WORLD", "playerOrWorldMissing");
             setScanForwardKey(false);
             return;
         }
 
         if (resumeCheckpointChunk != null) {
+            if (!normalDebugState.startsWith("WAITING_RESUME")) {
+                setNormalDebugState("RETURNING_TO_CHECKPOINT", "checkpoint=" + chunkDebugLabel(resumeCheckpointChunk));
+            }
             if (moveToResumeCheckpoint()) {
                 info("Reached saved Normal Scan checkpoint at chunk (%d, %d).", resumeCheckpointChunk.x, resumeCheckpointChunk.z);
                 resumeCheckpointChunk = null;
@@ -780,7 +755,6 @@ private final Setting<String> xaeroWaypointPrefix = sgContainerRecording.add(new
             return;
         }
 
-        refreshActivePathChunks();
 
         ChunkPos playerChunk = mc.player.getChunkPos();
         visitedChunks.add(playerChunk);
@@ -789,6 +763,7 @@ private final Setting<String> xaeroWaypointPrefix = sgContainerRecording.add(new
         saveNormalScanProgress(false);
 
         if (currentCircle > circleLimit.get()) {
+            setNormalDebugState("COMPLETE", "ringLimit=" + circleLimit.get());
             setScanForwardKey(false);
             info("Scan complete.");
             toggle();
@@ -804,12 +779,6 @@ private final Setting<String> xaeroWaypointPrefix = sgContainerRecording.add(new
             advanceSweepRoute();
             currentCircle++;
 
-            int maxPreloadCircle = currentCircle + preloadCircles.get();
-            if (maxPreloadCircle <= circleLimit.get()) {
-                for (int circle = currentCircle; circle <= maxPreloadCircle; circle++) {
-                    appendRingTargets(circle);
-                }
-            }
         }
 
         switch (currentPath) {
@@ -830,6 +799,7 @@ private final Setting<String> xaeroWaypointPrefix = sgContainerRecording.add(new
         }
 
         if (mc.player.getChunkPos().equals(targetChunk)) {
+            setNormalDebugState("AT_TARGET", "turnDelay=" + turnDelayTimer);
             setScanForwardKey(false);
             if (turnDelayTimer == 0) {
                 turnDelayTimer = turnDelay.get();
@@ -845,6 +815,7 @@ private final Setting<String> xaeroWaypointPrefix = sgContainerRecording.add(new
         }
 
         if (targetChunk == null || turnDelayTimer > 0) {
+            setNormalDebugState(targetChunk == null ? "NO_TARGET" : "TURN_DELAY", "turnDelay=" + turnDelayTimer);
             setScanForwardKey(false);
             return;
         }
@@ -857,14 +828,19 @@ private final Setting<String> xaeroWaypointPrefix = sgContainerRecording.add(new
 
         double distance2D = Math.sqrt(deltaX * deltaX + deltaZ * deltaZ);
         if (distance2D < 1.0) {
+            setNormalDebugState("WITHIN_TARGET_BLOCK", "distance=" + distance2D);
             setScanForwardKey(false);
             return;
         }
 
         targetYaw = (float) Math.toDegrees(Math.atan2(-deltaX, deltaZ));
+        applyNormalMovementYaw(targetYaw);
 
         if (waitChunkLoad.get()) {
             if (!areNeighborChunksLoaded(targetYaw)) {
+                ChunkPos missingChunk = findFirstUnloadedNeighborChunk(targetYaw);
+                setNormalDebugState("WAITING_NEIGHBOR_CHUNKS", "firstMissing=" + chunkDebugLabel(missingChunk)
+                    + ",waitRadius=" + getChunkWaitRadius());
                 setScanForwardKey(false);
                 return;
             }
@@ -872,6 +848,7 @@ private final Setting<String> xaeroWaypointPrefix = sgContainerRecording.add(new
             int chunkX = (int) (mc.player.getX() / 16);
             int chunkZ = (int) (mc.player.getZ() / 16);
             if (!mc.world.getChunkManager().isChunkLoaded(chunkX, chunkZ)) {
+                setNormalDebugState("WAITING_CURRENT_CHUNK", "checkedChunk=(" + chunkX + "," + chunkZ + ")");
                 setScanForwardKey(false);
                 return;
             }
@@ -881,13 +858,17 @@ private final Setting<String> xaeroWaypointPrefix = sgContainerRecording.add(new
             mc.player.setSprinting(true);
         }
 
-        applyNormalMovementYaw(targetYaw);
+        setNormalDebugState("MOVING", "distance=" + distance2D);
         setScanForwardKey(true);
     }
 
     @EventHandler
     private void onPostTick(TickEvent.Post event) {
-        if (activeScanMethod == ScanMethod.NORMAL) restoreNormalViewYaw();
+        if (activeScanMethod != ScanMethod.NORMAL) return;
+        restoreNormalViewYaw();
+        if (normalDebugTicks > 0 && normalDebugTicks % NORMAL_DEBUG_HEARTBEAT_TICKS == 0) {
+            logNormalDebugSnapshot("HEARTBEAT", "stateUnchanged");
+        }
     }
 
     @Override
@@ -896,6 +877,7 @@ private final Setting<String> xaeroWaypointPrefix = sgContainerRecording.add(new
         restoreNormalViewYaw();
         scanStartPending = false;
         ScanMethod stoppedScanMethod = activeScanMethod;
+        if (stoppedScanMethod == ScanMethod.NORMAL) logNormalDebugSnapshot("DEACTIVATE", "moduleDisabled");
         activeScanMethod = null;
 
         if (stoppedScanMethod == ScanMethod.SPIRAL) {
@@ -918,12 +900,10 @@ private final Setting<String> xaeroWaypointPrefix = sgContainerRecording.add(new
                 info("Normal scan stopped.");
             }
         }
-        // 清空区块数据
-        targetChunks.clear();
+// Clear chunk data
         visitedChunks.clear();
-        currentPathChunks.clear();
 
-        // 还原变量
+// Reset state
         originChunk = null;
         targetChunk = null;
         resumeCheckpointChunk = null;
@@ -943,14 +923,16 @@ private final Setting<String> xaeroWaypointPrefix = sgContainerRecording.add(new
             return;
         }
 
-        ScanProgressManager.saveNormalProgress(new ScanProgressManager.NormalScanProgress(
+        ScanProgressManager.NormalScanProgress progress = new ScanProgressManager.NormalScanProgress(
             originChunk.x,
             originChunk.z,
             playerChunk.x,
             playerChunk.z,
             currentCircle,
             currentPath.name()
-        ));
+        );
+        ScanProgressManager.saveNormalProgress(progress);
+        syncRestartSettingsFromProgress(progress, true);
 
         savedNormalScanChunk = playerChunk;
         savedNormalScanCircle = currentCircle;
@@ -990,8 +972,13 @@ private final Setting<String> xaeroWaypointPrefix = sgContainerRecording.add(new
         }
 
         targetYaw = (float) Math.toDegrees(Math.atan2(-deltaX, deltaZ));
+        applyNormalMovementYaw(targetYaw);
+
         if (waitChunkLoad.get()) {
             if (!areNeighborChunksLoaded(targetYaw)) {
+                ChunkPos missingChunk = findFirstUnloadedNeighborChunk(targetYaw);
+                setNormalDebugState("WAITING_RESUME_NEIGHBOR_CHUNKS", "firstMissing=" + chunkDebugLabel(missingChunk)
+                    + ",waitRadius=" + getChunkWaitRadius());
                 setScanForwardKey(false);
                 return false;
             }
@@ -999,31 +986,16 @@ private final Setting<String> xaeroWaypointPrefix = sgContainerRecording.add(new
             int chunkX = (int) (mc.player.getX() / 16);
             int chunkZ = (int) (mc.player.getZ() / 16);
             if (!mc.world.getChunkManager().isChunkLoaded(chunkX, chunkZ)) {
+                setNormalDebugState("WAITING_RESUME_CURRENT_CHUNK", "checkedChunk=(" + chunkX + "," + chunkZ + ")");
                 setScanForwardKey(false);
                 return false;
             }
         }
 
+        setNormalDebugState("RETURNING_TO_CHECKPOINT", "checkpoint=" + chunkDebugLabel(resumeCheckpointChunk));
         if (moveSpeed.get() > 1.0) mc.player.setSprinting(true);
-        applyNormalMovementYaw(targetYaw);
         setScanForwardKey(true);
         return false;
-    }
-    private void resetPreviousNormalScan() {
-        if (activeScanMethod == ScanMethod.NORMAL) {
-            warning("Stop Normal Scan before resetting its saved progress.");
-            return;
-        }
-
-        ScanProgressManager.clearNormalProgress();
-        lastBegin.set(false);
-        lastCircle.set(0);
-        lastChunkX.set(0);
-        lastChunkZ.set(0);
-        lastPath.set(SweepRoute.NEXT_CIRCLE);
-        lastOriginX.set(0);
-        lastOriginZ.set(0);
-        info("Cleared saved Normal Scan progress.");
     }
     private void applyNormalMovementYaw(float yaw) {
         if (lockView.get()) {
@@ -1056,23 +1028,125 @@ private final Setting<String> xaeroWaypointPrefix = sgContainerRecording.add(new
         }
     }
 
-    // 检查当前区块左右两边区块是否已完全加载
-    private boolean areNeighborChunksLoaded(float yaw) {
-        if (mc.options == null) return true;
+    private void setNormalDebugState(String state, String detail) {
+        if (activeScanMethod != ScanMethod.NORMAL || state.equals(normalDebugState)) return;
+        normalDebugState = state;
+        logNormalDebugSnapshot("STATE", detail);
+    }
+
+    private void logNormalDebugSnapshot(String event, String detail) {
+        String playerState;
+        if (mc.player == null) {
+            playerState = "player=null";
+        } else {
+            Vec3d velocity = mc.player.getVelocity();
+            ChunkPos playerChunk = mc.player.getChunkPos();
+            boolean currentChunkLoaded = mc.world != null && mc.world.getChunkManager().isChunkLoaded(playerChunk.x, playerChunk.z);
+            boolean forwardPressed = mc.options != null && mc.options.forwardKey.isPressed();
+            playerState = "pos=(" + mc.player.getX() + "," + mc.player.getY() + "," + mc.player.getZ() + ")"
+                + " playerChunk=" + chunkDebugLabel(playerChunk)
+                + " currentChunkLoaded=" + currentChunkLoaded
+                + " velocity=(" + velocity.x + "," + velocity.y + "," + velocity.z + ")"
+                + " playerYaw=" + mc.player.getYaw()
+                + " sprinting=" + mc.player.isSprinting()
+                + " forwardPressed=" + forwardPressed
+                + " forcingForward=" + forcingForward
+                + " age=" + mc.player.age;
+        }
+
+        WaveXinAddon.LOG.info(
+            "[BaseFinderDebug] event={} state={} detail={} method={} pending={} origin={} target={} resume={} ring={} route={} turnDelay={} targetYaw={} waitChunks={} chunkRadius={} waitDistance={} waitRadius={} viewDistance={} clampedViewDistance={} screen={} {}",
+            event,
+            normalDebugState,
+            detail,
+            activeScanMethod,
+            scanStartPending,
+            chunkDebugLabel(originChunk),
+            chunkDebugLabel(targetChunk),
+            chunkDebugLabel(resumeCheckpointChunk),
+            currentCircle,
+            currentPath,
+            turnDelayTimer,
+            targetYaw,
+            waitChunkLoad.get(),
+            chunkLoadRadius.get(),
+            chunkWaitDistance.get(),
+            getChunkWaitRadius(),
+            mc.options == null ? -1 : mc.options.getViewDistance().getValue(),
+            mc.options == null ? -1 : mc.options.getClampedViewDistance(),
+            mc.currentScreen == null ? "none" : mc.currentScreen.getClass().getSimpleName(),
+            playerState
+        );
+    }
+
+    private String describeStartReadiness() {
+        ChunkPos playerChunk = mc.player.getChunkPos();
+        boolean loaded = mc.world.getChunkManager().isChunkLoaded(playerChunk.x, playerChunk.z);
+        return "playerChunk=" + chunkDebugLabel(playerChunk) + ",loaded=" + loaded + ",age=" + mc.player.age;
+    }
+
+    private String chunkDebugLabel(ChunkPos chunk) {
+        return chunk == null ? "null" : "(" + chunk.x + "," + chunk.z + ")";
+    }
+
+    private ChunkPos findFirstUnloadedNeighborChunk(float yaw) {
+        if (mc.player == null || mc.world == null) return null;
 
         ChunkPos currentChunk = mc.player.getChunkPos();
-        boolean movingAlongZ = Math.abs(Math.cos(Math.toRadians(yaw))) >= Math.abs(Math.sin(Math.toRadians(yaw)));
-        int loadedRadius = Math.min(chunkLoadRadius.get(), Math.max(0, mc.options.getViewDistance().getValue() - 1));
+        int waitRadius = getChunkWaitRadius();
+        int stepX = getForwardChunkStepX(yaw);
+        int stepZ = getForwardChunkStepZ(yaw);
 
-        for (int offset = -loadedRadius; offset <= loadedRadius; offset++) {
-            int chunkX = movingAlongZ ? currentChunk.x + offset : currentChunk.x;
-            int chunkZ = movingAlongZ ? currentChunk.z : currentChunk.z + offset;
+        for (int step = 1; step <= waitRadius; step++) {
+            int chunkX = currentChunk.x + stepX * step;
+            int chunkZ = currentChunk.z + stepZ * step;
+            if (!mc.world.getChunkManager().isChunkLoaded(chunkX, chunkZ)) return new ChunkPos(chunkX, chunkZ);
+        }
+
+        return null;
+    }
+
+    private int getForwardChunkStepX(float yaw) {
+        double radians = Math.toRadians(yaw);
+        double x = -Math.sin(radians);
+        double z = Math.cos(radians);
+        return Math.abs(x) >= Math.abs(z) ? (x > 0 ? 1 : -1) : 0;
+    }
+
+    private int getForwardChunkStepZ(float yaw) {
+        double radians = Math.toRadians(yaw);
+        double x = -Math.sin(radians);
+        double z = Math.cos(radians);
+        return Math.abs(z) > Math.abs(x) ? (z > 0 ? 1 : -1) : 0;
+    }
+    private int getChunkWaitRadius() {
+        return Math.min(Math.max(0, chunkLoadRadius.get()), Math.max(0, chunkWaitDistance.get()));
+    }
+
+    private boolean isScanStartReady() {
+        ChunkPos playerChunk = mc.player.getChunkPos();
+        if (!mc.world.getChunkManager().isChunkLoaded(playerChunk.x, playerChunk.z)) return false;
+
+        if (playerChunk.x != 0 || playerChunk.z != 0) return true;
+        if (Math.abs(mc.player.getX()) >= 16.0 || Math.abs(mc.player.getZ()) >= 16.0) return true;
+
+        return mc.isInSingleplayer() || mc.player.age > 100;
+    }
+
+    private boolean areNeighborChunksLoaded(float yaw) {
+        ChunkPos currentChunk = mc.player.getChunkPos();
+        int waitRadius = getChunkWaitRadius();
+        int stepX = getForwardChunkStepX(yaw);
+        int stepZ = getForwardChunkStepZ(yaw);
+
+        for (int step = 1; step <= waitRadius; step++) {
+            int chunkX = currentChunk.x + stepX * step;
+            int chunkZ = currentChunk.z + stepZ * step;
             if (!mc.world.getChunkManager().isChunkLoaded(chunkX, chunkZ)) return false;
         }
 
         return true;
     }
-
     private void migrateLegacyContainerRecords() {
         if (Files.exists(CONTAINER_RECORD_PATH) || !Files.exists(LEGACY_CONTAINER_RECORD_PATH)) return;
 
@@ -1549,42 +1623,48 @@ private final Setting<String> xaeroWaypointPrefix = sgContainerRecording.add(new
         }
 
 
-        BlockPos playerPos = new BlockPos(mc.player.getBlockX(), renderHeight.get(), mc.player.getBlockZ());
-        double renderDistanceBlocks = renderDistance.get() * 16.0;
+        renderNormalRoute(event);
+    }
 
-        // 只渲染目标区块，根据状态使用不同颜色
-        synchronized (targetChunks) {
-            for (ChunkPos chunk : targetChunks) {
-                if (chunk != null && playerPos.isWithinDistance(
-                        new BlockPos(chunk.getCenterX(), renderHeight.get(), chunk.getCenterZ()),
-                        renderDistanceBlocks)) {
+    private void renderNormalRoute(Render3DEvent event) {
+        if (activeScanMethod != ScanMethod.NORMAL || originChunk == null || currentPath == null || mc.player == null) return;
 
-                    // 根据区块状态选择颜色
-                    SettingColor sideColor, lineColor;
+        ChunkPos playerChunk = mc.player.getChunkPos();
+        int renderRadius = Math.max(1, renderDistance.get());
+        double maxDistance = renderRadius * 16.0;
+        double maxDistanceSq = maxDistance * maxDistance;
 
-                    if (currentPathChunks.contains(chunk)) {
-                        // 当前路径区块
-                        sideColor = currentPathSideColor.get();
-                        lineColor = currentPathLineColor.get();
-                    } else if (visitedChunks.contains(chunk)) {
-                        // 已访问区块
-                        sideColor = visitedChunksSideColor.get();
-                        lineColor = visitedChunksLineColor.get();
-                    } else {
-                        // 未访问的目标区块
-                        sideColor = targetChunksSideColor.get();
-                        lineColor = targetChunksLineColor.get();
-                    }
+        for (int chunkX = playerChunk.x - renderRadius; chunkX <= playerChunk.x + renderRadius; chunkX++) {
+            for (int chunkZ = playerChunk.z - renderRadius; chunkZ <= playerChunk.z + renderRadius; chunkZ++) {
+                double deltaX = chunkX * 16.0 + 8.0 - mc.player.getX();
+                double deltaZ = chunkZ * 16.0 + 8.0 - mc.player.getZ();
+                if (deltaX * deltaX + deltaZ * deltaZ > maxDistanceSq) continue;
 
-                    if (sideColor.a > 5 || lineColor.a > 5) {
-                        renderScanChunk(chunk, sideColor, lineColor, event);
-                    }
+                boolean currentPathChunk = isChunkOnCurrentNormalPath(chunkX, chunkZ);
+                boolean targetPreviewChunk = isChunkOnPreparedNormalRing(chunkX, chunkZ);
+                if (!currentPathChunk && !targetPreviewChunk) continue;
+
+                ChunkPos chunk = new ChunkPos(chunkX, chunkZ);
+                SettingColor sideColor;
+                SettingColor lineColor;
+
+                if (currentPathChunk) {
+                    sideColor = currentPathSideColor.get();
+                    lineColor = currentPathLineColor.get();
+                } else if (visitedChunks.contains(chunk)) {
+                    sideColor = visitedChunksSideColor.get();
+                    lineColor = visitedChunksLineColor.get();
+                } else {
+                    sideColor = targetChunksSideColor.get();
+                    lineColor = targetChunksLineColor.get();
+                }
+
+                if (sideColor.a > 5 || lineColor.a > 5) {
+                    renderScanChunk(chunk, sideColor, lineColor, event);
                 }
             }
         }
     }
-
-    // 渲染单个区块的方法
     private void renderSpiralRoute(Render3DEvent event) {
         if (!spiralRenderRoute.get() || mc.world == null || spiralStartChunk == null || spiralTargetChunk == null) return;
 
@@ -1628,7 +1708,6 @@ private final Setting<String> xaeroWaypointPrefix = sgContainerRecording.add(new
                 sideColor, lineColor, shapeMode.get(), 0);
     }
 
-    // 更新下一个路径
     private void advanceSweepRoute() {
         switch (currentPath) {
             case NEXT_CIRCLE -> currentPath = SweepRoute.CENTER_TO_LEFT;
@@ -1641,32 +1720,32 @@ private final Setting<String> xaeroWaypointPrefix = sgContainerRecording.add(new
         }
     }
 
-    // ==================== 速度获取和设置方法 ====================
+// Velocity helpers
 
     /**
-     * 获取玩家当前的X轴速度
+     * Gets the current X velocity.
      */
     private double getX() {
         return mc.player.getVelocity().x;
     }
 
     /**
-     * 获取玩家当前的Y轴速度
+     * Gets the current Y velocity.
      */
     private double getY() {
         return mc.player.getVelocity().y;
     }
 
     /**
-     * 获取玩家当前的Z轴速度
+     * Gets the current Z velocity.
      */
     private double getZ() {
         return mc.player.getVelocity().z;
     }
 
     /**
-     * 设置玩家的X轴速度
-     * 保持Y和Z轴速度不变
+     * Sets the current X velocity.
+     * Keeps Y and Z velocity unchanged.
      */
     private void setX(double f) {
         Vec3d currentVel = mc.player.getVelocity();
@@ -1675,8 +1754,8 @@ private final Setting<String> xaeroWaypointPrefix = sgContainerRecording.add(new
     }
 
     /**
-     * 设置玩家的Y轴速度
-     * 保持X和Z轴速度不变
+     * Sets the current Y velocity.
+     * Keeps X and Z velocity unchanged.
      */
     private void setY(double f) {
         Vec3d currentVel = mc.player.getVelocity();
@@ -1685,8 +1764,8 @@ private final Setting<String> xaeroWaypointPrefix = sgContainerRecording.add(new
     }
 
     /**
-     * 设置玩家的Z轴速度
-     * 保持X和Y轴速度不变
+     * Sets the current Z velocity.
+     * Keeps X and Y velocity unchanged.
      */
     private void setZ(double f) {
         Vec3d currentVel = mc.player.getVelocity();
@@ -1700,98 +1779,6 @@ private final Setting<String> xaeroWaypointPrefix = sgContainerRecording.add(new
         return spiralSegments + " | " + spiralDirection.name();
     }
 
-    private static class ConfirmedActionSetting extends Setting<Boolean> {
-        private final String buttonLabel;
-        private final String confirmationText;
-        private final Runnable action;
-
-        private ConfirmedActionSetting(String name, String description, String buttonLabel, String confirmationText, Runnable action, Consumer<Boolean> onChanged, Consumer<Setting<Boolean>> onModuleActivated, IVisible visible) {
-            super(name, description, false, onChanged, onModuleActivated, visible);
-            this.buttonLabel = buttonLabel;
-            this.confirmationText = confirmationText;
-            this.action = action;
-        }
-
-        private void create(WTable table, GuiTheme theme) {
-            WTable actions = table.add(theme.table()).expandX().widget();
-            showReset(actions, theme);
-        }
-
-        private void showReset(WTable table, GuiTheme theme) {
-            table.clear();
-            var reset = table.add(theme.button(buttonLabel)).expandX().widget();
-            reset.action = () -> showConfirmation(table, theme);
-            reset.tooltip = description;
-        }
-
-        private void showConfirmation(WTable table, GuiTheme theme) {
-            table.clear();
-            table.add(theme.label(confirmationText)).expandX().centerX();
-            table.row();
-
-            var confirm = table.add(theme.button("Confirm")).expandX().group("reset-actions").widget();
-            confirm.action = () -> {
-                if (action != null) action.run();
-                showReset(table, theme);
-            };
-
-            var cancel = table.add(theme.button("Cancel")).expandX().group("reset-actions").widget();
-            cancel.action = () -> showReset(table, theme);
-            table.row();
-        }
-
-        @Override
-        protected Boolean parseImpl(String str) {
-            return false;
-        }
-
-        @Override
-        protected boolean isValueValid(Boolean value) {
-            return true;
-        }
-
-        @Override
-        protected NbtCompound save(NbtCompound tag) {
-            tag.putBoolean("value", false);
-            return tag;
-        }
-
-        @Override
-        protected Boolean load(NbtCompound tag) {
-            set(false);
-            return false;
-        }
-
-        private static class Builder extends SettingBuilder<Builder, Boolean, ConfirmedActionSetting> {
-            private String buttonLabel = "Reset";
-            private String confirmationText = "Confirm reset?";
-            private Runnable action;
-
-            private Builder() {
-                super(false);
-            }
-
-            private Builder buttonLabel(String buttonLabel) {
-                this.buttonLabel = buttonLabel;
-                return this;
-            }
-
-            private Builder confirmationText(String confirmationText) {
-                this.confirmationText = confirmationText;
-                return this;
-            }
-
-            private Builder action(Runnable action) {
-                this.action = action;
-                return this;
-            }
-
-            @Override
-            public ConfirmedActionSetting build() {
-                return new ConfirmedActionSetting(name, description, buttonLabel, confirmationText, action, onChanged, onModuleActivated, visible);
-            }
-        }
-    }
     public enum SweepRoute {
         NEXT_CIRCLE,
         CENTER_TO_LEFT,

@@ -1,5 +1,8 @@
-package me.waltom.wavexin;
+package me.waltom.wavexin.modules.basefinder;
 
+import me.waltom.wavexin.core.WaveXinSettingsStore;
+import me.waltom.wavexin.core.WaveXinDataPaths;
+import me.waltom.wavexin.WaveXinAddon;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonSyntaxException;
@@ -7,7 +10,6 @@ import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.nbt.NbtCompound;
 import net.minecraft.nbt.NbtIo;
 import net.minecraft.util.math.ChunkPos;
-
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;

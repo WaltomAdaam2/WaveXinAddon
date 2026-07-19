@@ -1,8 +1,8 @@
 package me.waltom.wavexin.mixins;
 
-import me.waltom.wavexin.AutoLoginTextEvent;
-import me.waltom.wavexin.CommandSuggestionsEvent;
-import me.waltom.wavexin.ChatFilter;
+import me.waltom.wavexin.modules.commandscanner.CommandSuggestionsEvent;
+import me.waltom.wavexin.modules.chatfilter.ChatFilter;
+import me.waltom.wavexin.modules.autologin.AutoLoginTextEvent;
 import meteordevelopment.meteorclient.MeteorClient;
 import net.minecraft.client.network.ClientPlayNetworkHandler;
 import net.minecraft.network.packet.s2c.play.GameMessageS2CPacket;

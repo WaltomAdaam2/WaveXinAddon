@@ -1,4 +1,4 @@
-package me.waltom.wavexin;
+package me.waltom.wavexin.modules.basefinder;
 
 /**
  * 方形螺旋扫描方向枚举

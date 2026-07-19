@@ -1,4 +1,4 @@
-package me.waltom.wavexin;
+package me.waltom.wavexin.modules.basefinder;
 
 import meteordevelopment.meteorclient.gui.renderer.GuiRenderer;
 import meteordevelopment.meteorclient.gui.themes.meteor.MeteorGuiTheme;
@@ -11,7 +11,6 @@ import meteordevelopment.meteorclient.settings.IVisible;
 import meteordevelopment.meteorclient.settings.Setting;
 import meteordevelopment.meteorclient.utils.render.color.Color;
 import net.minecraft.nbt.NbtCompound;
-
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Consumer;

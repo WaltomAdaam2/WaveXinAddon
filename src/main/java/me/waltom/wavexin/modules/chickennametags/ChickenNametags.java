@@ -1,12 +1,13 @@
-package me.waltom.wavexin;
+package me.waltom.wavexin.modules.chickennametags;
 
+import me.waltom.wavexin.core.WaveXinModule;
+import me.waltom.wavexin.WaveXinAddon;
 import meteordevelopment.meteorclient.events.render.Render2DEvent;
 import meteordevelopment.meteorclient.events.world.TickEvent;
 import meteordevelopment.meteorclient.renderer.Renderer2D;
 import meteordevelopment.meteorclient.renderer.text.TextRenderer;
 import meteordevelopment.meteorclient.settings.*;
 import meteordevelopment.meteorclient.systems.config.Config;
-
 import meteordevelopment.meteorclient.utils.Utils;
 import meteordevelopment.meteorclient.utils.player.PlayerUtils;
 import meteordevelopment.meteorclient.utils.render.NametagUtils;
@@ -18,7 +19,6 @@ import net.minecraft.entity.EntityType;
 import net.minecraft.entity.passive.ChickenEntity;
 import net.minecraft.util.math.Vec3d;
 import org.joml.Vector3d;
-
 import java.util.*;
 
 public class ChickenNametags extends WaveXinModule {

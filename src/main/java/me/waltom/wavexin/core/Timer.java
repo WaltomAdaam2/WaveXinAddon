@@ -1,4 +1,4 @@
-package me.waltom.wavexin;
+package me.waltom.wavexin.core;
 
 public class Timer {
 

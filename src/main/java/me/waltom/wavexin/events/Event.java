@@ -1,4 +1,4 @@
-package me.waltom.wavexin;
+package me.waltom.wavexin.events;
 
 public class Event {
     private final Stage stage;

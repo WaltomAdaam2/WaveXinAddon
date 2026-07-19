@@ -1,4 +1,4 @@
-package me.waltom.wavexin;
+package me.waltom.wavexin.core;
 
 import meteordevelopment.meteorclient.systems.config.Config;
 import meteordevelopment.meteorclient.systems.modules.Category;
@@ -15,7 +15,7 @@ public abstract class WaveXinModule extends Module {
     @Override
     public void sendToggledMsg() {
         if (Config.get().chatFeedback.get() && chatFeedback) {
-            ChatUtils.sendMsg(hashCode(), Formatting.GRAY, "Toggled %s.", isActive() ? Formatting.GREEN + "on" : Formatting.RED + "off");
+            ChatUtils.sendMsg(hashCode(), Formatting.GRAY, "%s toggled %s.", title, isActive() ? Formatting.GREEN + "on" : Formatting.RED + "off");
         }
     }
 

@@ -52,7 +52,7 @@ Use the normal jar file, not the `sources` or `dev` jar.
 
 ## Installation
 
-Place the built WaveXinAddon jar into your Minecraft `mods` folder together with:
+Place the WaveXinAddon `.jar` built locally or downloaded from Releases into your Minecraft `mods` folder, and make sure the following are installed:
 
 * Fabric API
 * Meteor Client
