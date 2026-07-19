@@ -330,7 +330,7 @@ public class BaseFinder extends WaveXinModule {
     private final Setting<Integer> chunkWaitDistance = sgNormalScan.add(new IntSetting.Builder()
             .name("Chunk Wait Distance")
             .description("Forward chunk distance checked while waiting for chunks to load.")
-            .defaultValue(7)
+            .defaultValue(4)
             .min(1)
             .max(30)
             .sliderMin(1)
