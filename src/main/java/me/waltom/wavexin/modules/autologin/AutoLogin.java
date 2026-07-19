@@ -1,5 +1,8 @@
-package me.waltom.wavexin;
+package me.waltom.wavexin.modules.autologin;
 
+import me.waltom.wavexin.WaveXinAddon;
+import me.waltom.wavexin.core.WaveXinModule;
+import me.waltom.wavexin.core.WaveXinDataPaths;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonElement;
@@ -13,7 +16,6 @@ import meteordevelopment.meteorclient.gui.GuiTheme;
 import meteordevelopment.meteorclient.gui.utils.SettingsWidgetFactory;
 import meteordevelopment.meteorclient.gui.widgets.containers.WTable;
 import meteordevelopment.meteorclient.settings.*;
-
 import meteordevelopment.meteorclient.utils.player.ChatUtils;
 import meteordevelopment.orbit.EventHandler;
 import net.minecraft.client.MinecraftClient;
@@ -26,7 +28,6 @@ import net.minecraft.screen.slot.SlotActionType;
 import net.minecraft.text.Text;
 import net.minecraft.util.Hand;
 import net.minecraft.world.GameMode;
-
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
@@ -87,6 +88,12 @@ public class AutoLogin extends WaveXinModule {
             SavedAccountsSetting accountList = (SavedAccountsSetting) setting;
             accountList.create(table, theme);
         });
+        SettingsWidgetFactory.registerCustomFactory(PasswordInputSetting.class, theme -> (table, setting) -> {
+            PasswordInputSetting passwordSetting = (PasswordInputSetting) setting;
+            var textBox = table.add(theme.textBox(passwordSetting.get(), "Password")).expandX().widget();
+            textBox.action = () -> passwordSetting.set(textBox.get());
+            textBox.actionOnUnfocused = () -> passwordSetting.set(textBox.get());
+        });
     }
 
     private final SettingGroup sgGeneral = settings.createGroup("General");
@@ -140,6 +147,7 @@ public class AutoLogin extends WaveXinModule {
         .name("Account Type")
         .description("Microsoft accounts do not use /l. Offline accounts use the saved password")
         .defaultValue(AccountType.Microsoft)
+        .onChanged(this::onAccountTypeChanged)
         .build()
     );
 
@@ -159,24 +167,11 @@ public class AutoLogin extends WaveXinModule {
         .build()
     );
 
-    public final Setting<String> passwordInput = sgAccount.add(new StringSetting(
+    public final Setting<String> passwordInput = sgAccount.add(new PasswordInputSetting(
         "Password Input",
         "Temporary input for Offline Account. It is encrypted before saving",
-        "",
-        null,
-        null,
-        () -> accountType.get() == AccountType.Offline,
-        null,
-        null,
-        null,
-        false
-    ) {
-        @Override
-        public boolean wasChanged() {
-            return false;
-        }
-
-    });
+        () -> accountType.get() == AccountType.Offline
+    ));
     public final Setting<Boolean> addOrUpdateAccount = sgAccount.add(new ActionButtonSetting.Builder()
         .name("Add / Update Account")
         .description("Saves Account Name with the selected account type")
@@ -764,6 +759,10 @@ public class AutoLogin extends WaveXinModule {
         }
     }
 
+    private void onAccountTypeChanged(AccountType value) {
+        if (passwordInput != null) passwordInput.set("");
+        if (savedAccounts != null) savedAccounts.refresh();
+    }
     private List<SavedAccountEntry> getSavedAccounts() {
         List<SavedAccountEntry> accounts = new ArrayList<>();
         for (String playerName : config.accounts.keySet()) {
@@ -850,6 +849,38 @@ public class AutoLogin extends WaveXinModule {
         COMPLETED
     }
 
+    private static class PasswordInputSetting extends Setting<String> {
+        private PasswordInputSetting(String name, String description, IVisible visible) {
+            super(name, description, "", null, null, visible);
+        }
+
+        @Override
+        protected String parseImpl(String str) {
+            return str;
+        }
+
+        @Override
+        protected boolean isValueValid(String value) {
+            return true;
+        }
+
+        @Override
+        protected NbtCompound save(NbtCompound tag) {
+            tag.putString("value", "");
+            return tag;
+        }
+
+        @Override
+        protected String load(NbtCompound tag) {
+            set("");
+            return "";
+        }
+
+        @Override
+        public boolean wasChanged() {
+            return false;
+        }
+    }
     private static class ActionButtonSetting extends Setting<Boolean> {
         private final String buttonLabel;
         private final Runnable action;

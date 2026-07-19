@@ -1,11 +1,11 @@
-package me.waltom.wavexin;
+package me.waltom.wavexin.core;
 
+import me.waltom.wavexin.WaveXinAddon;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonSyntaxException;
 import meteordevelopment.meteorclient.systems.modules.Module;
 import net.minecraft.nbt.StringNbtReader;
-
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.AtomicMoveNotSupportedException;
@@ -15,7 +15,7 @@ import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
-final class WaveXinSettingsStore {
+public final class WaveXinSettingsStore {
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
 
     private WaveXinSettingsStore() {
@@ -56,7 +56,7 @@ final class WaveXinSettingsStore {
         }
     }
 
-    static void writeAtomically(java.nio.file.Path path, String contents) throws IOException {
+    public static void writeAtomically(java.nio.file.Path path, String contents) throws IOException {
         Files.createDirectories(path.getParent());
         java.nio.file.Path temporaryPath = path.resolveSibling(path.getFileName() + ".tmp");
         Files.writeString(temporaryPath, contents, StandardCharsets.UTF_8);

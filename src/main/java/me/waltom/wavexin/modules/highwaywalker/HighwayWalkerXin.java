@@ -1,6 +1,7 @@
 /*
-package me.waltom.wavexin;
-
+package me.waltom.wavexin.modules.highwaywalker;
+import me.waltom.wavexin.core.WaveXinModule;
+import me.waltom.wavexin.WaveXinAddon;
 import meteordevelopment.meteorclient.events.render.Render3DEvent;
 import meteordevelopment.meteorclient.events.world.TickEvent;
 import meteordevelopment.meteorclient.renderer.ShapeMode;
@@ -11,11 +12,9 @@ import meteordevelopment.meteorclient.settings.EnumSetting;
 import meteordevelopment.meteorclient.settings.IntSetting;
 import meteordevelopment.meteorclient.settings.Setting;
 import meteordevelopment.meteorclient.settings.SettingGroup;
-
 import meteordevelopment.meteorclient.utils.render.color.SettingColor;
 import meteordevelopment.orbit.EventHandler;
 import net.minecraft.util.math.MathHelper;
-
 import java.util.Locale;
 
 public class HighwayWalkerXin extends WaveXinModule {

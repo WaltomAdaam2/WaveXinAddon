@@ -1,14 +1,15 @@
-package me.waltom.wavexin;
+package me.waltom.wavexin.modules.simpleelytraflypath;
 
-
-
+import me.waltom.wavexin.events.TravelEvent;
+import me.waltom.wavexin.events.MoveEvent;
+import me.waltom.wavexin.core.WaveXinModule;
+import me.waltom.wavexin.WaveXinAddon;
 import me.waltom.wavexin.gui.TargetCoordinateInput;
 import meteordevelopment.meteorclient.events.world.TickEvent;
 import meteordevelopment.meteorclient.gui.renderer.GuiRenderer;
 import meteordevelopment.meteorclient.gui.utils.SettingsWidgetFactory;
 import meteordevelopment.meteorclient.gui.widgets.input.WIntEdit;
 import meteordevelopment.meteorclient.settings.*;
-
 import meteordevelopment.meteorclient.utils.player.ChatUtils;
 import meteordevelopment.orbit.EventHandler;
 import meteordevelopment.orbit.EventPriority;
@@ -25,7 +26,6 @@ import net.minecraft.text.Text;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.ChunkPos;
 import net.minecraft.util.math.Vec3d;
-
 import java.util.function.Consumer;
 
 public class SimpleElytraFlyPath extends WaveXinModule {

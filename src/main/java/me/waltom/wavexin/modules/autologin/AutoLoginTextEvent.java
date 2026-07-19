@@ -1,4 +1,4 @@
-package me.waltom.wavexin;
+package me.waltom.wavexin.modules.autologin;
 
 public class AutoLoginTextEvent {
     public final String text;

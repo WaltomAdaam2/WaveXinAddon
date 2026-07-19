@@ -1,5 +1,7 @@
-package me.waltom.wavexin;
+package me.waltom.wavexin.modules.chatfilter;
 
+import me.waltom.wavexin.WaveXinAddon;
+import me.waltom.wavexin.core.WaveXinModule;
 import meteordevelopment.meteorclient.events.game.ReceiveMessageEvent;
 import meteordevelopment.meteorclient.settings.BoolSetting;
 import meteordevelopment.meteorclient.settings.Setting;
@@ -7,7 +9,6 @@ import meteordevelopment.meteorclient.settings.SettingGroup;
 import meteordevelopment.meteorclient.systems.modules.Modules;
 import meteordevelopment.orbit.EventHandler;
 import net.minecraft.text.Text;
-
 import java.util.regex.Pattern;
 
 public class ChatFilter extends WaveXinModule {
