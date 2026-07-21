@@ -258,7 +258,9 @@ public final class WaveXinI18n {
 
     public static String keySegment(String value) {
         if (value == null || value.isBlank()) return "unnamed";
-        String segment = value.toLowerCase(Locale.ROOT)
+        String segment = value
+            .replaceAll("([a-z0-9])([A-Z])", "$1_$2")
+            .toLowerCase(Locale.ROOT)
             .replaceAll("[^a-z0-9]+", "_")
             .replaceAll("^_+|_+$", "");
         return segment.isEmpty() ? "unnamed" : segment;
