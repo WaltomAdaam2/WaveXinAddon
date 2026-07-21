@@ -13,6 +13,7 @@ public abstract class MixinWMeteorModule {
     @Inject(method = "<init>", at = @At("RETURN"))
     private void onInit(Module module, String title, CallbackInfo ci) {
         if (WaveXinI18n.isWaveXin(module)) {
+            WaveXinI18n.markUiPath("module-card-tooltip");
             ((WMeteorModule) (Object) this).tooltip = WaveXinI18n.moduleDescription(module);
         }
     }

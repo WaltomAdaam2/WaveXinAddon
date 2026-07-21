@@ -27,6 +27,7 @@ public abstract class MixinModulesSearch {
 
     @Inject(method = "searchTitles", at = @At("HEAD"), cancellable = true)
     private void onSearchTitles(String text, CallbackInfoReturnable<List<Pair<Module, String>>> cir) {
+        WaveXinI18n.markUiPath("module-search-title");
         List<SearchResult> results = new ArrayList<>();
 
         for (Module module : getAll()) {
@@ -52,6 +53,7 @@ public abstract class MixinModulesSearch {
 
     @Inject(method = "searchSettingTitles", at = @At("HEAD"), cancellable = true)
     private void onSearchSettingTitles(String text, CallbackInfoReturnable<Set<Module>> cir) {
+        WaveXinI18n.markUiPath("module-search-setting");
         List<ModuleScore> scores = new ArrayList<>();
 
         for (Module module : getAll()) {

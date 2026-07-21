@@ -59,6 +59,7 @@ public class WaveXinEnumDropdown<T extends Enum<?>> extends WDropdown<T> impleme
     }
 
     private String label(T value) {
+        WaveXinI18n.markUiPath("enum-dropdown-label");
         return WaveXinI18n.enumLabel(module, value);
     }
 

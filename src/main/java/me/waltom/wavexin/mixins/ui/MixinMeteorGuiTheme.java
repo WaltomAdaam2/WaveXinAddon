@@ -17,6 +17,7 @@ public abstract class MixinMeteorGuiTheme {
     private void onModule(Module module, String title, CallbackInfoReturnable<WWidget> cir) {
         if (!WaveXinI18n.isWaveXin(module)) return;
 
+        WaveXinI18n.markUiPath("module-card-title");
         WMeteorModule widget = new WMeteorModule(module, WaveXinI18n.moduleTitle(module));
         widget.theme = (GuiTheme) (Object) this;
         cir.setReturnValue(widget);

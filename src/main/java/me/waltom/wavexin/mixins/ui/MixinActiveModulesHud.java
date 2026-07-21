@@ -11,6 +11,7 @@ import org.spongepowered.asm.mixin.injection.Redirect;
 public abstract class MixinActiveModulesHud {
     @Redirect(method = {"tick", "renderModule", "getModuleWidth"}, at = @At(value = "FIELD", target = "Lmeteordevelopment/meteorclient/systems/modules/Module;title:Ljava/lang/String;"))
     private String onModuleTitle(Module module) {
+        if (WaveXinI18n.isWaveXin(module)) WaveXinI18n.markUiPath("active-modules-hud");
         return WaveXinI18n.moduleTitle(module);
     }
 }

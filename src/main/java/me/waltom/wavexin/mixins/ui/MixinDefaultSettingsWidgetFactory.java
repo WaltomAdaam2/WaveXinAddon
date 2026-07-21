@@ -24,16 +24,19 @@ public abstract class MixinDefaultSettingsWidgetFactory {
     @Redirect(method = "group", at = @At(value = "FIELD", target = "Lmeteordevelopment/meteorclient/settings/SettingGroup;name:Ljava/lang/String;"))
     private String onGroupName(SettingGroup group) {
         Module module = findModule(group);
+        if (WaveXinI18n.isWaveXin(module)) WaveXinI18n.markUiPath("settings-group-name");
         return WaveXinI18n.groupName(module, group);
     }
 
     @Redirect(method = "group", at = @At(value = "FIELD", target = "Lmeteordevelopment/meteorclient/settings/Setting;title:Ljava/lang/String;"))
     private String onSettingTitle(Setting<?> setting) {
+        if (WaveXinI18n.isWaveXin(setting.module)) WaveXinI18n.markUiPath("setting-title");
         return WaveXinI18n.settingTitle(setting);
     }
 
     @Redirect(method = "group", at = @At(value = "FIELD", target = "Lmeteordevelopment/meteorclient/settings/Setting;description:Ljava/lang/String;"))
     private String onSettingDescription(Setting<?> setting) {
+        if (WaveXinI18n.isWaveXin(setting.module)) WaveXinI18n.markUiPath("setting-description");
         return WaveXinI18n.settingDescription(setting);
     }
 
@@ -41,6 +44,7 @@ public abstract class MixinDefaultSettingsWidgetFactory {
     private <T extends Enum<?>> void onEnumW(WTable table, EnumSetting<T> setting, CallbackInfo ci) {
         if (!WaveXinI18n.isWaveXin(setting.module)) return;
 
+        WaveXinI18n.markUiPath("setting-enum-dropdown");
         WDropdown<T> dropdown = table.add(new WaveXinEnumDropdown<>((T[]) setting.get().getDeclaringClass().getEnumConstants(), setting.get(), setting.module)).expandCellX().widget();
         dropdown.action = () -> setting.set(dropdown.get());
 
@@ -49,7 +53,7 @@ public abstract class MixinDefaultSettingsWidgetFactory {
             setting.reset();
             dropdown.set(setting.get());
         };
-        reset.tooltip = "Reset";
+        reset.tooltip = WaveXinI18n.tr("tooltip.wavexin.base_finder.reset", "Reset");
 
         ci.cancel();
     }
