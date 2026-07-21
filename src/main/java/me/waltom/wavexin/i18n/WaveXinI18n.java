@@ -7,6 +7,8 @@ import net.minecraft.client.resource.language.I18n;
 import net.minecraft.text.MutableText;
 import net.minecraft.text.Text;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Locale;
 
 public final class WaveXinI18n {
@@ -105,6 +107,27 @@ public final class WaveXinI18n {
             "enum.wavexin." + keySegment(value.getDeclaringClass().getSimpleName()) + "." + keySegment(value.name()),
             value.toString()
         );
+    }
+
+    public static List<String> moduleSearchCandidates(Module module) {
+        List<String> candidates = new ArrayList<>();
+        if (module == null) return candidates;
+        candidates.add(module.name);
+        candidates.add(module.title);
+        if (isWaveXin(module)) candidates.add(moduleTitle(module));
+        if (module.aliases != null) {
+            for (String alias : module.aliases) candidates.add(alias);
+        }
+        return candidates;
+    }
+
+    public static List<String> settingSearchCandidates(Setting<?> setting) {
+        List<String> candidates = new ArrayList<>();
+        if (setting == null) return candidates;
+        candidates.add(setting.name);
+        candidates.add(setting.title);
+        if (isWaveXin(setting.module)) candidates.add(settingTitle(setting));
+        return candidates;
     }
 
     public static String keySegment(String value) {

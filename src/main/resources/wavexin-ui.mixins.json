@@ -6,7 +6,9 @@
     "MixinMeteorGuiTheme",
     "MixinWMeteorModule",
     "MixinModuleScreen",
-    "MixinDefaultSettingsWidgetFactory"
+    "MixinDefaultSettingsWidgetFactory",
+    "MixinModulesSearch",
+    "MixinActiveModulesHud"
   ],
   "injectors": {
     "defaultRequire": 0
