@@ -77,7 +77,26 @@ public final class WaveXinI18n {
     }
 
     public static String settingKey(Module module, Setting<?> setting, String suffix) {
-        return "setting.wavexin." + keySegment(module.name) + "." + keySegment(setting.name) + "." + suffix;
+        SettingGroup group = findGroup(module, setting);
+        if (group == null) {
+            return "setting.wavexin." + keySegment(module.name) + "." + keySegment(setting.name) + "." + suffix;
+        }
+
+        return "setting.wavexin."
+            + keySegment(module.name) + "."
+            + keySegment(group.name) + "."
+            + keySegment(setting.name) + "."
+            + suffix;
+    }
+
+    public static SettingGroup findGroup(Module module, Setting<?> setting) {
+        if (module == null || setting == null) return null;
+        for (SettingGroup group : module.settings) {
+            for (Setting<?> candidate : group) {
+                if (candidate == setting) return group;
+            }
+        }
+        return null;
     }
 
     public static String enumLabel(Module module, Enum<?> value) {
