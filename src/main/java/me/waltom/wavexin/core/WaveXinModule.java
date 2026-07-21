@@ -1,5 +1,6 @@
 package me.waltom.wavexin.core;
 
+import me.waltom.wavexin.i18n.WaveXinI18n;
 import meteordevelopment.meteorclient.systems.config.Config;
 import meteordevelopment.meteorclient.systems.modules.Category;
 import meteordevelopment.meteorclient.systems.modules.Module;
@@ -37,5 +38,17 @@ public abstract class WaveXinModule extends Module {
     @Override
     public void error(String message, Object... args) {
         ChatUtils.error(message, args);
+    }
+
+    protected final void infoKey(String key, String fallback, Object... args) {
+        info(WaveXinI18n.tr(key, fallback, args));
+    }
+
+    protected final void warningKey(String key, String fallback, Object... args) {
+        warning(WaveXinI18n.tr(key, fallback, args));
+    }
+
+    protected final void errorKey(String key, String fallback, Object... args) {
+        error(WaveXinI18n.tr(key, fallback, args));
     }
 }
