@@ -1,5 +1,6 @@
 package me.waltom.wavexin.modules.basefinder;
 
+import me.waltom.wavexin.i18n.WaveXinI18n;
 import meteordevelopment.meteorclient.gui.renderer.GuiRenderer;
 import meteordevelopment.meteorclient.gui.themes.meteor.MeteorGuiTheme;
 import meteordevelopment.meteorclient.gui.themes.meteor.MeteorWidget;
@@ -30,7 +31,7 @@ public class XaeroWaypointColorSetting extends Setting<BaseFinder.XaeroWaypointC
                 colorSetting.reset();
                 dropdown.set(colorSetting.get());
             };
-            reset.tooltip = "Reset";
+            reset.tooltip = WaveXinI18n.tr("tooltip.wavexin.base_finder.reset", "Reset");
         });
     }
 
@@ -39,13 +40,13 @@ public class XaeroWaypointColorSetting extends Setting<BaseFinder.XaeroWaypointC
 
         values = BaseFinder.XaeroWaypointColor.values();
         suggestions = new ArrayList<>(values.length);
-        for (BaseFinder.XaeroWaypointColor value : values) suggestions.add(value.toString());
+        for (BaseFinder.XaeroWaypointColor value : values) suggestions.add(label(value));
     }
 
     @Override
     protected BaseFinder.XaeroWaypointColor parseImpl(String str) {
         for (BaseFinder.XaeroWaypointColor value : values) {
-            if (str.equalsIgnoreCase(value.toString())) return value;
+            if (str.equalsIgnoreCase(value.toString()) || str.equalsIgnoreCase(label(value))) return value;
         }
         return null;
     }
@@ -83,6 +84,10 @@ public class XaeroWaypointColorSetting extends Setting<BaseFinder.XaeroWaypointC
         }
     }
 
+    private static String label(BaseFinder.XaeroWaypointColor value) {
+        if (value == null) return "";
+        return WaveXinI18n.tr("enum.wavexin.xaero_waypoint_color." + WaveXinI18n.keySegment(value.name()), value.toString());
+    }
     private static class WColorDropdown extends WDropdown<BaseFinder.XaeroWaypointColor> implements MeteorWidget {
         public WColorDropdown(BaseFinder.XaeroWaypointColor[] values, BaseFinder.XaeroWaypointColor value) {
             super(values, value);
@@ -106,7 +111,7 @@ public class XaeroWaypointColorSetting extends Setting<BaseFinder.XaeroWaypointC
 
             renderBackground(renderer, this, pressed, mouseOver);
 
-            String text = get().toString();
+            String text = label(get());
             double width = theme.textWidth(text);
             renderer.text(text, x + pad + maxValueWidth / 2 - width / 2, y + pad, get().displayColor(), false);
             renderer.rotatedQuad(x + pad + maxValueWidth + pad, y + pad, size, size, 0, GuiRenderer.TRIANGLE, theme.textColor.get());
@@ -129,7 +134,7 @@ public class XaeroWaypointColorSetting extends Setting<BaseFinder.XaeroWaypointC
             @Override
             protected void onCalculateSize() {
                 double pad = pad();
-                width = pad + theme.textWidth(value.toString()) + pad;
+                width = pad + theme.textWidth(label(value)) + pad;
                 height = pad + theme.textHeight() + pad;
             }
 
@@ -143,7 +148,7 @@ public class XaeroWaypointColorSetting extends Setting<BaseFinder.XaeroWaypointC
                 renderer.quad(this, background);
                 background.a = alpha;
 
-                String text = value.toString();
+                String text = label(value);
                 renderer.text(text, x + width / 2 - theme.textWidth(text) / 2, y + pad(), value.displayColor(), false);
             }
         }
