@@ -170,7 +170,7 @@ public class SimpleElytraFlyPath extends WaveXinModule {
 
         
         if (!isSafeFlightHeight()) {
-            ChatUtils.error("Recommended to use above each dimension height limit: Nether (Y > 128), Overworld (Y > 320), End (Y > 256)");
+            errorKey("error.wavexin.safe_flight_height", "Recommended to use above each dimension height limit: Nether (Y > 128), Overworld (Y > 320), End (Y > 256)");
         }
 
 
@@ -182,7 +182,7 @@ public class SimpleElytraFlyPath extends WaveXinModule {
         }
 
         
-        ChatUtils.info("Started pathing to X=%d, Z=%d", getTargetX(), getTargetZ());
+        infoKey("message.wavexin.simple_elytra_fly_path.started", "Started pathing to X=%d, Z=%d", getTargetX(), getTargetZ());
     }
 
     

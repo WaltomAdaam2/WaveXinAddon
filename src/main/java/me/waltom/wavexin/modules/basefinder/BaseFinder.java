@@ -618,9 +618,9 @@ public class BaseFinder extends WaveXinModule {
         savedNormalScanCircle = -1;
         savedNormalScanPath = null;
         if (lastBegin.get()) {
-            info("Resumed normal scan at ring %d, route %s.", currentCircle, currentPath);
+            infoKey("message.wavexin.base_finder.normal_resumed", "Resumed normal scan at ring %d, route %s.", currentCircle, currentPath);
         } else {
-            info("Normal scan started at origin chunk (%d, %d).", originChunk.x, originChunk.z);
+            infoKey("message.wavexin.base_finder.normal_started", "Normal scan started at origin chunk (%d, %d).", originChunk.x, originChunk.z);
         }
         setNormalDebugState("INITIALIZED", "resume=" + lastBegin.get());
     }
@@ -749,7 +749,7 @@ public class BaseFinder extends WaveXinModule {
                 setNormalDebugState("RETURNING_TO_CHECKPOINT", "checkpoint=" + chunkDebugLabel(resumeCheckpointChunk));
             }
             if (moveToResumeCheckpoint()) {
-                info("Reached saved Normal Scan checkpoint at chunk (%d, %d).", resumeCheckpointChunk.x, resumeCheckpointChunk.z);
+                infoKey("message.wavexin.base_finder.normal_checkpoint_reached", "Reached saved Normal Scan checkpoint at chunk (%d, %d).", resumeCheckpointChunk.x, resumeCheckpointChunk.z);
                 resumeCheckpointChunk = null;
             }
             return;
@@ -765,14 +765,14 @@ public class BaseFinder extends WaveXinModule {
         if (currentCircle > circleLimit.get()) {
             setNormalDebugState("COMPLETE", "ringLimit=" + circleLimit.get());
             setScanForwardKey(false);
-            info("Scan complete.");
+            infoKey("message.wavexin.base_finder.scan_complete", "Scan complete.");
             toggle();
             return;
         }
 
         if (currentPath == SweepRoute.NEXT_CIRCLE) {
             if (currentCircle > 0 && currentCircle != lastCompletedNormalRing) {
-                info("Completed normal scan ring %d.", currentCircle);
+                infoKey("message.wavexin.base_finder.normal_ring_completed", "Completed normal scan ring %d.", currentCircle);
                 lastCompletedNormalRing = currentCircle;
             }
 
@@ -892,12 +892,12 @@ public class BaseFinder extends WaveXinModule {
 
         if (!scanCompleted) {
             if (returningToResumeCheckpoint) {
-                info("Normal scan stopped while returning to its saved checkpoint. Saved progress was preserved.");
+                infoKey("message.wavexin.base_finder.normal_stopped_returning", "Normal scan stopped while returning to its saved checkpoint. Saved progress was preserved.");
             } else if (lastBegin.get() && mc.player != null) {
                 ChunkPos playerChunk = mc.player.getChunkPos();
-                info("Normal scan stopped. Saved checkpoint: (%d, %d), ring %d, route %s.", playerChunk.x, playerChunk.z, currentCircle, currentPath);
+                infoKey("message.wavexin.base_finder.normal_stopped_checkpoint", "Normal scan stopped. Saved checkpoint: (%d, %d), ring %d, route %s.", playerChunk.x, playerChunk.z, currentCircle, currentPath);
             } else {
-                info("Normal scan stopped.");
+                infoKey("message.wavexin.base_finder.normal_stopped", "Normal scan stopped.");
             }
         }
 // Clear chunk data
@@ -942,7 +942,7 @@ public class BaseFinder extends WaveXinModule {
 
     private void warnIfUnsafeScanHeight() {
         if (mc.player == null || mc.world == null || isSafeScanHeight()) return;
-        ChatUtils.error("Recommended to use above each dimension height limit: Nether (Y > 128), Overworld (Y > 320), End (Y > 256)");
+        errorKey("error.wavexin.safe_flight_height", "Recommended to use above each dimension height limit: Nether (Y > 128), Overworld (Y > 320), End (Y > 256)");
     }
 
     private boolean isSafeScanHeight() {
@@ -1205,7 +1205,7 @@ public class BaseFinder extends WaveXinModule {
     }
 
     private void announceBaseDiscovery(ChunkPos chunkPos, BlockPos recordPos, int count) {
-        ChatUtils.warning("(highlight)(bold)Base found! (default)Chunk: (highlight)%d, %d(default) | Position: (highlight)%d, %d, %d(default) | Containers: (highlight)%d(default)",
+        warningKey("warning.wavexin.base_finder.base_found", "(highlight)(bold)Base found! (default)Chunk: (highlight)%d, %d(default) | Position: (highlight)%d, %d, %d(default) | Containers: (highlight)%d(default)",
             chunkPos.x, chunkPos.z, recordPos.getX(), recordPos.getY(), recordPos.getZ(), count);
     }
 
@@ -1215,7 +1215,7 @@ public class BaseFinder extends WaveXinModule {
         for (BlockPos existing : createdWaypointPositions) {
             if (Math.abs(existing.getX() - candidate.getX()) > radiusBlocks || Math.abs(existing.getZ() - candidate.getZ()) > radiusBlocks) continue;
             if (++nearby >= maximumWaypointsPerArea.get()) {
-                info("Skipped Xaero waypoint near (%d, %d): area limit of %d reached.", candidate.getX(), candidate.getZ(), maximumWaypointsPerArea.get());
+                infoKey("message.wavexin.base_finder.xaero_area_limit", "Skipped Xaero waypoint near (%d, %d): area limit of %d reached.", candidate.getX(), candidate.getZ(), maximumWaypointsPerArea.get());
                 return true;
             }
         }
@@ -1247,7 +1247,7 @@ public class BaseFinder extends WaveXinModule {
                 java.nio.file.StandardOpenOption.APPEND
             );
         } catch (IOException e) {
-            error("Failed to save container chunk record: %s", e.getMessage());
+            errorKey("error.wavexin.base_finder.record_save_failed", "Failed to save container chunk record: %s", e.getMessage());
         }
     }
 
@@ -1263,7 +1263,7 @@ public class BaseFinder extends WaveXinModule {
             Class<?> sessionClass = Class.forName("xaero.common.XaeroMinimapSession");
             Object currentSession = sessionClass.getMethod("getCurrentSession").invoke(null);
             if (currentSession == null) {
-                warning("Xaero's Minimap session is not ready. Container record saved without a waypoint.");
+                warningKey("warning.wavexin.base_finder.xaero_session_not_ready", "Xaero's Minimap session is not ready. Container record saved without a waypoint.");
                 return;
             }
 
@@ -1272,13 +1272,13 @@ public class BaseFinder extends WaveXinModule {
             Object worldManager = minimapSession.getClass().getMethod("getWorldManager").invoke(minimapSession);
             Object currentWorld = worldManager.getClass().getMethod("getCurrentWorld").invoke(worldManager);
             if (currentWorld == null) {
-                warning("Xaero current waypoint world is not ready. Container record saved without a waypoint.");
+                warningKey("warning.wavexin.base_finder.xaero_world_not_ready", "Xaero current waypoint world is not ready. Container record saved without a waypoint.");
                 return;
             }
 
             Object waypointSet = currentWorld.getClass().getMethod("getCurrentWaypointSet").invoke(currentWorld);
             if (waypointSet == null) {
-                warning("Xaero current waypoint set is not ready. Container record saved without a waypoint.");
+                warningKey("warning.wavexin.base_finder.xaero_set_not_ready", "Xaero current waypoint set is not ready. Container record saved without a waypoint.");
                 return;
             }
 
@@ -1292,9 +1292,9 @@ public class BaseFinder extends WaveXinModule {
             waypointSession.getClass().getMethod("setSetChangedTime", long.class).invoke(waypointSession, System.currentTimeMillis());
             createdWaypointPositions.add(pos.toImmutable());
             nextWaypointNumber++;
-            info("Created Xaero waypoint: " + name);
+            infoKey("message.wavexin.base_finder.xaero_created", "Created Xaero waypoint: %s", name);
         } catch (ReflectiveOperationException | RuntimeException e) {
-            warning("Failed to create Xaero waypoint: %s", e.getMessage());
+            warningKey("warning.wavexin.base_finder.xaero_create_failed", "Failed to create Xaero waypoint: %s", e.getMessage());
         }
     }
 
@@ -1313,7 +1313,7 @@ public class BaseFinder extends WaveXinModule {
         if (isXaeroAvailable()) return true;
 
         xaeroWaypoints.set(false);
-        warning("Xaero's Minimap was not detected. Xaero Waypoints has been disabled, but container recording will continue.");
+        warningKey("warning.wavexin.base_finder.xaero_missing", "Xaero's Minimap was not detected. Xaero Waypoints has been disabled, but container recording will continue.");
         return false;
     }
 
@@ -1352,21 +1352,21 @@ public class BaseFinder extends WaveXinModule {
         saveSpiralProgress();
 
         if (spiralDebug.get()) {
-            info("Spiral scan started at chunk (%d, %d).", startChunk.x, startChunk.z);
-            info("Next spiral target: (%d, %d).", spiralTargetChunk.x, spiralTargetChunk.z);
+            infoKey("message.wavexin.base_finder.spiral_started", "Spiral scan started at chunk (%d, %d).", startChunk.x, startChunk.z);
+            infoKey("message.wavexin.base_finder.spiral_next_target", "Next spiral target: (%d, %d).", spiralTargetChunk.x, spiralTargetChunk.z);
         }
     }
 
     private void resumeSpiralScan() {
         ScanProgressManager.ScanProgress progress = ScanProgressManager.loadProgress();
         if (progress == null) {
-            if (spiralDebug.get()) info("No saved spiral progress was found. Starting from the current chunk.");
+            if (spiralDebug.get()) infoKey("message.wavexin.base_finder.spiral_no_progress", "No saved spiral progress was found. Starting from the current chunk.");
             startNewSpiralScan(mc.player.getChunkPos());
             return;
         }
 
         if (progress.chunkStep != spiralChunkStep.get()) {
-            info("Saved spiral chunk step is %d. Using it to resume this scan.", progress.chunkStep);
+            infoKey("message.wavexin.base_finder.spiral_step_resumed", "Saved spiral chunk step is %d. Using it to resume this scan.", progress.chunkStep);
             spiralChunkStep.set(progress.chunkStep);
         }
 
@@ -1374,8 +1374,8 @@ public class BaseFinder extends WaveXinModule {
         calibrateSpiralDirection();
 
         if (spiralDebug.get()) {
-            info("Resumed spiral scan from chunk (%d, %d) after %d segments.", spiralStartChunk.x, spiralStartChunk.z, spiralSegments);
-            info("Next spiral target: (%d, %d).", spiralTargetChunk.x, spiralTargetChunk.z);
+            infoKey("message.wavexin.base_finder.spiral_resumed", "Resumed spiral scan from chunk (%d, %d) after %d segments.", spiralStartChunk.x, spiralStartChunk.z, spiralSegments);
+            infoKey("message.wavexin.base_finder.spiral_next_target", "Next spiral target: (%d, %d).", spiralTargetChunk.x, spiralTargetChunk.z);
         }
     }
 
@@ -1394,9 +1394,9 @@ public class BaseFinder extends WaveXinModule {
         int differenceX = Math.abs(Math.abs(playerChunk.x) - Math.abs(corner.x));
         int differenceZ = Math.abs(Math.abs(playerChunk.z) - Math.abs(corner.z));
         if (differenceX > 2 || differenceZ > 2) {
-            warning("Current position is too far from the calculated spiral route.");
-            info("Recommended chunk: (%d, %d).", corner.x, corner.z);
-            info("Recommended block position: (%d, %d).", corner.x * 16, corner.z * 16);
+            warningKey("warning.wavexin.base_finder.spiral_too_far", "Current position is too far from the calculated spiral route.");
+            infoKey("message.wavexin.base_finder.spiral_recommended_chunk", "Recommended chunk: (%d, %d).", corner.x, corner.z);
+            infoKey("message.wavexin.base_finder.spiral_recommended_block", "Recommended block position: (%d, %d).", corner.x * 16, corner.z * 16);
             toggle();
             return;
         }
@@ -1405,8 +1405,8 @@ public class BaseFinder extends WaveXinModule {
         calibrateSpiralDirection();
 
         if (spiralDebug.get()) {
-            info("Calculated spiral progress after %d segments.", spiralSegments);
-            info("Next spiral target: (%d, %d).", spiralTargetChunk.x, spiralTargetChunk.z);
+            infoKey("message.wavexin.base_finder.spiral_calculated", "Calculated spiral progress after %d segments.", spiralSegments);
+            infoKey("message.wavexin.base_finder.spiral_next_target", "Next spiral target: (%d, %d).", spiralTargetChunk.x, spiralTargetChunk.z);
         }
     }
 
@@ -1435,7 +1435,7 @@ public class BaseFinder extends WaveXinModule {
         spiralNeedsInitialRotation = true;
         spiralTargetYaw = spiralDirection.yaw;
         spiralRotating = true;
-        if (spiralDebug.get()) info("Calibrating view toward %s.", spiralDirection);
+        if (spiralDebug.get()) infoKey("message.wavexin.base_finder.spiral_calibrating", "Calibrating view toward %s.", spiralDirection);
     }
 
     private void runSpiralScan() {
@@ -1453,7 +1453,7 @@ public class BaseFinder extends WaveXinModule {
         recordContainerChunkIfNeeded(playerChunk);
 
         if (spiralMaximumSegments.get() > 0 && spiralSegments >= spiralMaximumSegments.get()) {
-            info("Maximum segments reached. Spiral scan complete.");
+            infoKey("message.wavexin.base_finder.spiral_complete", "Maximum segments reached. Spiral scan complete.");
             toggle();
             return;
         }
@@ -1485,7 +1485,7 @@ public class BaseFinder extends WaveXinModule {
         }
 
         if (spiralDebug.get()) {
-            info("Spiral direction: %s. Next target: (%d, %d).", spiralDirection, spiralTargetChunk.x, spiralTargetChunk.z);
+            infoKey("message.wavexin.base_finder.spiral_direction", "Spiral direction: %s. Next target: (%d, %d).", spiralDirection, spiralTargetChunk.x, spiralTargetChunk.z);
         }
     }
 
@@ -1577,7 +1577,7 @@ public class BaseFinder extends WaveXinModule {
         if (Math.abs(difference) < rotationSpeed) {
             applySpiralRotation(spiralTargetYaw);
             spiralRotating = false;
-            if (spiralDebug.get()) info("Spiral rotation complete.");
+            if (spiralDebug.get()) infoKey("message.wavexin.base_finder.spiral_rotation_complete", "Spiral rotation complete.");
         } else {
             applySpiralRotation(currentYaw + Math.signum(difference) * rotationSpeed);
         }
