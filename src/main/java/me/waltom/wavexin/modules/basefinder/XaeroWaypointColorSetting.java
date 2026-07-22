@@ -1,5 +1,6 @@
 package me.waltom.wavexin.modules.basefinder;
 
+import me.waltom.wavexin.i18n.WaveXinI18n;
 import meteordevelopment.meteorclient.gui.renderer.GuiRenderer;
 import meteordevelopment.meteorclient.gui.themes.meteor.MeteorGuiTheme;
 import meteordevelopment.meteorclient.gui.themes.meteor.MeteorWidget;
@@ -11,18 +12,36 @@ import meteordevelopment.meteorclient.settings.IVisible;
 import meteordevelopment.meteorclient.settings.Setting;
 import meteordevelopment.meteorclient.utils.render.color.Color;
 import net.minecraft.nbt.NbtCompound;
-import java.util.ArrayList;
-import java.util.List;
+
 import java.util.function.Consumer;
 
 public class XaeroWaypointColorSetting extends Setting<BaseFinder.XaeroWaypointColor> {
     private final BaseFinder.XaeroWaypointColor[] values;
-    private final List<String> suggestions;
 
     static {
         SettingsWidgetFactory.registerCustomFactory(XaeroWaypointColorSetting.class, theme -> (table, setting) -> {
             XaeroWaypointColorSetting colorSetting = (XaeroWaypointColorSetting) setting;
-            WColorDropdown dropdown = table.add(new WColorDropdown(colorSetting.values, colorSetting.get())).expandCellX().widget();
+
+            if (!(theme instanceof MeteorGuiTheme)) {
+                WDropdown<BaseFinder.XaeroWaypointColor> dropdown = table
+                    .add(theme.dropdown(colorSetting.values, colorSetting.get()))
+                    .expandCellX()
+                    .widget();
+                dropdown.action = () -> colorSetting.set(dropdown.get());
+
+                WButton reset = table.add(theme.button(GuiRenderer.RESET)).widget();
+                reset.action = () -> {
+                    colorSetting.reset();
+                    dropdown.set(colorSetting.get());
+                };
+                reset.tooltip = WaveXinI18n.tr("tooltip.wavexin.common.reset", "Reset");
+                return;
+            }
+
+            WColorDropdown dropdown = table
+                .add(new WColorDropdown(colorSetting.values, colorSetting.get()))
+                .expandCellX()
+                .widget();
             dropdown.action = () -> colorSetting.set(dropdown.get());
 
             WButton reset = table.add(theme.button(GuiRenderer.RESET)).widget();
@@ -30,22 +49,26 @@ public class XaeroWaypointColorSetting extends Setting<BaseFinder.XaeroWaypointC
                 colorSetting.reset();
                 dropdown.set(colorSetting.get());
             };
-            reset.tooltip = "Reset";
+            reset.tooltip = WaveXinI18n.tr("tooltip.wavexin.common.reset", "Reset");
         });
     }
 
-    public XaeroWaypointColorSetting(String name, String description, BaseFinder.XaeroWaypointColor defaultValue, Consumer<BaseFinder.XaeroWaypointColor> onChanged, Consumer<Setting<BaseFinder.XaeroWaypointColor>> onModuleActivated, IVisible visible) {
+    public XaeroWaypointColorSetting(
+        String name,
+        String description,
+        BaseFinder.XaeroWaypointColor defaultValue,
+        Consumer<BaseFinder.XaeroWaypointColor> onChanged,
+        Consumer<Setting<BaseFinder.XaeroWaypointColor>> onModuleActivated,
+        IVisible visible
+    ) {
         super(name, description, defaultValue, onChanged, onModuleActivated, visible);
-
         values = BaseFinder.XaeroWaypointColor.values();
-        suggestions = new ArrayList<>(values.length);
-        for (BaseFinder.XaeroWaypointColor value : values) suggestions.add(value.toString());
     }
 
     @Override
     protected BaseFinder.XaeroWaypointColor parseImpl(String str) {
         for (BaseFinder.XaeroWaypointColor value : values) {
-            if (str.equalsIgnoreCase(value.toString())) return value;
+            if (str.equalsIgnoreCase(value.toString()) || str.equalsIgnoreCase(label(value))) return value;
         }
         return null;
     }
@@ -56,8 +79,10 @@ public class XaeroWaypointColorSetting extends Setting<BaseFinder.XaeroWaypointC
     }
 
     @Override
-    public List<String> getSuggestions() {
-        return suggestions;
+    public java.util.List<String> getSuggestions() {
+        java.util.List<String> current = new java.util.ArrayList<>(values.length);
+        for (BaseFinder.XaeroWaypointColor value : values) current.add(label(value));
+        return current;
     }
 
     @Override
@@ -83,6 +108,14 @@ public class XaeroWaypointColorSetting extends Setting<BaseFinder.XaeroWaypointC
         }
     }
 
+    private static String label(BaseFinder.XaeroWaypointColor value) {
+        if (value == null) return "";
+        return WaveXinI18n.tr(
+            "enum.wavexin.xaero_waypoint_color." + WaveXinI18n.keySegment(value.name()),
+            value.toString()
+        );
+    }
+
     private static class WColorDropdown extends WDropdown<BaseFinder.XaeroWaypointColor> implements MeteorWidget {
         public WColorDropdown(BaseFinder.XaeroWaypointColor[] values, BaseFinder.XaeroWaypointColor value) {
             super(values, value);
@@ -99,6 +132,22 @@ public class XaeroWaypointColorSetting extends Setting<BaseFinder.XaeroWaypointC
         }
 
         @Override
+        protected void onCalculateSize() {
+            double pad = pad();
+
+            maxValueWidth = 0;
+            for (BaseFinder.XaeroWaypointColor value : values) {
+                maxValueWidth = Math.max(maxValueWidth, theme.textWidth(label(value)));
+            }
+
+            root.calculateSize();
+
+            width = pad + maxValueWidth + pad + theme.textHeight() + pad;
+            height = pad + theme.textHeight() + pad;
+            root.width = width;
+        }
+
+        @Override
         protected void onRender(GuiRenderer renderer, double mouseX, double mouseY, double delta) {
             MeteorGuiTheme theme = theme();
             double pad = pad();
@@ -106,10 +155,27 @@ public class XaeroWaypointColorSetting extends Setting<BaseFinder.XaeroWaypointC
 
             renderBackground(renderer, this, pressed, mouseOver);
 
-            String text = get().toString();
-            double width = theme.textWidth(text);
-            renderer.text(text, x + pad + maxValueWidth / 2 - width / 2, y + pad, get().displayColor(), false);
-            renderer.rotatedQuad(x + pad + maxValueWidth + pad, y + pad, size, size, 0, GuiRenderer.TRIANGLE, theme.textColor.get());
+            BaseFinder.XaeroWaypointColor selected = get();
+            String text = label(selected);
+            double textWidth = theme.textWidth(text);
+            Color textColor = selected == null ? theme.textColor.get() : selected.displayColor();
+
+            renderer.text(
+                text,
+                x + pad + maxValueWidth / 2 - textWidth / 2,
+                y + pad,
+                textColor,
+                false
+            );
+            renderer.rotatedQuad(
+                x + pad + maxValueWidth + pad,
+                y + pad,
+                size,
+                size,
+                0,
+                GuiRenderer.TRIANGLE,
+                theme.textColor.get()
+            );
         }
 
         private static class WRoot extends WDropdownRoot implements MeteorWidget {
@@ -129,7 +195,7 @@ public class XaeroWaypointColorSetting extends Setting<BaseFinder.XaeroWaypointC
             @Override
             protected void onCalculateSize() {
                 double pad = pad();
-                width = pad + theme.textWidth(value.toString()) + pad;
+                width = pad + theme.textWidth(label(value)) + pad;
                 height = pad + theme.textHeight() + pad;
             }
 
@@ -143,8 +209,15 @@ public class XaeroWaypointColorSetting extends Setting<BaseFinder.XaeroWaypointC
                 renderer.quad(this, background);
                 background.a = alpha;
 
-                String text = value.toString();
-                renderer.text(text, x + width / 2 - theme.textWidth(text) / 2, y + pad(), value.displayColor(), false);
+                String text = label(value);
+                Color textColor = value == null ? theme.textColor.get() : value.displayColor();
+                renderer.text(
+                    text,
+                    x + width / 2 - theme.textWidth(text) / 2,
+                    y + pad(),
+                    textColor,
+                    false
+                );
             }
         }
     }

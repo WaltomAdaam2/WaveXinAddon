@@ -42,3 +42,11 @@ This page describes implementation details and notable behavior for the public C
 - `Spiral Scan` has an independent spiral route, step size, segment count, and rendering settings. Optional auto-walk, sprint, view lock, and screen pause are available. It does not reuse the Normal Scan checkpoint flow.
 - Both scan modes share container recording: a chunk is recorded when its selected-container count reaches the threshold.
 - Xaero waypoints are optional. Xaero Minimap is checked only when the option is enabled; if it is unavailable, the option turns off with a chat warning while normal container recording remains available. Waypoint names support a number, prefix, and suffix, with area-radius and per-area limits used for deduplication.
+
+### Bilingual Implementation
+
+- WaveXin visible text uses Minecraft-native `assets/wavexin/lang/*.json` resources. Simplified Chinese clients read `zh_cn`; English and all other languages fall back through `en_us`.
+- Translation affects display only. `Module.name`, `Setting.name`, `SettingGroup.name`, enum constants, NBT, and config values keep their original identifiers, so changing language does not rewrite saved settings.
+- ClickGUI module cards, module screens, setting groups, setting titles and descriptions, enum dropdowns, custom buttons, search results, and the Active Modules HUD display current-language text through WaveXin-specific i18n helpers. Non-WaveXin Meteor modules keep upstream behavior.
+- Chat messages, warnings, debug state, disconnect reasons, and default entity labels use the same translation layer while preserving Java Formatter placeholders and Meteor chat style tokens.
+- `verifyWaveXinTranslations` validates `en_us`/`zh_cn` key equality, the explicit expected-key registry, static Java keys, dead keys, placeholders, Meteor tokens, mojibake, and invalid values. `testWaveXinI18nBehavior` covers fallback formatting, keySegment normalization, and null enum fallback.

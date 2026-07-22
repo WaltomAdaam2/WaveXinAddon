@@ -2,6 +2,7 @@ package me.waltom.wavexin.modules.chickennametags;
 
 import me.waltom.wavexin.core.WaveXinModule;
 import me.waltom.wavexin.WaveXinAddon;
+import me.waltom.wavexin.i18n.WaveXinI18n;
 import meteordevelopment.meteorclient.events.render.Render2DEvent;
 import meteordevelopment.meteorclient.events.world.TickEvent;
 import meteordevelopment.meteorclient.renderer.Renderer2D;
@@ -28,7 +29,7 @@ public class ChickenNametags extends WaveXinModule {
     
     private final Setting<Double> scale = sgGeneral.add(new DoubleSetting.Builder()
         .name("Scale")
-        .description("名称标签的Scale。")
+        .description("Nametag scale.")
         .defaultValue(1.1)
         .min(0.1)
         .build()
@@ -149,7 +150,7 @@ public class ChickenNametags extends WaveXinModule {
         NametagUtils.begin(pos);
 
         
-        String nameText = "Chicken"; 
+        String nameText = WaveXinI18n.tr("entity.wavexin.chicken_nametags.chicken", "Chicken");
         if (chicken.hasCustomName()) {
             nameText = chicken.getCustomName().getString(); 
         }

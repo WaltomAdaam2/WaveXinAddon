@@ -19,7 +19,8 @@
     ]
   },
   "mixins": [
-    "wavexin.mixins.json"
+    "wavexin.mixins.json",
+    "wavexin-ui.mixins.json"
   ],
   "custom": {
     "meteor-client:color": "163,140,111"

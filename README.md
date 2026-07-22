@@ -93,11 +93,11 @@ Simulation Distance 建议 7
 
 ## Credits
 
-WaveXinAddon was originally inspired by [EasyAddon](https://github.com/IDhammaI/easyaddon) by IDhammaI.
+WaveXinAddon was originally inspired by [EasyAddon](https://github.com/IDhammaI/easyaddon) by [IDhammaI](https://github.com/IDhammaI).
 
 Spiral Scan is inspired by [WTmbp](https://github.com/2698269088/WTmbp) by 2698269088.
 
-WaveXinAddon is now **independently** modified and maintained by WaltomAdaam.
+WaveXinAddon is now **independently** modified and maintained by [WaltomAdaam](https://github.com/WaltomAdaam2).
 
 ## License
 

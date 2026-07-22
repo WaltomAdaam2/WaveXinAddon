@@ -2,6 +2,7 @@ package me.waltom.wavexin.modules.sniffernametags;
 
 import me.waltom.wavexin.core.WaveXinModule;
 import me.waltom.wavexin.WaveXinAddon;
+import me.waltom.wavexin.i18n.WaveXinI18n;
 import meteordevelopment.meteorclient.events.render.Render2DEvent;
 import meteordevelopment.meteorclient.events.world.TickEvent;
 import meteordevelopment.meteorclient.renderer.Renderer2D;
@@ -34,7 +35,7 @@ public class SnifferNametags extends WaveXinModule {
 
     private final Setting<Double> scale = sgGeneral.add(new DoubleSetting.Builder()
         .name("scale")
-        .description("名称标签的缩放大小。")
+        .description("Nametag scale.")
         .defaultValue(1.1)
         .min(0.1)
         .build()
@@ -42,21 +43,21 @@ public class SnifferNametags extends WaveXinModule {
 
     private final Setting<Boolean> displayHealth = sgGeneral.add(new BoolSetting.Builder()
         .name("display-health")
-        .description("显示嗅探兽的血量。")
+        .description("Shows sniffer health.")
         .defaultValue(true)
         .build()
     );
 
     private final Setting<Boolean> displayDistance = sgGeneral.add(new BoolSetting.Builder()
         .name("display-distance")
-        .description("显示与嗅探兽的距离。")
+        .description("Shows distance to the sniffer.")
         .defaultValue(false)
         .build()
     );
 
     private final Setting<Double> maxRange = sgGeneral.add(new DoubleSetting.Builder()
         .name("render-range")
-        .description("只渲染此距离内的嗅探兽名称标签。")
+        .description("Only renders sniffer nametags within this range.")
         .defaultValue(64)
         .min(1)
         .sliderMax(256)
@@ -65,21 +66,21 @@ public class SnifferNametags extends WaveXinModule {
 
     private final Setting<SettingColor> background = sgRender.add(new ColorSetting.Builder()
         .name("background")
-        .description("名称标签背景颜色。")
+        .description("The nametag background color.")
         .defaultValue(new SettingColor(0, 0, 0, 75))
         .build()
     );
 
     private final Setting<SettingColor> nameColor = sgRender.add(new ColorSetting.Builder()
         .name("name-color")
-        .description("名称文字颜色。")
+        .description("The nametag text color.")
         .defaultValue(new SettingColor(255, 255, 255))
         .build()
     );
 
     private final Setting<SettingColor> distanceColor = sgRender.add(new ColorSetting.Builder()
         .name("distance-color")
-        .description("距离文字的颜色。")
+        .description("The distance text color.")
         .defaultValue(new SettingColor(150, 150, 150))
         .visible(displayDistance::get)
         .build()
@@ -93,7 +94,7 @@ public class SnifferNametags extends WaveXinModule {
     private final List<SnifferEntity> snifferList = new ArrayList<>();
 
     public SnifferNametags() {
-        super(WaveXinAddon.CATEGORY, "sniffer-nametags", "显示嗅探兽实体的自定义名称标签。");
+        super(WaveXinAddon.CATEGORY, "sniffer-nametags", "Displays custom nametags for sniffer entities.");
     }
 
     @EventHandler
@@ -157,7 +158,7 @@ public class SnifferNametags extends WaveXinModule {
         TextRenderer text = TextRenderer.get();
         NametagUtils.begin(pos);
 
-        String nameText = "嗅探兽";
+        String nameText = WaveXinI18n.tr("entity.wavexin.sniffer_nametags.sniffer", "Sniffer");
         if (sniffer.hasCustomName() && sniffer.getCustomName() != null) {
             nameText = sniffer.getCustomName().getString();
         }

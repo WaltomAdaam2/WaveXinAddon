@@ -3,6 +3,7 @@ package me.waltom.wavexin.modules.autologin;
 import me.waltom.wavexin.WaveXinAddon;
 import me.waltom.wavexin.core.WaveXinModule;
 import me.waltom.wavexin.core.WaveXinDataPaths;
+import me.waltom.wavexin.i18n.WaveXinI18n;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonElement;
@@ -80,9 +81,9 @@ public class AutoLogin extends WaveXinModule {
     static {
         SettingsWidgetFactory.registerCustomFactory(ActionButtonSetting.class, theme -> (table, setting) -> {
             ActionButtonSetting buttonSetting = (ActionButtonSetting) setting;
-            var button = table.add(theme.button(buttonSetting.buttonLabel)).widget();
+            var button = table.add(theme.button(WaveXinI18n.tr(buttonSetting.buttonKey, buttonSetting.buttonLabel))).widget();
             button.action = buttonSetting::run;
-            button.tooltip = setting.description;
+            button.tooltip = WaveXinI18n.tr(buttonSetting.tooltipKey, setting.description);
         });
         SettingsWidgetFactory.registerCustomFactory(SavedAccountsSetting.class, theme -> (table, setting) -> {
             SavedAccountsSetting accountList = (SavedAccountsSetting) setting;
@@ -90,7 +91,7 @@ public class AutoLogin extends WaveXinModule {
         });
         SettingsWidgetFactory.registerCustomFactory(PasswordInputSetting.class, theme -> (table, setting) -> {
             PasswordInputSetting passwordSetting = (PasswordInputSetting) setting;
-            var textBox = table.add(theme.textBox(passwordSetting.get(), "Password")).expandX().widget();
+            var textBox = table.add(theme.textBox(passwordSetting.get(), WaveXinI18n.tr("placeholder.wavexin.auto_login.password", "Password"))).expandX().widget();
             textBox.action = () -> passwordSetting.set(textBox.get());
             textBox.actionOnUnfocused = () -> passwordSetting.set(textBox.get());
         });
@@ -260,7 +261,7 @@ public class AutoLogin extends WaveXinModule {
         if (event.text == null || event.text.isBlank()) return;
 
         String text = event.text;
-        debug("Text %s: %s", event.source, text);
+        debugKey("debug.wavexin.auto_login.text", "Text %s: %s", event.source, text);
 
         if (isLoginSuccessText(text)) {
             beginPostLoginFlow();
@@ -277,12 +278,12 @@ public class AutoLogin extends WaveXinModule {
             if (account != null && account.type == AccountType.Microsoft) {
                 loginSent = true;
                 setState(LoginState.LOGIN_SENT);
-                feedback("Saved Microsoft Account detected. Waiting for login success.");
+                feedbackKey("message.wavexin.auto_login.microsoft_waiting", "Saved Microsoft Account detected. Waiting for login success.");
                 return;
             }
 
             if (account == null || !account.hasPassword()) {
-                feedback("Offline password is not set for current account.");
+                feedbackKey("message.wavexin.auto_login.offline_password_missing", "Offline password is not set for current account.");
                 return;
             }
             setState(LoginState.WAITING_FOR_LOGIN);
@@ -349,7 +350,7 @@ public class AutoLogin extends WaveXinModule {
         String value = passwordInput.get();
 
         if (playerName.isEmpty()) {
-            feedback("Enter an account name or join a server first.");
+            feedbackKey("message.wavexin.auto_login.account_name_required", "Enter an account name or join a server first.");
             return;
         }
 
@@ -357,13 +358,13 @@ public class AutoLogin extends WaveXinModule {
         account.type = accountType.get();
         if (account.type == AccountType.Offline) {
             if (value == null || value.isEmpty()) {
-                feedback("Offline Account requires a password.");
+                feedbackKey("message.wavexin.auto_login.offline_password_required", "Offline Account requires a password.");
                 return;
             }
 
             String encryptedPassword = PASSWORD_CIPHER.encrypt(value);
             if (encryptedPassword.isEmpty()) {
-                feedback("Password could not be encrypted.");
+                feedbackKey("message.wavexin.auto_login.password_encrypt_failed", "Password could not be encrypted.");
                 return;
             }
             account.encryptedPassword = encryptedPassword;
@@ -374,7 +375,7 @@ public class AutoLogin extends WaveXinModule {
         passwordInput.set("");
         savedAccounts.refresh();
         syncAccountSettings();
-        feedback("Account saved as %s.", account.type);
+        feedbackKey("message.wavexin.auto_login.account_saved", "Account saved as %s.", WaveXinI18n.enumLabel(account.type, account.type.toString()));
     }
 
     private void deleteSavedAccount(String playerName) {
@@ -386,13 +387,13 @@ public class AutoLogin extends WaveXinModule {
             accountType.set(AccountType.Microsoft);
         }
         savedAccounts.refresh();
-        feedback("Saved account removed.");
+        feedbackKey("message.wavexin.auto_login.account_removed", "Saved account removed.");
     }
 
     private void runState() {
         if (state == LoginState.IDLE || state == LoginState.COMPLETED) return;
         if (retries > maximumRetries.get()) {
-            feedback("Auto Login stopped after too many retries at %s.", state);
+            feedbackKey("message.wavexin.auto_login.too_many_retries", "Auto Login stopped after too many retries at %s.", WaveXinI18n.enumLabelOr(state, "Unknown state"));
             setState(LoginState.IDLE);
             return;
         }
@@ -420,19 +421,19 @@ public class AutoLogin extends WaveXinModule {
         if (account != null && account.type == AccountType.Microsoft) {
             loginSent = true;
             setState(LoginState.LOGIN_SENT);
-            feedback("Saved Microsoft Account detected. Waiting for login success.");
+            feedbackKey("message.wavexin.auto_login.microsoft_waiting", "Saved Microsoft Account detected. Waiting for login success.");
             return;
         }
 
         if (account == null || !account.hasPassword()) {
-            feedback("Offline password is not set for current account.");
+            feedbackKey("message.wavexin.auto_login.offline_password_missing", "Offline password is not set for current account.");
             setState(LoginState.IDLE);
             return;
         }
 
         String password = account.getPassword();
         if (password.isEmpty()) {
-            feedback("Offline password could not be read for current account.");
+            feedbackKey("message.wavexin.auto_login.offline_password_read_failed", "Offline password could not be read for current account.");
             setState(LoginState.IDLE);
             return;
         }
@@ -440,7 +441,7 @@ public class AutoLogin extends WaveXinModule {
         mc.getNetworkHandler().sendChatCommand("l " + password);
         loginSent = true;
         setState(LoginState.LOGIN_SENT);
-        feedback("Login command sent.");
+        feedbackKey("message.wavexin.auto_login.login_command_sent", "Login command sent.");
     }
 
     private void runAfterLoginActionStart() {
@@ -533,7 +534,7 @@ public class AutoLogin extends WaveXinModule {
 
         mc.getNetworkHandler().sendChatCommand("qiandao");
         checkInSent = true;
-        feedback("Daily check-in command sent.");
+        feedbackKey("message.wavexin.auto_login.daily_checkin_sent", "Daily check-in command sent.");
         continueAfterCheckIn();
     }
 
@@ -598,7 +599,7 @@ public class AutoLogin extends WaveXinModule {
         } catch (Exception ignored) {
             targetServer = false;
         }
-        debug("Server detection: %s", targetServer ? "supported server" : "unsupported server");
+        debugKey("debug.wavexin.auto_login.server_detection", "Server detection: %s", targetServer ? WaveXinI18n.tr("debug.wavexin.auto_login.supported_server", "supported server") : WaveXinI18n.tr("debug.wavexin.auto_login.unsupported_server", "unsupported server"));
         return targetServer;
     }
 
@@ -615,7 +616,7 @@ public class AutoLogin extends WaveXinModule {
         state = newState;
         stateAt = System.currentTimeMillis();
         retries = 0;
-        debug("State -> %s", newState);
+        debugKey("debug.wavexin.auto_login.state", "State -> %s", WaveXinI18n.enumLabelOr(newState, "Unknown state"));
     }
 
     private void resetConnectionState(LoginState newState) {
@@ -690,9 +691,9 @@ public class AutoLogin extends WaveXinModule {
         String lower = text.toLowerCase(Locale.ROOT);
         return lower.contains("position in queue")
             || lower.contains("queue position")
-            || text.contains("排队位置")
-            || text.contains("队列位置")
-            || text.contains("正在排队");
+            || text.contains("\u6392\u961f\u4f4d\u7f6e")
+            || text.contains("\u961f\u5217\u4f4d\u7f6e")
+            || text.contains("\u6b63\u5728\u6392\u961f");
     }
 
     private boolean isLoginPromptText(String text) {
@@ -717,7 +718,7 @@ public class AutoLogin extends WaveXinModule {
         pendingAnswer = null;
         mc.getNetworkHandler().sendChatMessage(";" + answer);
 
-        if (chatFeedback.get()) info("Answered quiz with: %s", answer);
+        if (chatFeedback.get()) infoKey("message.wavexin.auto_login.quiz_answered", "Answered quiz with: %s", answer);
     }
 
     private void queueAnswer(String answer) {
@@ -732,7 +733,7 @@ public class AutoLogin extends WaveXinModule {
 
         try (InputStream stream = AutoLogin.class.getClassLoader().getResourceAsStream("assets/wavexin/questions.json")) {
             if (stream == null) {
-                warning("Auto Answer questions.json was not found.");
+                warningKey("warning.wavexin.auto_login.questions_missing", "Auto Answer questions.json was not found.");
                 return;
             }
 
@@ -744,9 +745,9 @@ public class AutoLogin extends WaveXinModule {
                 }
             }
 
-            if (chatFeedback.get()) info("Loaded %d quiz answers.", questions.size());
+            if (chatFeedback.get()) infoKey("message.wavexin.auto_login.questions_loaded", "Loaded %d quiz answers.", questions.size());
         } catch (Exception e) {
-            warning("Failed to load quiz answers: %s", e.getMessage());
+            warningKey("warning.wavexin.auto_login.questions_load_failed", "Failed to load quiz answers: %s", e.getMessage());
         }
     }
     private void syncAccountSettings() {
@@ -809,12 +810,12 @@ public class AutoLogin extends WaveXinModule {
         );
     }
 
-    private void feedback(String message, Object... args) {
-        if (chatFeedback.get()) ChatUtils.info(message, args);
+    private void feedbackKey(String key, String fallback, Object... args) {
+        if (chatFeedback.get()) infoKey(key, fallback, args);
     }
 
-    private void debug(String message, Object... args) {
-        if (debugMode.get()) ChatUtils.info("[AutoLogin] " + message, args);
+    private void debugKey(String key, String fallback, Object... args) {
+        if (debugMode.get()) ChatUtils.info("[AutoLogin] " + WaveXinI18n.tr(key, fallback, args));
     }
 
     private enum AccountType {
@@ -883,11 +884,16 @@ public class AutoLogin extends WaveXinModule {
     }
     private static class ActionButtonSetting extends Setting<Boolean> {
         private final String buttonLabel;
+        private final String buttonKey;
+        private final String tooltipKey;
         private final Runnable action;
 
         private ActionButtonSetting(String name, String description, String buttonLabel, Runnable action, Consumer<Boolean> onChanged, Consumer<Setting<Boolean>> onModuleActivated, IVisible visible) {
             super(name, description, false, onChanged, onModuleActivated, visible);
+            String segment = WaveXinI18n.keySegment(name);
             this.buttonLabel = buttonLabel;
+            this.buttonKey = "button.wavexin.auto_login." + segment + ".label";
+            this.tooltipKey = "button.wavexin.auto_login." + segment + ".tooltip";
             this.action = action;
         }
 
@@ -974,18 +980,18 @@ public class AutoLogin extends WaveXinModule {
             table.clear();
             List<SavedAccountEntry> entries = accounts.get();
             if (entries.isEmpty()) {
-                table.add(theme.label("No saved accounts")).expandX();
+                table.add(theme.label(WaveXinI18n.tr("status.wavexin.auto_login.no_saved_accounts", "No saved accounts"))).expandX();
                 return;
             }
 
             for (SavedAccountEntry entry : entries) {
                 var select = table.add(theme.button(entry.name)).expandX().widget();
                 select.action = () -> onSelect.accept(entry.name);
-                table.add(theme.label(entry.type.toString())).expandX();
+                table.add(theme.label(WaveXinI18n.tr("enum.wavexin.account_type." + WaveXinI18n.keySegment(entry.type.name()), entry.type.toString()))).expandX();
 
                 var delete = table.add(theme.minus()).widget();
                 delete.action = () -> onDelete.accept(entry.name);
-                delete.tooltip = "Delete";
+                delete.tooltip = WaveXinI18n.tr("tooltip.wavexin.auto_login.delete_account", "Delete");
                 table.row();
             }
         }
@@ -1096,7 +1102,7 @@ public class AutoLogin extends WaveXinModule {
                 saved.passwords = null;
                 Files.writeString(CONFIG_PATH, GSON.toJson(saved), StandardCharsets.UTF_8);
             } catch (IOException e) {
-                ChatUtils.error("Auto Login config save failed: %s", e.getMessage());
+                ChatUtils.error(WaveXinI18n.tr("error.wavexin.auto_login.config_save_failed", "Auto Login config save failed: %s", e.getMessage()));
             }
         }
 
@@ -1198,4 +1204,3 @@ public class AutoLogin extends WaveXinModule {
         }
     }
 }
-

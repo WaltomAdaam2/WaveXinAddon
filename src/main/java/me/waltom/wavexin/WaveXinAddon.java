@@ -8,6 +8,7 @@ import me.waltom.wavexin.modules.betterelytrafly.BetterElytraFly;
 import me.waltom.wavexin.modules.basefinder.BaseFinder;
 import me.waltom.wavexin.modules.autologin.AutoLogin;
 import me.waltom.wavexin.core.WaveXinSettingsAutoSaver;
+import me.waltom.wavexin.i18n.WaveXinI18n;
 import com.mojang.logging.LogUtils;
 import meteordevelopment.meteorclient.MeteorClient;
 import meteordevelopment.meteorclient.utils.player.ChatUtils;
@@ -40,6 +41,7 @@ public class WaveXinAddon extends MeteorAddon {
         Modules.get().add(new AutoLogin());
         Modules.get().add(new ChatFilter());
         Modules.get().add(new BaseFinder());
+        WaveXinI18n.validateResources(Modules.get().getAll());
     }
 
     private static Text createChatPrefix() {

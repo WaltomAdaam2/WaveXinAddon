@@ -1,0 +1,16 @@
+{
+  "required": false,
+  "package": "me.waltom.wavexin.mixins.ui",
+  "compatibilityLevel": "JAVA_21",
+  "client": [
+    "MixinMeteorGuiTheme",
+    "MixinWMeteorModule",
+    "MixinModuleScreen",
+    "MixinDefaultSettingsWidgetFactory",
+    "MixinModulesSearch",
+    "MixinActiveModulesHud"
+  ],
+  "injectors": {
+    "defaultRequire": 0
+  }
+}

@@ -96,6 +96,7 @@ tmp/
 temp/
 
 # Codex / generated migration junk
+.codex/
 .github/modernize/
 .github/copilot/
 modernize/
