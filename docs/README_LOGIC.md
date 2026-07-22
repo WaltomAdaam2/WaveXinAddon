@@ -42,3 +42,11 @@
 - `Spiral Scan` 使用独立的螺旋路线、步长、段数和渲染设置；可选自动走路、冲刺、视角锁定和打开界面时暂停。它不复用 Normal Scan 的断点逻辑。
 - 两种扫描共享容器记录：扫描到已选择容器数量达到阈值的区块时，记录坐标与容器数量。
 - Xaero 路径点为可选功能。仅在开启该选项时检查 Xaero Minimap；缺失时会关闭该选项并给出聊天警告，普通容器记录仍可用。路径点名称可使用数字、前缀和后缀，并按区域半径与每区域上限去重。
+
+### 双语实现
+
+- WaveXin 可见文本使用 Minecraft 原生 `assets/wavexin/lang/*.json` 资源；当客户端语言是简体中文时读取 `zh_cn`，英文和其他语言使用 `en_us` 兜底。
+- 翻译只影响显示文本；`Module.name`、`Setting.name`、`SettingGroup.name`、enum 常量、NBT 和配置值都保持原始标识符，因此切换语言不会改写已保存设置。
+- ClickGUI 的模块卡片、模块页面、设置组、设置标题与描述、enum 下拉框、自定义按钮、搜索结果和 Active Modules HUD 通过 WaveXin 专用 i18n 辅助方法显示当前语言文案；非 WaveXin 的 Meteor 模块保持上游行为。
+- 聊天消息、警告、调试状态、断开原因和实体默认名称使用相同翻译层，并保留 Java Formatter 占位符和 Meteor 聊天样式 token。
+- `verifyWaveXinTranslations` 会校验 `en_us`/`zh_cn` key 集合、显式 expected-key registry、静态 Java key、dead key、占位符、Meteor token、mojibake 和非法值；`testWaveXinI18nBehavior` 覆盖 fallback 格式化、keySegment 和 null enum 兜底。
