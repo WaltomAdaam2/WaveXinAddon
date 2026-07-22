@@ -393,7 +393,7 @@ public class AutoLogin extends WaveXinModule {
     private void runState() {
         if (state == LoginState.IDLE || state == LoginState.COMPLETED) return;
         if (retries > maximumRetries.get()) {
-            feedbackKey("message.wavexin.auto_login.too_many_retries", "Auto Login stopped after too many retries at %s.", WaveXinI18n.enumLabel(state, state.name()));
+            feedbackKey("message.wavexin.auto_login.too_many_retries", "Auto Login stopped after too many retries at %s.", WaveXinI18n.enumLabelOr(state, "Unknown state"));
             setState(LoginState.IDLE);
             return;
         }
@@ -616,7 +616,7 @@ public class AutoLogin extends WaveXinModule {
         state = newState;
         stateAt = System.currentTimeMillis();
         retries = 0;
-        debugKey("debug.wavexin.auto_login.state", "State -> %s", WaveXinI18n.enumLabel(newState, newState.name()));
+        debugKey("debug.wavexin.auto_login.state", "State -> %s", WaveXinI18n.enumLabelOr(newState, "Unknown state"));
     }
 
     private void resetConnectionState(LoginState newState) {

@@ -619,7 +619,7 @@ public class BaseFinder extends WaveXinModule {
         savedNormalScanCircle = -1;
         savedNormalScanPath = null;
         if (lastBegin.get()) {
-            infoKey("message.wavexin.base_finder.normal_resumed", "Resumed normal scan at ring %d, route %s.", currentCircle, WaveXinI18n.enumLabel(currentPath, currentPath.name()));
+            infoKey("message.wavexin.base_finder.normal_resumed", "Resumed normal scan at ring %d, route %s.", currentCircle, WaveXinI18n.enumLabelOr(currentPath, "Unknown route"));
         } else {
             infoKey("message.wavexin.base_finder.normal_started", "Normal scan started at origin chunk (%d, %d).", originChunk.x, originChunk.z);
         }
@@ -896,7 +896,7 @@ public class BaseFinder extends WaveXinModule {
                 infoKey("message.wavexin.base_finder.normal_stopped_returning", "Normal scan stopped while returning to its saved checkpoint. Saved progress was preserved.");
             } else if (lastBegin.get() && mc.player != null) {
                 ChunkPos playerChunk = mc.player.getChunkPos();
-                infoKey("message.wavexin.base_finder.normal_stopped_checkpoint", "Normal scan stopped. Saved checkpoint: (%d, %d), ring %d, route %s.", playerChunk.x, playerChunk.z, currentCircle, WaveXinI18n.enumLabel(currentPath, currentPath.name()));
+                infoKey("message.wavexin.base_finder.normal_stopped_checkpoint", "Normal scan stopped. Saved checkpoint: (%d, %d), ring %d, route %s.", playerChunk.x, playerChunk.z, currentCircle, WaveXinI18n.enumLabelOr(currentPath, "Unknown route"));
             } else {
                 infoKey("message.wavexin.base_finder.normal_stopped", "Normal scan stopped.");
             }
@@ -1436,7 +1436,7 @@ public class BaseFinder extends WaveXinModule {
         spiralNeedsInitialRotation = true;
         spiralTargetYaw = spiralDirection.yaw;
         spiralRotating = true;
-        if (spiralDebug.get()) infoKey("message.wavexin.base_finder.spiral_calibrating", "Calibrating view toward %s.", WaveXinI18n.enumLabel(spiralDirection, spiralDirection.name()));
+        if (spiralDebug.get()) infoKey("message.wavexin.base_finder.spiral_calibrating", "Calibrating view toward %s.", WaveXinI18n.enumLabelOr(spiralDirection, "Unknown direction"));
     }
 
     private void runSpiralScan() {
@@ -1486,7 +1486,7 @@ public class BaseFinder extends WaveXinModule {
         }
 
         if (spiralDebug.get()) {
-            infoKey("message.wavexin.base_finder.spiral_direction", "Spiral direction: %s. Next target: (%d, %d).", WaveXinI18n.enumLabel(spiralDirection, spiralDirection.name()), spiralTargetChunk.x, spiralTargetChunk.z);
+            infoKey("message.wavexin.base_finder.spiral_direction", "Spiral direction: %s. Next target: (%d, %d).", WaveXinI18n.enumLabelOr(spiralDirection, "Unknown direction"), spiralTargetChunk.x, spiralTargetChunk.z);
         }
     }
 

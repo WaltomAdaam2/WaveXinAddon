@@ -47,7 +47,7 @@ public class XaeroWaypointColorSetting extends Setting<BaseFinder.XaeroWaypointC
         super(name, description, defaultValue, onChanged, onModuleActivated, visible);
 
         values = BaseFinder.XaeroWaypointColor.values();
-}
+    }
 
     @Override
     protected BaseFinder.XaeroWaypointColor parseImpl(String str) {

@@ -4,6 +4,7 @@ import me.waltom.wavexin.gui.WaveXinEnumDropdown;
 import me.waltom.wavexin.i18n.WaveXinI18n;
 import meteordevelopment.meteorclient.gui.DefaultSettingsWidgetFactory;
 import meteordevelopment.meteorclient.gui.renderer.GuiRenderer;
+import meteordevelopment.meteorclient.gui.themes.meteor.MeteorGuiTheme;
 import meteordevelopment.meteorclient.gui.widgets.containers.WTable;
 import meteordevelopment.meteorclient.gui.widgets.input.WDropdown;
 import meteordevelopment.meteorclient.gui.widgets.pressable.WButton;
@@ -48,9 +49,12 @@ public abstract class MixinDefaultSettingsWidgetFactory {
     @Inject(method = "enumW", at = @At("HEAD"), cancellable = true)
     private <T extends Enum<?>> void onEnumW(WTable table, EnumSetting<T> setting, CallbackInfo ci) {
         if (!WaveXinI18n.isWaveXin(setting.module)) return;
+        if (!(table.theme instanceof MeteorGuiTheme)) return;
+        T current = setting.get();
+        if (current == null) return;
 
         WaveXinI18n.markUiPath("setting-enum-dropdown");
-        WDropdown<T> dropdown = table.add(new WaveXinEnumDropdown<>((T[]) setting.get().getDeclaringClass().getEnumConstants(), setting.get(), setting.module)).expandCellX().widget();
+        WDropdown<T> dropdown = table.add(new WaveXinEnumDropdown<>((T[]) current.getDeclaringClass().getEnumConstants(), current, setting.module)).expandCellX().widget();
         dropdown.action = () -> setting.set(dropdown.get());
 
         WButton reset = table.add(table.theme.button(GuiRenderer.RESET)).widget();

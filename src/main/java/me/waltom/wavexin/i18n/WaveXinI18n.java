@@ -15,7 +15,6 @@ import net.minecraft.text.Text;
 
 import java.io.InputStream;
 import java.io.InputStreamReader;
-import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -38,13 +37,10 @@ public final class WaveXinI18n {
     }
 
     public static MutableText text(String key, String fallback, Object... args) {
-        try {
-            Method method = Text.class.getMethod("translatableWithFallback", String.class, String.class, Object[].class);
-            Object text = method.invoke(null, key, fallback, args);
-            if (text instanceof MutableText mutableText) return mutableText;
-        } catch (ReflectiveOperationException | RuntimeException ignored) {
-        }
-        return Text.literal(tr(key, fallback, args));
+        // Minecraft 1.21.11's Text API can render translatable keys, but I18n.hasTranslation
+        // lets us preserve the same no-raw-key fallback behavior used by chat strings.
+        if (I18n.hasTranslation(key)) return Text.translatable(key, args);
+        return Text.literal(formatFallback(fallback, args));
     }
 
     public static String tr(String key, String fallback, Object... args) {
@@ -175,6 +171,10 @@ public final class WaveXinI18n {
     public static String enumLabel(Enum<?> value, String fallback) {
         if (value == null) return fallback == null ? "" : fallback;
         return tr(enumKey(value), fallback == null ? value.toString() : fallback);
+    }
+
+    public static String enumLabelOr(Enum<?> value, String fallback) {
+        return enumLabel(value, fallback == null ? "" : fallback);
     }
 
     public static String enumKey(Enum<?> value) {
