@@ -320,6 +320,9 @@ setting.wavexin.sniffer_nametags.render.distance_color.title
 setting.wavexin.sniffer_nametags.render.name_color.description
 setting.wavexin.sniffer_nametags.render.name_color.title
 status.wavexin.auto_login.no_saved_accounts
+status.wavexin.common.unknown_direction
+status.wavexin.common.unknown_route
+status.wavexin.common.unknown_state
 status.wavexin.module.off
 status.wavexin.module.on
 tooltip.wavexin.auto_login.delete_account

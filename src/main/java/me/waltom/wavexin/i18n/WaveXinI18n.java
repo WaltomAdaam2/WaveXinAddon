@@ -13,43 +13,54 @@ import net.minecraft.client.resource.language.I18n;
 import net.minecraft.text.MutableText;
 import net.minecraft.text.Text;
 
+import java.io.BufferedReader;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
-import java.util.HashSet;
+import java.util.Collections;
+import java.util.IdentityHashMap;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 public final class WaveXinI18n {
     public static final String PACKAGE_PREFIX = "me.waltom.wavexin.";
+
     private static final boolean DEVELOPMENT = Boolean.getBoolean("fabric.development");
-    private static final Pattern FORMAT_PATTERN = Pattern.compile("%(?:\\d+\\$)?[-#+ 0,(<]*\\d*(?:\\.\\d+)?[a-zA-Z]");
-    private static final Set<String> LOGGED_UI_PATHS = new HashSet<>();
-    private static final Set<String> LOGGED_FORMAT_FAILURES = new HashSet<>();
+    private static final Pattern FORMAT_PATTERN = Pattern.compile(
+        "%(?:([1-9]\\d*)\\$)?([-#+ 0,(<]*)(\\d*)(?:\\.(\\d+))?([a-zA-Z%])"
+    );
+
+    private static final Set<String> LOGGED_UI_PATHS = ConcurrentHashMap.newKeySet();
+    private static final Set<String> LOGGED_FORMAT_FAILURES = ConcurrentHashMap.newKeySet();
+    private static final Map<String, String> KEY_SEGMENT_CACHE = new ConcurrentHashMap<>();
+    private static final Map<Setting<?>, SettingGroup> SETTING_GROUP_CACHE =
+        Collections.synchronizedMap(new IdentityHashMap<>());
 
     private WaveXinI18n() {
     }
 
     public static MutableText text(String key, String fallback, Object... args) {
-        // Minecraft 1.21.11's Text API can render translatable keys, but I18n.hasTranslation
-        // lets us preserve the same no-raw-key fallback behavior used by chat strings.
-        if (I18n.hasTranslation(key)) return Text.translatable(key, args);
+        try {
+            if (I18n.hasTranslation(key)) return Text.translatable(key, args);
+        } catch (RuntimeException e) {
+            logFormatFailure("text-translation:" + key, key, e);
+        }
         return Text.literal(formatFallback(fallback, args));
     }
 
     public static String tr(String key, String fallback, Object... args) {
-        if (I18n.hasTranslation(key)) {
-            try {
-                return I18n.translate(key, args);
-            } catch (RuntimeException e) {
-                logFormatFailure("translation:" + key, key, e);
-            }
+        try {
+            if (I18n.hasTranslation(key)) return I18n.translate(key, args);
+        } catch (RuntimeException e) {
+            logFormatFailure("translation:" + key, key, e);
         }
 
         return formatFallback(fallback, args);
@@ -87,10 +98,15 @@ public final class WaveXinI18n {
 
     public static String decorateModuleTitle(Module module, String title) {
         if (!isWaveXin(module) || title == null) return title;
+
         String translated = moduleTitle(module);
         if (title.equals(module.title)) return translated;
+
         String prefix = module.title + " (";
-        if (title.startsWith(prefix) && title.endsWith(")")) return translated + title.substring(module.title.length());
+        if (title.startsWith(prefix) && title.endsWith(")")) {
+            return translated + title.substring(module.title.length());
+        }
+
         return title;
     }
 
@@ -105,6 +121,7 @@ public final class WaveXinI18n {
 
     public static String settingTitle(Setting<?> setting) {
         if (setting == null) return "";
+
         Module module = setting.module;
         if (!isWaveXin(module)) return setting.title;
         return tr(settingKey(module, setting, "title"), setting.title);
@@ -112,18 +129,21 @@ public final class WaveXinI18n {
 
     public static String settingDescription(Setting<?> setting) {
         if (setting == null) return "";
+
         Module module = setting.module;
         if (!isWaveXin(module)) return setting.description;
         return tr(settingKey(module, setting, "description"), setting.description);
     }
 
     public static String settingFilterText(Setting<?> setting) {
-        if (setting == null || !isWaveXin(setting.module)) return setting == null ? "" : setting.title;
+        if (setting == null) return "";
+        if (!isWaveXin(setting.module)) return setting.title;
         return setting.title + " " + setting.name + " " + settingTitle(setting);
     }
 
     public static int moduleSearchScore(Module module, String text) {
         if (!isWaveXin(module)) return Utils.searchLevenshteinDefault(module.title, text, false);
+
         int score = Utils.searchLevenshteinDefault(module.title, text, false);
         score = Math.min(score, Utils.searchLevenshteinDefault(module.name, text, false));
         score = Math.min(score, Utils.searchLevenshteinDefault(moduleTitle(module), text, false));
@@ -132,6 +152,7 @@ public final class WaveXinI18n {
 
     public static int settingSearchScore(Setting<?> setting, String text) {
         if (setting == null) return Integer.MAX_VALUE;
+
         int score = Utils.searchLevenshteinDefault(setting.title, text, false);
         if (isWaveXin(setting.module)) {
             score = Math.min(score, Utils.searchLevenshteinDefault(setting.name, text, false));
@@ -155,11 +176,19 @@ public final class WaveXinI18n {
 
     public static SettingGroup findGroup(Module module, Setting<?> setting) {
         if (module == null || setting == null) return null;
+
+        SettingGroup cached = SETTING_GROUP_CACHE.get(setting);
+        if (cached != null) return cached;
+
         for (SettingGroup group : module.settings) {
             for (Setting<?> candidate : group) {
-                if (candidate == setting) return group;
+                if (candidate == setting) {
+                    SETTING_GROUP_CACHE.put(setting, group);
+                    return group;
+                }
             }
         }
+
         return null;
     }
 
@@ -174,35 +203,55 @@ public final class WaveXinI18n {
     }
 
     public static String enumLabelOr(Enum<?> value, String fallback) {
-        return enumLabel(value, fallback == null ? "" : fallback);
+        if (value != null) return enumLabel(value, fallback);
+        return translateKnownUnknownFallback(fallback);
+    }
+
+    private static String translateKnownUnknownFallback(String fallback) {
+        if (fallback == null || fallback.isBlank()) return "";
+
+        return switch (fallback) {
+            case "Unknown state" -> tr("status.wavexin.common.unknown_state", fallback);
+            case "Unknown route" -> tr("status.wavexin.common.unknown_route", fallback);
+            case "Unknown direction" -> tr("status.wavexin.common.unknown_direction", fallback);
+            default -> fallback;
+        };
     }
 
     public static String enumKey(Enum<?> value) {
-        return "enum.wavexin." + keySegment(value.getDeclaringClass().getSimpleName()) + "." + keySegment(value.name());
+        return "enum.wavexin."
+            + keySegment(value.getDeclaringClass().getSimpleName())
+            + "."
+            + keySegment(value.name());
     }
 
     public static List<String> moduleSearchCandidates(Module module) {
         List<String> candidates = new ArrayList<>();
         if (module == null) return candidates;
+
         candidates.add(module.title);
         if (isWaveXin(module)) {
             candidates.add(module.name);
             candidates.add(moduleTitle(module));
         }
+
         if (Config.get().moduleAliases.get() && module.aliases != null) {
-            for (String alias : module.aliases) candidates.add(alias);
+            Collections.addAll(candidates, module.aliases);
         }
+
         return candidates;
     }
 
     public static List<String> settingSearchCandidates(Setting<?> setting) {
         List<String> candidates = new ArrayList<>();
         if (setting == null) return candidates;
+
         candidates.add(setting.title);
         if (isWaveXin(setting.module)) {
             candidates.add(setting.name);
             candidates.add(settingTitle(setting));
         }
+
         return candidates;
     }
 
@@ -219,6 +268,7 @@ public final class WaveXinI18n {
         Map<String, String> en = readLanguage("en_us");
         Map<String, String> zh = readLanguage("zh_cn");
         int errors = 0;
+
         if (en.isEmpty()) errors++;
         if (zh.isEmpty()) errors++;
         if (errors > 0) {
@@ -231,19 +281,25 @@ public final class WaveXinI18n {
         errors += reportMissing("zh_cn", zh.keySet(), required);
         errors += reportMismatchedResourceKeys(en.keySet(), zh.keySet());
         errors += reportPlaceholderMismatches(en, zh);
+
         if (errors == 0) {
             WaveXinAddon.LOG.info("WaveXin i18n runtime validation PASS: {} required keys checked.", required.size());
         } else {
-            WaveXinAddon.LOG.warn("WaveXin i18n runtime validation FAIL: {} errors across {} required keys.", errors, required.size());
+            WaveXinAddon.LOG.warn(
+                "WaveXin i18n runtime validation FAIL: {} errors across {} required keys.",
+                errors,
+                required.size()
+            );
         }
     }
 
     private static Set<String> requiredKeys(Iterable<Module> modules) {
-        Set<String> keys = new LinkedHashSet<>();
+        Set<String> keys = new LinkedHashSet<>(readExpectedKeys());
         keys.add("meta.wavexin.language");
 
         for (Module module : modules) {
             if (!isWaveXin(module)) continue;
+
             keys.add(moduleKey(module, "title"));
             keys.add(moduleKey(module, "description"));
 
@@ -252,6 +308,7 @@ public final class WaveXinI18n {
                 for (Setting<?> setting : group) {
                     keys.add(settingKey(module, setting, "title"));
                     keys.add(settingKey(module, setting, "description"));
+
                     Object value = setting.get();
                     if (value instanceof Enum<?> enumValue) {
                         for (Object constant : enumValue.getDeclaringClass().getEnumConstants()) {
@@ -265,6 +322,29 @@ public final class WaveXinI18n {
         return keys;
     }
 
+    private static Set<String> readExpectedKeys() {
+        String path = "assets/wavexin/lang/expected_keys.txt";
+        try (InputStream stream = WaveXinI18n.class.getClassLoader().getResourceAsStream(path)) {
+            if (stream == null) {
+                WaveXinAddon.LOG.warn("WaveXin i18n validation could not find {}.", path);
+                return Set.of();
+            }
+
+            Set<String> keys = new LinkedHashSet<>();
+            try (BufferedReader reader = new BufferedReader(new InputStreamReader(stream, StandardCharsets.UTF_8))) {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    String trimmed = line.trim();
+                    if (!trimmed.isEmpty() && !trimmed.startsWith("#")) keys.add(trimmed);
+                }
+            }
+            return keys;
+        } catch (Exception e) {
+            WaveXinAddon.LOG.warn("WaveXin i18n validation could not read {}.", path, e);
+            return Set.of();
+        }
+    }
+
     private static Map<String, String> readLanguage(String language) {
         String path = "assets/wavexin/lang/" + language + ".json";
         try (InputStream stream = WaveXinI18n.class.getClassLoader().getResourceAsStream(path)) {
@@ -273,8 +353,11 @@ public final class WaveXinI18n {
                 return Map.of();
             }
 
-            JsonObject object = JsonParser.parseReader(new InputStreamReader(stream, StandardCharsets.UTF_8)).getAsJsonObject();
-            java.util.LinkedHashMap<String, String> values = new java.util.LinkedHashMap<>();
+            JsonObject object = JsonParser.parseReader(
+                new InputStreamReader(stream, StandardCharsets.UTF_8)
+            ).getAsJsonObject();
+
+            Map<String, String> values = new LinkedHashMap<>();
             for (Map.Entry<String, JsonElement> entry : object.entrySet()) {
                 values.put(entry.getKey(), entry.getValue().getAsString());
             }
@@ -319,10 +402,16 @@ public final class WaveXinI18n {
             String key = entry.getKey();
             String zhValue = zh.get(key);
             if (zhValue == null) continue;
+
             String enPlaceholders = placeholders(entry.getValue());
             String zhPlaceholders = placeholders(zhValue);
             if (!enPlaceholders.equals(zhPlaceholders)) {
-                WaveXinAddon.LOG.warn("WaveXin i18n placeholder mismatch for {}: en_us={}, zh_cn={}", key, enPlaceholders, zhPlaceholders);
+                WaveXinAddon.LOG.warn(
+                    "WaveXin i18n placeholder mismatch for {}: en_us={}, zh_cn={}",
+                    key,
+                    enPlaceholders,
+                    zhPlaceholders
+                );
                 errors++;
             }
         }
@@ -331,33 +420,57 @@ public final class WaveXinI18n {
 
     private static String placeholders(String value) {
         if (value == null) return "";
+
         Matcher matcher = FORMAT_PATTERN.matcher(value);
         List<String> placeholders = new ArrayList<>();
         int implicitIndex = 1;
+        int previousIndex = -1;
+
         while (matcher.find()) {
-            String token = matcher.group();
-            if ("%%".equals(token)) continue;
-            Matcher index = Pattern.compile("^%(\\d+)\\$").matcher(token);
-            String argument = index.find() ? index.group(1) : String.valueOf(implicitIndex++);
-            placeholders.add(argument + ":" + token.charAt(token.length() - 1));
+            String conversion = matcher.group(5);
+            if ("%".equals(conversion)) continue;
+
+            String explicitIndex = matcher.group(1);
+            String flags = matcher.group(2);
+            int argumentIndex;
+
+            if (explicitIndex != null) {
+                argumentIndex = Integer.parseInt(explicitIndex);
+            } else if (flags != null && flags.indexOf('<') >= 0 && previousIndex > 0) {
+                argumentIndex = previousIndex;
+            } else {
+                argumentIndex = implicitIndex++;
+            }
+
+            previousIndex = argumentIndex;
+            placeholders.add(argumentIndex + ":" + conversion);
         }
+
+        Collections.sort(placeholders);
         return String.join(",", placeholders);
     }
 
     private static void logFormatFailure(String id, String keyOrFallback, RuntimeException e) {
         if (!DEVELOPMENT) return;
         if (LOGGED_FORMAT_FAILURES.add(id)) {
-            WaveXinAddon.LOG.warn("WaveXin i18n format fallback used for {}: {}", keyOrFallback, e.toString());
+            WaveXinAddon.LOG.warn(
+                "WaveXin i18n format fallback used for {}: {}",
+                keyOrFallback,
+                e.toString()
+            );
         }
     }
 
     public static String keySegment(String value) {
         if (value == null || value.isBlank()) return "unnamed";
-        String segment = value
-            .replaceAll("([a-z0-9])([A-Z])", "$1_$2")
-            .toLowerCase(Locale.ROOT)
-            .replaceAll("[^a-z0-9]+", "_")
-            .replaceAll("^_+|_+$", "");
-        return segment.isEmpty() ? "unnamed" : segment;
+
+        return KEY_SEGMENT_CACHE.computeIfAbsent(value, raw -> {
+            String segment = raw
+                .replaceAll("([a-z0-9])([A-Z])", "$1_$2")
+                .toLowerCase(Locale.ROOT)
+                .replaceAll("[^a-z0-9]+", "_")
+                .replaceAll("^_+|_+$", "");
+            return segment.isEmpty() ? "unnamed" : segment;
+        });
     }
 }

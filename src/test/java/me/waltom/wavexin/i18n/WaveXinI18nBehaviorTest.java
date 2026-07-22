@@ -23,10 +23,14 @@ public final class WaveXinI18nBehaviorTest {
         assertEquals("a_b", WaveXinI18n.keySegment("A B"), "space normalization");
         assertEquals("a_b", WaveXinI18n.keySegment("a_b"), "underscore normalization");
         assertEquals("camel_case", WaveXinI18n.keySegment("camelCase"), "camel case normalization");
+        assertEquals("camel_case", WaveXinI18n.keySegment("camelCase"), "cached camel case normalization");
         assertEquals("unnamed", WaveXinI18n.keySegment("!!!"), "punctuation fallback");
         assertEquals("unnamed", WaveXinI18n.keySegment(null), "null key segment fallback");
 
-        assertEquals("Unknown route", WaveXinI18n.enumLabelOr(null, "Unknown route"), "null enum fallback");
+        assertEquals("Unknown route", WaveXinI18n.enumLabelOr(null, "Unknown route"), "null route fallback");
+        assertEquals("Unknown state", WaveXinI18n.enumLabelOr(null, "Unknown state"), "null state fallback");
+        assertEquals("Unknown direction", WaveXinI18n.enumLabelOr(null, "Unknown direction"), "null direction fallback");
+        assertEquals("Custom fallback", WaveXinI18n.enumLabelOr(null, "Custom fallback"), "custom null enum fallback");
         assertEquals("", WaveXinI18n.enumLabelOr(null, null), "null enum null fallback");
     }
 
