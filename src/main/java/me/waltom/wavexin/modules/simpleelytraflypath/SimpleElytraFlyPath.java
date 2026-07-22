@@ -5,6 +5,7 @@ import me.waltom.wavexin.events.MoveEvent;
 import me.waltom.wavexin.core.WaveXinModule;
 import me.waltom.wavexin.WaveXinAddon;
 import me.waltom.wavexin.gui.TargetCoordinateInput;
+import me.waltom.wavexin.i18n.WaveXinI18n;
 import meteordevelopment.meteorclient.events.world.TickEvent;
 import meteordevelopment.meteorclient.gui.renderer.GuiRenderer;
 import meteordevelopment.meteorclient.gui.utils.SettingsWidgetFactory;
@@ -22,7 +23,6 @@ import net.minecraft.item.ItemStack;
 import net.minecraft.item.Items;
 import net.minecraft.nbt.NbtCompound;
 import net.minecraft.network.packet.c2s.play.ClientCommandC2SPacket;
-import net.minecraft.text.Text;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.ChunkPos;
 import net.minecraft.util.math.Vec3d;
@@ -47,7 +47,7 @@ public class SimpleElytraFlyPath extends WaveXinModule {
                 coordinate.reset();
                 edit.set(coordinate.get());
             };
-            reset.tooltip = "Reset";
+            reset.tooltip = WaveXinI18n.tr("tooltip.wavexin.common.reset", "Reset");
         });
     }
 
@@ -320,7 +320,7 @@ public class SimpleElytraFlyPath extends WaveXinModule {
         }
 
         if (shouldDisconnect && mc.getNetworkHandler() != null) {
-            mc.getNetworkHandler().getConnection().disconnect(Text.literal("Auto quit after arriving at target"));
+            mc.getNetworkHandler().getConnection().disconnect(WaveXinI18n.text("disconnect.wavexin.simple_elytra_fly_path.arrived", "Auto quit after arriving at target"));
         }
     }
 

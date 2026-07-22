@@ -3,6 +3,7 @@ package me.waltom.wavexin.modules.basefinder;
 import me.waltom.wavexin.core.WaveXinModule;
 import me.waltom.wavexin.core.WaveXinDataPaths;
 import me.waltom.wavexin.WaveXinAddon;
+import me.waltom.wavexin.i18n.WaveXinI18n;
 import meteordevelopment.meteorclient.MeteorClient;
 import meteordevelopment.meteorclient.utils.player.ChatUtils;
 import meteordevelopment.meteorclient.utils.render.color.Color;
@@ -618,7 +619,7 @@ public class BaseFinder extends WaveXinModule {
         savedNormalScanCircle = -1;
         savedNormalScanPath = null;
         if (lastBegin.get()) {
-            infoKey("message.wavexin.base_finder.normal_resumed", "Resumed normal scan at ring %d, route %s.", currentCircle, currentPath);
+            infoKey("message.wavexin.base_finder.normal_resumed", "Resumed normal scan at ring %d, route %s.", currentCircle, WaveXinI18n.enumLabel(currentPath, currentPath.name()));
         } else {
             infoKey("message.wavexin.base_finder.normal_started", "Normal scan started at origin chunk (%d, %d).", originChunk.x, originChunk.z);
         }
@@ -895,7 +896,7 @@ public class BaseFinder extends WaveXinModule {
                 infoKey("message.wavexin.base_finder.normal_stopped_returning", "Normal scan stopped while returning to its saved checkpoint. Saved progress was preserved.");
             } else if (lastBegin.get() && mc.player != null) {
                 ChunkPos playerChunk = mc.player.getChunkPos();
-                infoKey("message.wavexin.base_finder.normal_stopped_checkpoint", "Normal scan stopped. Saved checkpoint: (%d, %d), ring %d, route %s.", playerChunk.x, playerChunk.z, currentCircle, currentPath);
+                infoKey("message.wavexin.base_finder.normal_stopped_checkpoint", "Normal scan stopped. Saved checkpoint: (%d, %d), ring %d, route %s.", playerChunk.x, playerChunk.z, currentCircle, WaveXinI18n.enumLabel(currentPath, currentPath.name()));
             } else {
                 infoKey("message.wavexin.base_finder.normal_stopped", "Normal scan stopped.");
             }
@@ -1435,7 +1436,7 @@ public class BaseFinder extends WaveXinModule {
         spiralNeedsInitialRotation = true;
         spiralTargetYaw = spiralDirection.yaw;
         spiralRotating = true;
-        if (spiralDebug.get()) infoKey("message.wavexin.base_finder.spiral_calibrating", "Calibrating view toward %s.", spiralDirection);
+        if (spiralDebug.get()) infoKey("message.wavexin.base_finder.spiral_calibrating", "Calibrating view toward %s.", WaveXinI18n.enumLabel(spiralDirection, spiralDirection.name()));
     }
 
     private void runSpiralScan() {
@@ -1485,7 +1486,7 @@ public class BaseFinder extends WaveXinModule {
         }
 
         if (spiralDebug.get()) {
-            infoKey("message.wavexin.base_finder.spiral_direction", "Spiral direction: %s. Next target: (%d, %d).", spiralDirection, spiralTargetChunk.x, spiralTargetChunk.z);
+            infoKey("message.wavexin.base_finder.spiral_direction", "Spiral direction: %s. Next target: (%d, %d).", WaveXinI18n.enumLabel(spiralDirection, spiralDirection.name()), spiralTargetChunk.x, spiralTargetChunk.z);
         }
     }
 

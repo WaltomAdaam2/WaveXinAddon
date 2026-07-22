@@ -375,7 +375,7 @@ public class AutoLogin extends WaveXinModule {
         passwordInput.set("");
         savedAccounts.refresh();
         syncAccountSettings();
-        feedbackKey("message.wavexin.auto_login.account_saved", "Account saved as %s.", account.type);
+        feedbackKey("message.wavexin.auto_login.account_saved", "Account saved as %s.", WaveXinI18n.enumLabel(account.type, account.type.toString()));
     }
 
     private void deleteSavedAccount(String playerName) {
@@ -393,7 +393,7 @@ public class AutoLogin extends WaveXinModule {
     private void runState() {
         if (state == LoginState.IDLE || state == LoginState.COMPLETED) return;
         if (retries > maximumRetries.get()) {
-            feedbackKey("message.wavexin.auto_login.too_many_retries", "Auto Login stopped after too many retries at %s.", state);
+            feedbackKey("message.wavexin.auto_login.too_many_retries", "Auto Login stopped after too many retries at %s.", WaveXinI18n.enumLabel(state, state.name()));
             setState(LoginState.IDLE);
             return;
         }
@@ -616,7 +616,7 @@ public class AutoLogin extends WaveXinModule {
         state = newState;
         stateAt = System.currentTimeMillis();
         retries = 0;
-        debugKey("debug.wavexin.auto_login.state", "State -> %s", newState);
+        debugKey("debug.wavexin.auto_login.state", "State -> %s", WaveXinI18n.enumLabel(newState, newState.name()));
     }
 
     private void resetConnectionState(LoginState newState) {
