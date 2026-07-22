@@ -12,17 +12,25 @@ import meteordevelopment.meteorclient.settings.IVisible;
 import meteordevelopment.meteorclient.settings.Setting;
 import meteordevelopment.meteorclient.utils.render.color.Color;
 import net.minecraft.nbt.NbtCompound;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.function.Consumer;
 
 public class XaeroWaypointColorSetting extends Setting<BaseFinder.XaeroWaypointColor> {
     private final BaseFinder.XaeroWaypointColor[] values;
-    private final List<String> suggestions;
 
     static {
         SettingsWidgetFactory.registerCustomFactory(XaeroWaypointColorSetting.class, theme -> (table, setting) -> {
             XaeroWaypointColorSetting colorSetting = (XaeroWaypointColorSetting) setting;
+            if (!(theme instanceof MeteorGuiTheme)) {
+                WDropdown<BaseFinder.XaeroWaypointColor> dropdown = table.add(theme.dropdown(colorSetting.values, colorSetting.get())).expandCellX().widget();
+                dropdown.action = () -> colorSetting.set(dropdown.get());
+                WButton reset = table.add(theme.button(GuiRenderer.RESET)).widget();
+                reset.action = () -> {
+                    colorSetting.reset();
+                    dropdown.set(colorSetting.get());
+                };
+                reset.tooltip = WaveXinI18n.tr("tooltip.wavexin.common.reset", "Reset");
+                return;
+            }
             WColorDropdown dropdown = table.add(new WColorDropdown(colorSetting.values, colorSetting.get())).expandCellX().widget();
             dropdown.action = () -> colorSetting.set(dropdown.get());
 
@@ -31,7 +39,7 @@ public class XaeroWaypointColorSetting extends Setting<BaseFinder.XaeroWaypointC
                 colorSetting.reset();
                 dropdown.set(colorSetting.get());
             };
-            reset.tooltip = WaveXinI18n.tr("tooltip.wavexin.base_finder.reset", "Reset");
+            reset.tooltip = WaveXinI18n.tr("tooltip.wavexin.common.reset", "Reset");
         });
     }
 
@@ -39,9 +47,7 @@ public class XaeroWaypointColorSetting extends Setting<BaseFinder.XaeroWaypointC
         super(name, description, defaultValue, onChanged, onModuleActivated, visible);
 
         values = BaseFinder.XaeroWaypointColor.values();
-        suggestions = new ArrayList<>(values.length);
-        for (BaseFinder.XaeroWaypointColor value : values) suggestions.add(label(value));
-    }
+}
 
     @Override
     protected BaseFinder.XaeroWaypointColor parseImpl(String str) {
@@ -57,8 +63,10 @@ public class XaeroWaypointColorSetting extends Setting<BaseFinder.XaeroWaypointC
     }
 
     @Override
-    public List<String> getSuggestions() {
-        return suggestions;
+    public java.util.List<String> getSuggestions() {
+        java.util.List<String> current = new java.util.ArrayList<>(values.length);
+        for (BaseFinder.XaeroWaypointColor value : values) current.add(label(value));
+        return current;
     }
 
     @Override

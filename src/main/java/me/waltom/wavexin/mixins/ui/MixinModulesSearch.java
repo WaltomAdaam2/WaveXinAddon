@@ -7,6 +7,7 @@ import meteordevelopment.meteorclient.systems.modules.Modules;
 import meteordevelopment.meteorclient.settings.Setting;
 import meteordevelopment.meteorclient.settings.SettingGroup;
 import meteordevelopment.meteorclient.utils.Utils;
+import meteordevelopment.meteorclient.utils.misc.ValueComparableMap;
 import net.minecraft.util.Pair;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
@@ -17,8 +18,9 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
-import java.util.LinkedHashSet;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 @Mixin(value = Modules.class, remap = false)
@@ -27,53 +29,47 @@ public abstract class MixinModulesSearch {
 
     @Inject(method = "searchTitles", at = @At("HEAD"), cancellable = true)
     private void onSearchTitles(String text, CallbackInfoReturnable<List<Pair<Module, String>>> cir) {
-        WaveXinI18n.markUiPath("module-search-title");
-        List<SearchResult> results = new ArrayList<>();
+        Map<Pair<Module, String>, Integer> modules = new HashMap<>();
 
         for (Module module : getAll()) {
-            int score = Integer.MAX_VALUE;
-            for (String candidate : WaveXinI18n.moduleSearchCandidates(module)) {
-                score = Math.min(score, Utils.searchLevenshteinDefault(candidate, text, false));
-            }
+            String title = WaveXinI18n.isWaveXin(module) ? WaveXinI18n.moduleTitle(module) : module.title;
+            int score = WaveXinI18n.moduleSearchScore(module, text);
 
-            if (Config.get().moduleAliases.get() && module.aliases != null) {
+            if (Config.get().moduleAliases.get()) {
                 for (String alias : module.aliases) {
-                    score = Math.min(score, Utils.searchLevenshteinDefault(alias, text, false));
+                    int aliasScore = Utils.searchLevenshteinDefault(alias, text, false);
+                    if (aliasScore < score) {
+                        title = WaveXinI18n.decorateModuleTitle(module, module.title + " (" + alias + ")");
+                        score = aliasScore;
+                    }
                 }
             }
 
-            results.add(new SearchResult(module, WaveXinI18n.moduleTitle(module), score));
+            if (WaveXinI18n.isWaveXin(module)) WaveXinI18n.markUiPath("module-search-title");
+            modules.put(new Pair<>(module, title), score);
         }
 
-        results.sort(Comparator.comparingInt(result -> result.score));
-        List<Pair<Module, String>> modules = new ArrayList<>();
-        for (SearchResult result : results) modules.add(new Pair<>(result.module, result.title));
-        cir.setReturnValue(modules);
+        List<Pair<Module, String>> list = new ArrayList<>(modules.keySet());
+        list.sort(Comparator.comparingInt(modules::get));
+        cir.setReturnValue(list);
     }
 
     @Inject(method = "searchSettingTitles", at = @At("HEAD"), cancellable = true)
     private void onSearchSettingTitles(String text, CallbackInfoReturnable<Set<Module>> cir) {
-        WaveXinI18n.markUiPath("module-search-setting");
-        List<ModuleScore> scores = new ArrayList<>();
+        Map<Module, Integer> modules = new ValueComparableMap<>(Comparator.naturalOrder());
 
         for (Module module : getAll()) {
             int lowest = Integer.MAX_VALUE;
             for (SettingGroup group : module.settings) {
                 for (Setting<?> setting : group) {
-                    for (String candidate : WaveXinI18n.settingSearchCandidates(setting)) {
-                        lowest = Math.min(lowest, Utils.searchLevenshteinDefault(candidate, text, false));
-                    }
+                    int score = WaveXinI18n.settingSearchScore(setting, text);
+                    if (score < lowest) lowest = score;
                 }
             }
-            scores.add(new ModuleScore(module, lowest));
+            if (WaveXinI18n.isWaveXin(module)) WaveXinI18n.markUiPath("module-search-setting");
+            modules.put(module, modules.getOrDefault(module, 0) + lowest);
         }
 
-        scores.sort(Comparator.comparingInt(score -> score.score));
-        Set<Module> modules = new LinkedHashSet<>();
-        for (ModuleScore score : scores) modules.add(score.module);
-        cir.setReturnValue(modules);
+        cir.setReturnValue(modules.keySet());
     }
-
-    private record SearchResult(Module module, String title, int score) {}
-    private record ModuleScore(Module module, int score) {}
 }

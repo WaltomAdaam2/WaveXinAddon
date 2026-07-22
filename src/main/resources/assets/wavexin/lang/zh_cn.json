@@ -268,7 +268,6 @@
   "placeholder.wavexin.auto_login.password": "密码",
   "status.wavexin.auto_login.no_saved_accounts": "没有已保存账号",
   "tooltip.wavexin.auto_login.delete_account": "删除",
-  "tooltip.wavexin.base_finder.reset": "重置",
   "message.wavexin.auto_login.microsoft_waiting": "检测到已保存的 Microsoft 账号，正在等待登录成功。",
   "message.wavexin.auto_login.offline_password_missing": "当前账号未设置离线密码。",
   "message.wavexin.auto_login.account_name_required": "请先输入账号名或加入服务器。",
@@ -321,5 +320,6 @@
   "message.wavexin.base_finder.spiral_calibrating": "正在校准视角朝向 %s。",
   "message.wavexin.base_finder.spiral_complete": "已达到最大段数，螺旋扫描完成。",
   "message.wavexin.base_finder.spiral_direction": "螺旋方向：%s。下一个目标：(%d, %d)。",
-  "message.wavexin.base_finder.spiral_rotation_complete": "螺旋转向完成。"
+  "message.wavexin.base_finder.spiral_rotation_complete": "螺旋转向完成。",
+  "tooltip.wavexin.common.reset": "重置"
 }

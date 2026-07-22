@@ -5,7 +5,6 @@ import me.waltom.wavexin.i18n.WaveXinI18n;
 import meteordevelopment.meteorclient.gui.DefaultSettingsWidgetFactory;
 import meteordevelopment.meteorclient.gui.renderer.GuiRenderer;
 import meteordevelopment.meteorclient.gui.widgets.containers.WTable;
-import meteordevelopment.meteorclient.gui.widgets.containers.WVerticalList;
 import meteordevelopment.meteorclient.gui.widgets.input.WDropdown;
 import meteordevelopment.meteorclient.gui.widgets.pressable.WButton;
 import meteordevelopment.meteorclient.settings.EnumSetting;
@@ -28,9 +27,15 @@ public abstract class MixinDefaultSettingsWidgetFactory {
         return WaveXinI18n.groupName(module, group);
     }
 
-    @Redirect(method = "group", at = @At(value = "FIELD", target = "Lmeteordevelopment/meteorclient/settings/Setting;title:Ljava/lang/String;"))
-    private String onSettingTitle(Setting<?> setting) {
-        if (WaveXinI18n.isWaveXin(setting.module)) WaveXinI18n.markUiPath("setting-title");
+    @Redirect(method = "group", at = @At(value = "FIELD", target = "Lmeteordevelopment/meteorclient/settings/Setting;title:Ljava/lang/String;", ordinal = 0))
+    private String onSettingFilterTitle(Setting<?> setting) {
+        if (WaveXinI18n.isWaveXin(setting.module)) WaveXinI18n.markUiPath("setting-filter-title");
+        return WaveXinI18n.settingFilterText(setting);
+    }
+
+    @Redirect(method = "group", at = @At(value = "FIELD", target = "Lmeteordevelopment/meteorclient/settings/Setting;title:Ljava/lang/String;", ordinal = 1))
+    private String onSettingDisplayTitle(Setting<?> setting) {
+        if (WaveXinI18n.isWaveXin(setting.module)) WaveXinI18n.markUiPath("setting-display-title");
         return WaveXinI18n.settingTitle(setting);
     }
 
@@ -53,7 +58,7 @@ public abstract class MixinDefaultSettingsWidgetFactory {
             setting.reset();
             dropdown.set(setting.get());
         };
-        reset.tooltip = WaveXinI18n.tr("tooltip.wavexin.base_finder.reset", "Reset");
+        reset.tooltip = WaveXinI18n.tr("tooltip.wavexin.common.reset", "Reset");
 
         ci.cancel();
     }

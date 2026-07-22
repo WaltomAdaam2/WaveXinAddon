@@ -268,7 +268,6 @@
   "placeholder.wavexin.auto_login.password": "Password",
   "status.wavexin.auto_login.no_saved_accounts": "No saved accounts",
   "tooltip.wavexin.auto_login.delete_account": "Delete",
-  "tooltip.wavexin.base_finder.reset": "Reset",
   "message.wavexin.auto_login.microsoft_waiting": "Saved Microsoft Account detected. Waiting for login success.",
   "message.wavexin.auto_login.offline_password_missing": "Offline password is not set for current account.",
   "message.wavexin.auto_login.account_name_required": "Enter an account name or join a server first.",
@@ -321,5 +320,6 @@
   "message.wavexin.base_finder.spiral_calibrating": "Calibrating view toward %s.",
   "message.wavexin.base_finder.spiral_complete": "Maximum segments reached. Spiral scan complete.",
   "message.wavexin.base_finder.spiral_direction": "Spiral direction: %s. Next target: (%d, %d).",
-  "message.wavexin.base_finder.spiral_rotation_complete": "Spiral rotation complete."
+  "message.wavexin.base_finder.spiral_rotation_complete": "Spiral rotation complete.",
+  "tooltip.wavexin.common.reset": "Reset"
 }
