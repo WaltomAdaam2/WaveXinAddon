@@ -81,15 +81,21 @@ loom {
 def waveXinLangDir = layout.projectDirectory.dir("src/main/resources/assets/wavexin/lang")
 def waveXinJavaDir = layout.projectDirectory.dir("src/main/java/me/waltom/wavexin")
 
+def waveXinExpectedKeysFile = waveXinLangDir.file("expected_keys.txt")
+
 tasks.register("verifyWaveXinTranslations") {
     inputs.dir(waveXinLangDir)
     inputs.dir(waveXinJavaDir)
+    inputs.file(waveXinExpectedKeysFile)
 
     doLast {
         def jsonSlurper = new groovy.json.JsonSlurper()
         def langFiles = [en_us: waveXinLangDir.file("en_us.json").asFile, zh_cn: waveXinLangDir.file("zh_cn.json").asFile]
         def langs = [:]
         def errors = []
+        def duplicateJsonCount = 0
+        def invalidValueCount = 0
+        def meteorTokenMismatches = 0
 
         def duplicateKeys = { File file ->
             def text = file.getText("UTF-8")
@@ -103,63 +109,50 @@ tasks.register("verifyWaveXinTranslations") {
             duplicates
         }
 
+        def looksMojibake = { String value ->
+            def s = { int cp -> Character.toString((char) cp) }
+            def badSequences = [
+                s(0x00c3), s(0x00c2), s(0x00e2) + s(0x20ac), s(0xfffd),
+                s(0x951f), s(0x955c), s(0x934a), s(0x93c4), s(0x7f01), s(0x95ab)
+            ]
+            badSequences.any { value.contains(it) }
+        }
         langFiles.each { language, file ->
             if (!file.isFile()) {
                 errors << "Missing language file: ${file}"
                 return
             }
             def duplicates = duplicateKeys(file)
+            duplicateJsonCount += duplicates.unique().size()
             if (!duplicates.isEmpty()) errors << "${language} duplicate keys: ${duplicates.unique().join(', ')}"
             def parsed = jsonSlurper.parse(file)
-            if (!(parsed instanceof Map)) errors << "${language} root must be a JSON object"
+            if (!(parsed instanceof Map)) {
+                errors << "${language} root must be a JSON object"
+                return
+            }
             parsed.each { key, value ->
-                if (!(value instanceof String)) errors << "${language}.${key} must be a string"
-                if (value instanceof String) {
-                    if (value.contains('\uFFFD')) errors << "${language}.${key} contains replacement character"
-                    if (value ==~ /.*(鎺|闃|姝|缁|娴|鑵|锛|绉|嗘|\?\?\?).*/) errors << "${language}.${key} looks mojibake"
-                    if (value != value.trim()) errors << "${language}.${key} has leading/trailing whitespace"
-                    if (value == key) errors << "${language}.${key} value is the raw key"
-                    if (value.isEmpty() && key != 'setting.wavexin.auto_login.saved_accounts.unnamed.title') errors << "${language}.${key} is empty"
+                if (!(value instanceof String)) {
+                    invalidValueCount++
+                    errors << "${language}.${key} must be a string"
+                    return
                 }
+                if (value.contains('\uFFFD')) { invalidValueCount++; errors << "${language}.${key} contains replacement character" }
+                if (looksMojibake(value)) { invalidValueCount++; errors << "${language}.${key} looks mojibake" }
+                if (value != value.trim()) { invalidValueCount++; errors << "${language}.${key} has leading/trailing whitespace" }
+                if (value == key) { invalidValueCount++; errors << "${language}.${key} value is the raw key" }
+                if (value.isEmpty() && key != 'setting.wavexin.auto_login.saved_accounts.unnamed.title') { invalidValueCount++; errors << "${language}.${key} is empty" }
+                if (language == 'en_us' && value ==~ /.*\?{2,}.*/) { invalidValueCount++; errors << "${language}.${key} contains placeholder question marks" }
+                if (language == 'en_us' && key.endsWith('.title') && value ==~ /[a-z0-9]+(-[a-z0-9]+)+/) { invalidValueCount++; errors << "${language}.${key} exposes a raw kebab-case id" }
             }
             langs[language] = parsed
         }
 
-        if (langs.en_us && langs.zh_cn) {
-            def enKeys = langs.en_us.keySet() as Set
-            def zhKeys = langs.zh_cn.keySet() as Set
-            def missingZh = enKeys - zhKeys
-            def missingEn = zhKeys - enKeys
-            if (!missingZh.isEmpty()) errors << "zh_cn missing keys: ${missingZh.sort().join(', ')}"
-            if (!missingEn.isEmpty()) errors << "en_us missing keys: ${missingEn.sort().join(', ')}"
-
-            def placeholders = { String value ->
-                def result = []
-                int implicit = 1
-                def matcher = value =~ /%(?:([1-9]\d*)\$)?[-#+ 0,(<]*\d*(?:\.\d+)?([a-zA-Z%])/
-                matcher.each { match ->
-                    def conversion = match[2]
-                    if (conversion == '%') return
-                    def index = match[1] ?: String.valueOf(implicit++)
-                    result << "${index}:${conversion}"
-                }
-                result
-            }
-            def meteorTokens = { String value ->
-                def result = []
-                def matcher = value =~ /\((highlight|bold|default)\)/
-                matcher.each { match -> result << match[1] }
-                result
-            }
-            enKeys.intersect(zhKeys).each { key ->
-                def enPlaceholders = placeholders(langs.en_us[key])
-                def zhPlaceholders = placeholders(langs.zh_cn[key])
-                if (enPlaceholders != zhPlaceholders) errors << "Placeholder mismatch ${key}: en=${enPlaceholders}, zh=${zhPlaceholders}"
-                def enTokens = meteorTokens(langs.en_us[key])
-                def zhTokens = meteorTokens(langs.zh_cn[key])
-                if (enTokens != zhTokens) errors << "Meteor token mismatch ${key}: en=${enTokens}, zh=${zhTokens}"
-            }
+        def expectedKeys = new LinkedHashSet<String>()
+        waveXinExpectedKeysFile.asFile.eachLine('UTF-8') { line ->
+            def trimmed = line.trim()
+            if (trimmed && !trimmed.startsWith('#')) expectedKeys.add(trimmed)
         }
+        if (expectedKeys.isEmpty()) errors << "Expected key registry is empty"
 
         def staticKeys = new LinkedHashSet<String>()
         waveXinJavaDir.asFileTree.matching { include '**/*.java' }.files.each { file ->
@@ -170,33 +163,130 @@ tasks.register("verifyWaveXinTranslations") {
                 if (!key.contains('" + ') && !key.endsWith('.')) staticKeys << key
             }
         }
-        if (langs.en_us) {
-            def missingStatic = staticKeys - langs.en_us.keySet()
-            if (!missingStatic.isEmpty()) errors << "Static Java keys missing from language files: ${missingStatic.sort().join(', ')}"
+
+        def placeholders = { String value ->
+            def result = []
+            int implicit = 1
+            def matcher = value =~ /%(?:([1-9]\d*)\$)?([-#+ 0,(<]*)(\d*)(?:\.(\d+))?([a-zA-Z%])/
+            matcher.each { match ->
+                def conversion = match[5]
+                if (conversion == '%') return
+                def index = match[1] ?: (match[2]?.contains('<') && !result.isEmpty() ? result.last().split(':')[0] : String.valueOf(implicit++))
+                result << "${index}:${conversion}"
+            }
+            result.sort()
+        }
+        def meteorTokens = { String value ->
+            def result = []
+            def matcher = value =~ /\((highlight|bold|default)\)/
+            matcher.each { match -> result << match[1] }
+            result
+        }
+        def keySegment = { String value ->
+            if (value == null || value.trim().isEmpty()) return 'unnamed'
+            def segment = value.replaceAll(/([a-z0-9])([A-Z])/, '$1_$2')
+                .toLowerCase(Locale.ROOT)
+                .replaceAll(/[^a-z0-9]+/, '_')
+                .replaceAll(/^_+|_+$/, '')
+            segment.isEmpty() ? 'unnamed' : segment
         }
 
+        def missingKeyCount = 0
+        def deadKeyCount = 0
+        def placeholderMismatches = 0
+        if (langs.en_us && langs.zh_cn) {
+            def enKeys = langs.en_us.keySet() as Set
+            def zhKeys = langs.zh_cn.keySet() as Set
+            def missingZh = enKeys - zhKeys
+            def missingEn = zhKeys - enKeys
+            missingKeyCount += missingZh.size() + missingEn.size()
+            if (!missingZh.isEmpty()) errors << "zh_cn missing keys: ${missingZh.sort().join(', ')}"
+            if (!missingEn.isEmpty()) errors << "en_us missing keys: ${missingEn.sort().join(', ')}"
+
+            [en_us: enKeys, zh_cn: zhKeys].each { language, keys ->
+                def missingExpected = expectedKeys - keys
+                def dead = keys - expectedKeys
+                missingKeyCount += missingExpected.size()
+                deadKeyCount += dead.size()
+                if (!missingExpected.isEmpty()) errors << "${language} missing expected keys: ${missingExpected.sort().join(', ')}"
+                if (!dead.isEmpty()) errors << "${language} unexplained dead keys: ${dead.sort().join(', ')}"
+            }
+
+            def missingStatic = staticKeys - expectedKeys
+            missingKeyCount += missingStatic.size()
+            if (!missingStatic.isEmpty()) errors << "Static Java keys missing from expected registry: ${missingStatic.sort().join(', ')}"
+
+            enKeys.intersect(zhKeys).each { key ->
+                def enPlaceholders = placeholders(langs.en_us[key])
+                def zhPlaceholders = placeholders(langs.zh_cn[key])
+                if (enPlaceholders != zhPlaceholders) {
+                    placeholderMismatches++
+                    errors << "Placeholder mismatch ${key}: en=${enPlaceholders}, zh=${zhPlaceholders}"
+                }
+                def enTokens = meteorTokens(langs.en_us[key])
+                def zhTokens = meteorTokens(langs.zh_cn[key])
+                if (enTokens != zhTokens) {
+                    meteorTokenMismatches++
+                    errors << "Meteor token mismatch ${key}: en=${enTokens}, zh=${zhTokens}"
+                }
+            }
+        }
+
+        def collisionInputs = ['A-B', 'A B', 'a_b', 'camelCase', 'camel_case', '', '!!!']
+        def collisionMap = [:].withDefault { [] }
+        collisionInputs.each { source -> collisionMap[keySegment(source)] << source }
+        def collisionCount = collisionMap.values().count { it.unique().size() > 1 }
+        if (collisionCount < 2) errors << "Collision detector sanity failed: ${collisionMap}"
+
+        def formatterFailures = 0
         def formatterCases = [
             ['Hello %s %d', ['A', 1] as Object[], 'Hello A 1'],
-            ['%2$s -> %1$s', ['A', 'B'] as Object[], 'B -> A'],
+            ['%1$s', ['A'] as Object[], 'A'],
+            ['%2$d %1$s', ['A', 2] as Object[], '2 A'],
             ['%1$s / %1$s', ['A'] as Object[], 'A / A'],
-            ['%1$s:%2$d', ['A', 2] as Object[], 'A:2'],
-            ['Progress %% %s', ['done'] as Object[], 'Progress % done']
+            ['%2$s -> %1$s', ['A', 'B'] as Object[], 'B -> A'],
+            ['Progress %% %s', ['done'] as Object[], 'Progress % done'],
+            ['%8.2f', [1.5d] as Object[], '    1.50']
         ]
         formatterCases.each { c ->
             def actual = String.format(Locale.ROOT, c[0], c[1])
-            if (actual != c[2]) errors << "Formatter sanity failed for ${c[0]}: ${actual}"
+            if (actual != c[2]) { formatterFailures++; errors << "Formatter sanity failed for ${c[0]}: ${actual}" }
         }
 
-        def totalKeys = langs.en_us ? langs.en_us.size() : 0
-        def deadKeys = 0
-        def collisions = 0
-        def placeholderMismatches = errors.count { it.startsWith('Placeholder mismatch') }
-        println "WaveXin translation verification: en_us=${langs.en_us?.size() ?: 0}, zh_cn=${langs.zh_cn?.size() ?: 0}, static=${staticKeys.size()}, dynamic=runtime, dead=${deadKeys}, collisions=${collisions}, placeholderMismatches=${placeholderMismatches}, total=${totalKeys}"
+        def summary = [
+            "en_us=${langs.en_us?.size() ?: 0}",
+            "zh_cn=${langs.zh_cn?.size() ?: 0}",
+            "runtimeDerived=0",
+            "explicitDynamic=${expectedKeys.size()}",
+            "static=${staticKeys.size()}",
+            "expected=${expectedKeys.size()}",
+            "duplicateJson=${duplicateJsonCount}",
+            "missing=${missingKeyCount}",
+            "dead=${deadKeyCount}",
+            "collisions=${collisionCount}",
+            "placeholderMismatches=${placeholderMismatches}",
+            "meteorTokenMismatches=${meteorTokenMismatches}",
+            "invalidValues=${invalidValueCount}",
+            "formatterFailures=${formatterFailures}"
+        ].join(', ')
+        println "WaveXin translation verification PASS-CANDIDATE: ${summary}"
 
         if (!errors.isEmpty()) {
             throw new GradleException("WaveXin translation verification failed:\n" + errors.join('\n'))
         }
+        println "WaveXin translation verification PASS: ${summary}"
     }
+}
+
+tasks.register("testWaveXinI18nBehavior", JavaExec) {
+    dependsOn(tasks.named("testClasses"))
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = "me.waltom.wavexin.i18n.WaveXinI18nBehaviorTest"
+}
+
+tasks.named("test") {
+    dependsOn(tasks.named("testWaveXinI18nBehavior"))
+    failOnNoDiscoveredTests = false
 }
 
 tasks.named("check") {
