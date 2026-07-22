@@ -116,8 +116,7 @@ message.wavexin.base_finder.spiral_started
 message.wavexin.base_finder.spiral_step_resumed
 message.wavexin.base_finder.xaero_area_limit
 message.wavexin.base_finder.xaero_created
-message.wavexin.module.disabled
-message.wavexin.module.enabled
+message.wavexin.module.toggled
 message.wavexin.simple_elytra_fly_path.started
 meta.wavexin.language
 module.wavexin.auto_login.description
