@@ -16,12 +16,21 @@ public abstract class WaveXinModule extends Module {
     @Override
     public void sendToggledMsg() {
         if (Config.get().chatFeedback.get() && chatFeedback) {
-            boolean active = isActive();
-            String state = active
+            ChatUtils.forceNextPrefixClass(getClass());
+            String state = isActive()
                 ? Formatting.GREEN + WaveXinI18n.tr("status.wavexin.module.on", "on")
                 : Formatting.RED + WaveXinI18n.tr("status.wavexin.module.off", "off");
-            String key = active ? "message.wavexin.module.enabled" : "message.wavexin.module.disabled";
-            ChatUtils.sendMsg(hashCode(), Formatting.GRAY, WaveXinI18n.tr(key, "%s toggled %s.", WaveXinI18n.moduleTitle(this), state));
+
+            ChatUtils.sendMsg(
+                hashCode(),
+                Formatting.GRAY,
+                WaveXinI18n.tr(
+                    "message.wavexin.module.toggled",
+                    "Toggled (highlight)%s(default) %s(default).",
+                    WaveXinI18n.moduleTitle(this),
+                    state
+                )
+            );
         }
     }
 
