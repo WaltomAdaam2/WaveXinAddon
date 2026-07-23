@@ -206,6 +206,7 @@ public class AutoLogin extends WaveXinModule {
     private boolean checkInSent;
     private boolean serverChecked;
     private boolean targetServer;
+    private boolean refreshingAccountEditor;
     private String lastPlayerName = "";
     private final Map<String, Pattern> questions = new HashMap<>();
     private String pendingAnswer;
@@ -372,9 +373,9 @@ public class AutoLogin extends WaveXinModule {
 
         config.accounts.put(playerName, account);
         config.save();
+
         passwordInput.set("");
-        savedAccounts.refresh();
-        syncAccountSettings();
+        if (!syncAccountSettings()) refreshAccountEditor();
         feedbackKey("message.wavexin.auto_login.account_saved", "Account saved as %s.", WaveXinI18n.enumLabel(account.type, account.type.toString()));
     }
 
@@ -383,10 +384,15 @@ public class AutoLogin extends WaveXinModule {
 
         config.save();
         if (playerName.equals(getAccountNameInput())) {
-            passwordInput.set("");
-            accountType.set(AccountType.Microsoft);
+            refreshingAccountEditor = true;
+            try {
+                passwordInput.set("");
+                accountType.set(AccountType.Microsoft);
+            } finally {
+                refreshingAccountEditor = false;
+            }
         }
-        savedAccounts.refresh();
+        refreshAccountEditor();
         feedbackKey("message.wavexin.auto_login.account_removed", "Saved account removed.");
     }
 
@@ -750,20 +756,36 @@ public class AutoLogin extends WaveXinModule {
             warningKey("warning.wavexin.auto_login.questions_load_failed", "Failed to load quiz answers: %s", e.getMessage());
         }
     }
-    private void syncAccountSettings() {
+    private boolean syncAccountSettings() {
         String playerName = getCurrentPlayerName();
         lastPlayerName = playerName;
-        if (!playerName.isEmpty()) {
+        if (playerName.isEmpty()) return false;
+
+        boolean changed = !playerName.equals(accountNameInput.get());
+        AccountRecord account = config.getAccount(playerName);
+        changed |= account != null && accountType.get() != account.type;
+
+        refreshingAccountEditor = true;
+        try {
             accountNameInput.set(playerName);
-            AccountRecord account = config.getAccount(playerName);
             if (account != null) accountType.set(account.type);
+        } finally {
+            refreshingAccountEditor = false;
         }
+
+        if (changed) refreshAccountEditor();
+        return changed;
     }
 
     private void onAccountTypeChanged(AccountType value) {
         if (passwordInput != null) passwordInput.set("");
-        if (savedAccounts != null) savedAccounts.refresh();
+        if (!refreshingAccountEditor) refreshAccountEditor();
     }
+
+    private void refreshAccountEditor() {
+        settings.invalidate();
+    }
+
     private List<SavedAccountEntry> getSavedAccounts() {
         List<SavedAccountEntry> accounts = new ArrayList<>();
         for (String playerName : config.accounts.keySet()) {
@@ -780,10 +802,15 @@ public class AutoLogin extends WaveXinModule {
         AccountRecord account = config.getAccount(playerName);
         if (account == null) return;
 
-        accountNameInput.set(playerName);
-        accountType.set(account.type);
-        passwordInput.set("");
-        savedAccounts.refresh();
+        refreshingAccountEditor = true;
+        try {
+            accountNameInput.set(playerName);
+            accountType.set(account.type);
+            passwordInput.set("");
+        } finally {
+            refreshingAccountEditor = false;
+        }
+        refreshAccountEditor();
     }
 
     private String getAccountNameInput() {
