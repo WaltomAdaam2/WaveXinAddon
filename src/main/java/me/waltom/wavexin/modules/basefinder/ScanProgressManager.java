@@ -96,7 +96,6 @@ public class ScanProgressManager {
 
         document.spiral = legacyProgress;
         writeDocument(document);
-        WaveXinAddon.LOG.info("Migrated legacy Spiral Scan progress to {}.", WaveXinDataPaths.SCAN_PROGRESS_PATH);
         return legacyProgress;
     }
 

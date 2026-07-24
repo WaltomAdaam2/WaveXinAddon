@@ -133,8 +133,6 @@ public class BaseFinder extends WaveXinModule {
     private boolean spiralNeedsInitialRotation;
     private ScanMethod activeScanMethod;
     private boolean scanStartPending;
-    private static final int NORMAL_DEBUG_HEARTBEAT_TICKS = 40;
-    private int normalDebugTicks;
     private String normalDebugState = "INACTIVE";
     private String syncedNormalProgressKey;
     private int lastCompletedNormalRing = -1;
@@ -577,7 +575,6 @@ public class BaseFinder extends WaveXinModule {
         activeScanMethod = scanMethod.get();
         setScanForwardKey(false);
         scanStartPending = true;
-        normalDebugTicks = 0;
         normalDebugState = "INACTIVE";
         setNormalDebugState("ACTIVATED", "selectedMethod=" + activeScanMethod);
         if (mc.player != null && mc.world != null) initializeActiveScan();
@@ -725,7 +722,6 @@ public class BaseFinder extends WaveXinModule {
 
     @EventHandler
     private void onTick(TickEvent.Pre event) {
-        if (activeScanMethod == ScanMethod.NORMAL) normalDebugTicks++;
         if (scanStartPending) {
             initializeActiveScan();
             if (scanStartPending) {
@@ -867,9 +863,6 @@ public class BaseFinder extends WaveXinModule {
     private void onPostTick(TickEvent.Post event) {
         if (activeScanMethod != ScanMethod.NORMAL) return;
         restoreNormalViewYaw();
-        if (normalDebugTicks > 0 && normalDebugTicks % NORMAL_DEBUG_HEARTBEAT_TICKS == 0) {
-            logNormalDebugSnapshot("HEARTBEAT", "stateUnchanged");
-        }
     }
 
     @Override
@@ -878,7 +871,6 @@ public class BaseFinder extends WaveXinModule {
         restoreNormalViewYaw();
         scanStartPending = false;
         ScanMethod stoppedScanMethod = activeScanMethod;
-        if (stoppedScanMethod == ScanMethod.NORMAL) logNormalDebugSnapshot("DEACTIVATE", "moduleDisabled");
         activeScanMethod = null;
 
         if (stoppedScanMethod == ScanMethod.SPIRAL) {
@@ -1038,53 +1030,8 @@ public class BaseFinder extends WaveXinModule {
     private void setNormalDebugState(String state, String detail) {
         if (activeScanMethod != ScanMethod.NORMAL || state.equals(normalDebugState)) return;
         normalDebugState = state;
-        logNormalDebugSnapshot("STATE", detail);
     }
 
-    private void logNormalDebugSnapshot(String event, String detail) {
-        String playerState;
-        if (mc.player == null) {
-            playerState = "player=null";
-        } else {
-            Vec3d velocity = mc.player.getVelocity();
-            ChunkPos playerChunk = mc.player.getChunkPos();
-            boolean currentChunkLoaded = mc.world != null && mc.world.getChunkManager().isChunkLoaded(playerChunk.x, playerChunk.z);
-            boolean forwardPressed = mc.options != null && mc.options.forwardKey.isPressed();
-            playerState = "pos=(" + mc.player.getX() + "," + mc.player.getY() + "," + mc.player.getZ() + ")"
-                + " playerChunk=" + chunkDebugLabel(playerChunk)
-                + " currentChunkLoaded=" + currentChunkLoaded
-                + " velocity=(" + velocity.x + "," + velocity.y + "," + velocity.z + ")"
-                + " playerYaw=" + mc.player.getYaw()
-                + " sprinting=" + mc.player.isSprinting()
-                + " forwardPressed=" + forwardPressed
-                + " forcingForward=" + forcingForward
-                + " age=" + mc.player.age;
-        }
-
-        WaveXinAddon.LOG.info(
-            "[BaseFinderDebug] event={} state={} detail={} method={} pending={} origin={} target={} resume={} ring={} route={} turnDelay={} targetYaw={} waitChunks={} chunkRadius={} waitDistance={} waitRadius={} viewDistance={} clampedViewDistance={} screen={} {}",
-            event,
-            normalDebugState,
-            detail,
-            activeScanMethod,
-            scanStartPending,
-            chunkDebugLabel(originChunk),
-            chunkDebugLabel(targetChunk),
-            chunkDebugLabel(resumeCheckpointChunk),
-            currentCircle,
-            currentPath,
-            turnDelayTimer,
-            targetYaw,
-            waitChunkLoad.get(),
-            chunkLoadRadius.get(),
-            chunkWaitDistance.get(),
-            getChunkWaitRadius(),
-            mc.options == null ? -1 : mc.options.getViewDistance().getValue(),
-            mc.options == null ? -1 : mc.options.getClampedViewDistance(),
-            mc.currentScreen == null ? "none" : mc.currentScreen.getClass().getSimpleName(),
-            playerState
-        );
-    }
 
     private String describeStartReadiness() {
         ChunkPos playerChunk = mc.player.getChunkPos();
@@ -1160,7 +1107,6 @@ public class BaseFinder extends WaveXinModule {
         try {
             Files.createDirectories(CONTAINER_RECORD_PATH.getParent());
             Files.copy(LEGACY_CONTAINER_RECORD_PATH, CONTAINER_RECORD_PATH);
-            WaveXinAddon.LOG.info("Migrated container records to {}.", CONTAINER_RECORD_PATH);
         } catch (IOException e) {
             WaveXinAddon.LOG.error("Could not migrate container records to {}.", CONTAINER_RECORD_PATH, e);
         }

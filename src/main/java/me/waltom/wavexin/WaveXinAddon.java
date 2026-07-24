@@ -30,7 +30,6 @@ public class WaveXinAddon extends MeteorAddon {
 
     @Override
     public void onInitialize() {
-        LOG.info("Initializing WaveXinAddon.");
         ChatUtils.registerCustomPrefix(getPackage(), WaveXinAddon::createChatPrefix);
         BetterChat.registerCustomHead("[WaveXin]", CHAT_AVATAR);
         MeteorClient.EVENT_BUS.subscribe(new WaveXinSettingsAutoSaver());

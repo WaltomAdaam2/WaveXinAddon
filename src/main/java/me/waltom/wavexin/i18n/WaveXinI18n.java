@@ -257,9 +257,7 @@ public final class WaveXinI18n {
 
     public static void markUiPath(String path) {
         if (!DEVELOPMENT || path == null || path.isBlank()) return;
-        if (LOGGED_UI_PATHS.add(path)) {
-            WaveXinAddon.LOG.info("WaveXin i18n UI path active: {}", path);
-        }
+        LOGGED_UI_PATHS.add(path);
     }
 
     public static void validateResources(Iterable<Module> modules) {
@@ -282,9 +280,7 @@ public final class WaveXinI18n {
         errors += reportMismatchedResourceKeys(en.keySet(), zh.keySet());
         errors += reportPlaceholderMismatches(en, zh);
 
-        if (errors == 0) {
-            WaveXinAddon.LOG.info("WaveXin i18n runtime validation PASS: {} required keys checked.", required.size());
-        } else {
+        if (errors != 0) {
             WaveXinAddon.LOG.warn(
                 "WaveXin i18n runtime validation FAIL: {} errors across {} required keys.",
                 errors,
