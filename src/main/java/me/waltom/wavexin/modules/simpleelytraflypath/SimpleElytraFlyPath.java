@@ -317,6 +317,7 @@ public class SimpleElytraFlyPath extends WaveXinModule {
 
         if (shouldStop && isActive()) {
             toggle();
+            sendToggledMsg();
         }
 
         if (shouldDisconnect && mc.getNetworkHandler() != null) {

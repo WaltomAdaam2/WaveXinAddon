@@ -2,7 +2,7 @@
 
 **Language / 语言:** [中文](README.md) | English
 
-WaveXinAddon is a Meteor Client addon designed for the **2b2t.xin** server. It provides elytra flight, path flight, auto login, auto answer, automatic Daily Flower (monthly pass) check-ins, base scanning, chat filtering, entity nametags, and other utility modules.
+WaveXinAddon is a Meteor Client addon designed for the **2b2t.xin** server. It provides elytra flight, automatic elytra replacement, path flight, auto login, auto answer, automatic Daily Flower (monthly pass) check-ins, base scanning, chat filtering, entity nametags, and other utility modules.
 
 <p align="center">
   <img src="assets/wavexin_readme_preview.png" alt="WaveXinAddon Preview" width="850">
@@ -11,6 +11,7 @@ WaveXinAddon is a Meteor Client addon designed for the **2b2t.xin** server. It p
 ## Features
 
 * Better Elytra Fly: Elytra flight helper
+* Elytra Replace: Replaces a nearly broken elytra from inventory
 * Simple Elytra Fly Path: Simple coordinate-based elytra path flight
 * ChickenNametags: Chicken entity nametags
 * SnifferNametags: Sniffer entity nametags

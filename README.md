@@ -2,7 +2,7 @@
 
 **语言 / Language:** 中文 | [English](README_EN.md)
 
-WaveXinAddon 是一个为 **2b2t.xin** 服务器设计的 Meteor Client Addon (彗星段扩展)，主要提供鞘翅飞行、路径飞行、自动登录、自动答题、自动每日小红花（月卡）、基地扫描、聊天过滤和实体名牌显示等辅助功能。
+WaveXinAddon 是一个为 **2b2t.xin** 服务器设计的 Meteor Client Addon (彗星段扩展)，主要提供鞘翅飞行、鞘翅自动更换、路径飞行、自动登录、自动答题、自动每日小红花（月卡）、基地扫描、聊天过滤和实体名牌显示等辅助功能。
 
 <p align="center">
   <img src="assets/wavexin_readme_preview.png" alt="WaveXinAddon Preview" width="850">
@@ -11,6 +11,7 @@ WaveXinAddon 是一个为 **2b2t.xin** 服务器设计的 Meteor Client Addon (�
 ## 功能
 
 * Better Elytra Fly：鞘翅飞行辅助
+* Elytra Replace：鞘翅耐久过低时自动从背包更换
 * Simple Elytra Fly Path：简单坐标路径飞行
 * ChickenNametags：鸡实体名牌显示
 * SnifferNametags：嗅探兽实体名牌显示
