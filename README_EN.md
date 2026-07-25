@@ -10,8 +10,7 @@ WaveXinAddon is a Meteor Client addon designed for the **2b2t.xin** server. It p
 
 ## Features
 
-* Better Elytra Fly: Elytra flight helper
-* Elytra Replace: Replaces a nearly broken elytra from inventory
+* Better Elytra Fly: Elytra flight helper with optional automatic replacement for nearly broken elytra
 * Simple Elytra Fly Path: Simple coordinate-based elytra path flight
 * ChickenNametags: Chicken entity nametags
 * SnifferNametags: Sniffer entity nametags
