@@ -7,12 +7,9 @@ This page describes implementation details and notable behavior for the public C
 - Adjusts horizontal and vertical movement while gliding according to movement keys, view direction, and speed settings.
 - `Auto Start` uses the normal client glide-start flow when its conditions are met; `Auto Stop` ends assisted flight under its configured conditions.
 - `Speed Limit` caps the final speed, while `No Drag` removes the drag simulated by this module.
-
-### Elytra Replace
-
-- When the equipped elytra reaches the configured remaining-durability threshold, it finds a spare elytra above that threshold and equips it in the chest slot.
+- The module's `Elytra Replace` setting group can independently enable automatic replacement. When the equipped elytra reaches the configured remaining-durability threshold, it finds a spare elytra above that threshold and equips it in the chest slot.
 - Replacement can be limited to active gliding. Missing-spare warnings are rate-limited to prevent chat spam.
-- The compatibility option temporarily disables Meteor InventoryTweaks during replacement and restores it after the configured delay.
+- The Inventory Tweaks compatibility option temporarily disables that module during replacement and restores it after the configured delay.
 
 ### Simple Elytra Fly Path
 

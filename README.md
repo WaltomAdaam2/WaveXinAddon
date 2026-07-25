@@ -10,8 +10,7 @@ WaveXinAddon 是一个为 **2b2t.xin** 服务器设计的 Meteor Client Addon (�
 
 ## 功能
 
-* Better Elytra Fly：鞘翅飞行辅助
-* Elytra Replace：鞘翅耐久过低时自动从背包更换
+* Better Elytra Fly：鞘翅飞行辅助，包含耐久过低时自动更换备用鞘翅
 * Simple Elytra Fly Path：简单坐标路径飞行
 * ChickenNametags：鸡实体名牌显示
 * SnifferNametags：嗅探兽实体名牌显示
