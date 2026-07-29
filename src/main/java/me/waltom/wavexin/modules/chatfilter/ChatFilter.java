@@ -48,7 +48,8 @@ public class ChatFilter extends WaveXinModule {
     );
     private static final Pattern PRIVATE_MESSAGE_PLAYER_PATTERN = Pattern.compile("(?im)(?:^|\\R)\\s*(?:(?:from|to)\\s+([^\\r\\n:：]{1,64})\\s*[:：]|来自\\s*([^\\r\\n:：]{1,64})\\s*[:：]|([^\\r\\n:：]{1,64})\\s+(?:whispers|tells you)\\b)");
     private static final Pattern PRIVATE_MESSAGE_TAG_PATTERN = Pattern.compile("(?i)\\[[^\\]]*(?:private\\s+message|私聊信息|私信|密语|悄悄话)[^\\]]*\\]");
-    private static final Pattern PUBLIC_MESSAGE_PATTERN = Pattern.compile("(?:^\\s*<[^>]+>\\s+.+|^\\s*[^\\s:]{1,32}:\\s+.+)");
+    private static final Pattern PUBLIC_MESSAGE_PLAYER_PATTERN = Pattern.compile("(?im)(?:^|\\R)\\s*(?:<([^>]{1,64})>\\s+.+|([^\\s:：]{1,64})\\s*[:：]\\s+.+)");
+    private static final Pattern PUBLIC_MESSAGE_PATTERN = Pattern.compile("(?im)(?:^|\\R)\\s*(?:<[^>]+>\\s+.+|[^\\s:：]{1,64}\\s*[:：]\\s+.+)");
     private static final CharFilter PLAYER_NAME_FILTER = (text, c) -> c != ' ' && c != ':' && c != '：' && c != '\n' && c != '\r';
 
     static {
@@ -79,6 +80,12 @@ public class ChatFilter extends WaveXinModule {
         .defaultValue(true)
         .build()
     );
+
+    private final Setting<List<String>> publicMessageAllowlist = sgGeneral.add(new PlayerNameListSetting(
+        "Public Message Allowlist",
+        "Shows public messages from these players even when public chat filtering is enabled.",
+        hidePublicMessages::get
+    ));
 
     private final Setting<Boolean> hideDeathMessages = sgGeneral.add(new BoolSetting.Builder()
         .name("Hide Death Messages")
@@ -117,7 +124,11 @@ public class ChatFilter extends WaveXinModule {
             String player = privateMessagePlayer(normalized);
             return !playerListContains(privateMessageAllowlist.get(), player);
         }
-        return hidePublicMessages.get() && PUBLIC_MESSAGE_PATTERN.matcher(normalized).find();
+        if (hidePublicMessages.get() && PUBLIC_MESSAGE_PATTERN.matcher(normalized).find()) {
+            String player = publicMessagePlayer(normalized);
+            return !playerListContains(publicMessageAllowlist.get(), player);
+        }
+        return false;
     }
 
     static String normalize(String message) {
@@ -132,6 +143,17 @@ public class ChatFilter extends WaveXinModule {
 
     static String privateMessagePlayer(String message) {
         Matcher matcher = PRIVATE_MESSAGE_PLAYER_PATTERN.matcher(message);
+        if (!matcher.find()) return null;
+
+        for (int i = 1; i <= matcher.groupCount(); i++) {
+            String group = matcher.group(i);
+            if (group != null && !group.isBlank()) return group.trim();
+        }
+        return null;
+    }
+
+    static String publicMessagePlayer(String message) {
+        Matcher matcher = PUBLIC_MESSAGE_PLAYER_PATTERN.matcher(message);
         if (!matcher.find()) return null;
 
         for (int i = 1; i <= matcher.groupCount(); i++) {

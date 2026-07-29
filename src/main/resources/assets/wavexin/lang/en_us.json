@@ -136,6 +136,8 @@
   "setting.wavexin.chat_filter.general.msg_allowlist.description": "Shows MSG private messages involving these players even when MSG filtering is enabled.",
   "setting.wavexin.chat_filter.general.hide_public_messages.title": "Hide Public Messages",
   "setting.wavexin.chat_filter.general.hide_public_messages.description": "Hides normal public chat messages.",
+  "setting.wavexin.chat_filter.general.public_message_allowlist.title": "Public Message Allowlist",
+  "setting.wavexin.chat_filter.general.public_message_allowlist.description": "Shows public messages from these players even when public chat filtering is enabled.",
   "setting.wavexin.chat_filter.general.hide_death_messages.title": "Hide Death Messages",
   "setting.wavexin.chat_filter.general.hide_death_messages.description": "Hides structured server death announcements.",
   "setting.wavexin.base_finder.scan_mode.scan_method.title": "Scan Method",

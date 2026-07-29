@@ -27,6 +27,8 @@ public final class ChatFilterBehaviorTest {
         assertEquals("Alice", ChatFilter.privateMessagePlayer("From Alice: hi"), "from private player");
         assertEquals("Bob", ChatFilter.privateMessagePlayer("Bob whispers: hi"), "whisper private player");
         assertEquals("小明", ChatFilter.privateMessagePlayer("来自 小明: 你好"), "chinese private player");
+        assertEquals("Alice", ChatFilter.publicMessagePlayer("<Alice> hello"), "angle public player");
+        assertEquals("Bob", ChatFilter.publicMessagePlayer("Bob: hello"), "colon public player");
         assertTrue(ChatFilter.playerListContains(List.of("Alice"), "alice"), "case-insensitive allowlist");
         assertFalse(ChatFilter.playerListContains(List.of("Alice"), "Bob"), "different allowlist player");
 

@@ -136,6 +136,8 @@
   "setting.wavexin.chat_filter.general.msg_allowlist.description": "即使启用 MSG 私聊过滤，也显示涉及这些玩家的 MSG 私聊消息。",
   "setting.wavexin.chat_filter.general.hide_public_messages.title": "隐藏公共聊天",
   "setting.wavexin.chat_filter.general.hide_public_messages.description": "隐藏普通公共聊天消息。",
+  "setting.wavexin.chat_filter.general.public_message_allowlist.title": "公共聊天白名单",
+  "setting.wavexin.chat_filter.general.public_message_allowlist.description": "即使启用公共聊天过滤，也显示这些玩家发送的公共聊天消息。",
   "setting.wavexin.chat_filter.general.hide_death_messages.title": "隐藏死亡消息",
   "setting.wavexin.chat_filter.general.hide_death_messages.description": "隐藏服务器发送的结构化死亡公告。",
   "setting.wavexin.base_finder.scan_mode.scan_method.title": "扫描方法",
