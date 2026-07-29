@@ -54,44 +54,54 @@ public class TurtlePotionThrower extends WaveXinModule {
 
     private void throwTurtlePotion() {
         if (mc.player == null || mc.world == null || mc.interactionManager == null || mc.currentScreen != null) {
-            warnFailure("warning.wavexin.turtle_potion_thrower.unavailable", "Cannot throw turtle potion right now.");
+            warnFailure(TurtlePotionThrowerPlan.unavailable());
             return;
         }
 
         FindItemResult result = InvUtils.find(TurtlePotionThrower::isThrowableTurtlePotion);
-        if (!result.found()) {
-            warnFailure("warning.wavexin.turtle_potion_thrower.no_potion", "No throwable turtle potion was found.");
+        TurtlePotionThrowerPlan.Plan plan = TurtlePotionThrowerPlan.choose(
+            result.found(),
+            result.isMainHand(),
+            result.isOffhand(),
+            result.isHotbar(),
+            mc.player.getInventory().getSelectedSlot(),
+            result.slot(),
+            quickSwap.get()
+        );
+
+        if (plan.warns()) {
+            warnFailure(plan);
             return;
         }
 
-        if (result.isMainHand()) {
+        switch (plan.action()) {
+            case USE_MAIN_HAND -> usePotion(Hand.MAIN_HAND);
+            case USE_OFFHAND -> usePotion(Hand.OFF_HAND);
+            case HOTBAR_SWAP -> throwFromHotbarSlot(plan.selectedSlot(), plan.itemSlot());
+            case QUICK_SWAP -> throwWithQuickSwap(plan.selectedSlot(), plan.itemSlot());
+            case WARNING -> warnFailure(plan);
+        }
+    }
+
+    private void throwWithQuickSwap(int selectedSlot, int itemSlot) {
+        Object player = mc.player;
+        Object world = mc.world;
+        InvUtils.quickSwap().fromId(selectedSlot).to(itemSlot);
+        try {
             usePotion(Hand.MAIN_HAND);
-            return;
-        }
-        if (result.isOffhand()) {
-            usePotion(Hand.OFF_HAND);
-            return;
-        }
-
-        if (!result.isHotbar() && !quickSwap.get()) {
-            warnFailure("warning.wavexin.turtle_potion_thrower.hotbar_required", "No turtle potion was found in your hotbar. Enable Quick Swap to use inventory potions.");
-            return;
-        }
-
-        int selectedSlot = mc.player.getInventory().getSelectedSlot();
-        int itemSlot = result.slot();
-
-        if (quickSwap.get()) {
-            InvUtils.quickSwap().fromId(selectedSlot).to(itemSlot);
-            try {
-                usePotion(Hand.MAIN_HAND);
-            } finally {
+        } finally {
+            if (samePlayerWorld(player, world)) {
                 InvUtils.quickSwap().fromId(selectedSlot).to(itemSlot);
+            } else {
+                logRestoreSkipped();
             }
-            return;
         }
+    }
 
-        if (!InvUtils.swap(itemSlot, true)) {
+    private void throwFromHotbarSlot(int selectedSlot, int itemSlot) {
+        Object player = mc.player;
+        Object world = mc.world;
+        if (!InvUtils.swap(itemSlot, false)) {
             warnFailure("warning.wavexin.turtle_potion_thrower.swap_failed", "Failed to swap to the turtle potion slot.");
             return;
         }
@@ -99,10 +109,28 @@ public class TurtlePotionThrower extends WaveXinModule {
         try {
             usePotion(Hand.MAIN_HAND);
         } finally {
-            if (!InvUtils.swapBack()) {
-                warnFailure("warning.wavexin.turtle_potion_thrower.restore_failed", "Failed to restore the previous hotbar slot after throwing turtle potion.");
-            }
+            restoreSelectedSlot(selectedSlot, player, world);
         }
+    }
+
+    private void restoreSelectedSlot(int selectedSlot, Object player, Object world) {
+        if (!TurtlePotionThrowerPlan.isValidHotbarSlot(selectedSlot)) return;
+        if (!samePlayerWorld(player, world)) {
+            logRestoreSkipped();
+            return;
+        }
+
+        if (!InvUtils.swap(selectedSlot, false)) {
+            warnFailure("warning.wavexin.turtle_potion_thrower.restore_failed", "Failed to restore the previous hotbar slot after throwing turtle potion.");
+        }
+    }
+
+    private boolean samePlayerWorld(Object player, Object world) {
+        return mc.player == player && mc.world == world;
+    }
+
+    private void logRestoreSkipped() {
+        WaveXinAddon.LOG.warn("[WaveXinDebug] module={} message=Skipped turtle potion slot restore because player or world changed.", getClass().getSimpleName());
     }
 
     private boolean usePotion(Hand hand) {
@@ -123,9 +151,13 @@ public class TurtlePotionThrower extends WaveXinModule {
                 || contents.matches(Potions.STRONG_TURTLE_MASTER));
     }
 
+    private void warnFailure(TurtlePotionThrowerPlan.Plan plan) {
+        warnFailure(plan.warningKey(), plan.fallback());
+    }
+
     private void warnFailure(String key, String fallback) {
         String message = WaveXinI18n.tr(key, fallback);
         WaveXinAddon.LOG.warn("[WaveXinDebug] module={} message={}", getClass().getSimpleName(), message);
-        if (notify.get()) ChatUtils.warning(message);
+        if (TurtlePotionThrowerPlan.shouldChatNotify(notify.get())) ChatUtils.warning(message);
     }
 }
