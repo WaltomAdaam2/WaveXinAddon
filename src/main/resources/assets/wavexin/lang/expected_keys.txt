@@ -220,6 +220,10 @@ setting.wavexin.base_finder.render.render_distance.description
 setting.wavexin.base_finder.render.render_distance.title
 setting.wavexin.base_finder.render.render_height.description
 setting.wavexin.base_finder.render.render_height.title
+setting.wavexin.base_finder.render.resume_checkpoint_line_color.description
+setting.wavexin.base_finder.render.resume_checkpoint_line_color.title
+setting.wavexin.base_finder.render.resume_checkpoint_side_color.description
+setting.wavexin.base_finder.render.resume_checkpoint_side_color.title
 setting.wavexin.base_finder.render.shape_mode.description
 setting.wavexin.base_finder.render.shape_mode.title
 setting.wavexin.base_finder.render.target_chunk_line_color.description

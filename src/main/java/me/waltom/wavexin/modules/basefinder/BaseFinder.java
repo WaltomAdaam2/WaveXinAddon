@@ -633,6 +633,20 @@ public class BaseFinder extends WaveXinModule {
             .visible(() -> isNormalScan() && (shapeMode.get() == ShapeMode.Lines || shapeMode.get() == ShapeMode.Both))
             .build());
 
+    private final Setting<SettingColor> resumeCheckpointSideColor = sgRender.add(new ColorSetting.Builder()
+            .name("Resume Checkpoint Side Color")
+            .description("Saved checkpoint fill color while returning to it.")
+            .defaultValue(new SettingColor(224, 176, 255, 95))
+            .visible(() -> isNormalScan() && (shapeMode.get() == ShapeMode.Sides || shapeMode.get() == ShapeMode.Both))
+            .build());
+
+    private final Setting<SettingColor> resumeCheckpointLineColor = sgRender.add(new ColorSetting.Builder()
+            .name("Resume Checkpoint Line Color")
+            .description("Saved checkpoint outline color while returning to it.")
+            .defaultValue(new SettingColor(224, 176, 255, 205))
+            .visible(() -> isNormalScan() && (shapeMode.get() == ShapeMode.Lines || shapeMode.get() == ShapeMode.Both))
+            .build());
+
     public BaseFinder() {
         super(WaveXinAddon.CATEGORY, "base-finder", "Outward map scanner with chunk-loading pauses.");
     }
@@ -1925,14 +1939,18 @@ public class BaseFinder extends WaveXinModule {
                 if (deltaX * deltaX + deltaZ * deltaZ > maxDistanceSq) continue;
 
                 ChunkPos chunk = new ChunkPos(chunkX, chunkZ);
+                boolean resumeCheckpoint = resumeCheckpointChunk != null && resumeCheckpointChunk.equals(chunk);
                 boolean currentPathChunk = isChunkOnCurrentNormalPath(chunkX, chunkZ);
                 boolean targetPreviewChunk = isChunkOnPreparedNormalRing(chunkX, chunkZ);
-                if (!currentPathChunk && !targetPreviewChunk) continue;
+                if (!resumeCheckpoint && !currentPathChunk && !targetPreviewChunk) continue;
 
                 SettingColor sideColor;
                 SettingColor lineColor;
 
-                if (currentPathChunk) {
+                if (resumeCheckpoint) {
+                    sideColor = resumeCheckpointSideColor.get();
+                    lineColor = resumeCheckpointLineColor.get();
+                } else if (currentPathChunk) {
                     sideColor = currentPathSideColor.get();
                     lineColor = currentPathLineColor.get();
                 } else if (visitedChunks.contains(chunk)) {
