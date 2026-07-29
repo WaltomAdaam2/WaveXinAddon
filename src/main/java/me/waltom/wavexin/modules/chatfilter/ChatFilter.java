@@ -49,8 +49,7 @@ public class ChatFilter extends WaveXinModule {
     );
     private static final Pattern PRIVATE_MESSAGE_PLAYER_PATTERN = Pattern.compile("(?im)(?:^|\\R)\\s*(?:(?:from|to)\\s+([^\\r\\n:：]{1,64})\\s*[:：]|来自\\s*([^\\r\\n:：]{1,64})\\s*[:：]|([^\\r\\n:：]{1,64})\\s+(?:whispers|tells you)\\b)");
     private static final Pattern PRIVATE_MESSAGE_TAG_PATTERN = Pattern.compile("(?i)\\[[^\\]]*(?:private\\s+message|私聊信息|私信|密语|悄悄话)[^\\]]*\\]");
-    private static final String BLOCKED_PUBLIC_COLON_PREFIX = "(?!(?:使用方式|系统|Warning|Error|Server)\\s*[:：])";
-    private static final Pattern PUBLIC_MESSAGE_PLAYER_PATTERN = Pattern.compile("(?im)(?:^|\\R)\\s*(?:<(" + PLAYER_NAME + ")>\\s+.+|" + BLOCKED_PUBLIC_COLON_PREFIX + "(" + PLAYER_NAME + ")\\s*[:：]\\s+.+)");
+    private static final Pattern PUBLIC_MESSAGE_PLAYER_PATTERN = Pattern.compile("^\\s*<(" + PLAYER_NAME + ")>\\s+[^\\r\\n]+$");
     private static final CharFilter PLAYER_NAME_FILTER = (text, c) -> c != ' ' && c != ':' && c != '：' && c != '\n' && c != '\r';
 
     static {
@@ -133,10 +132,14 @@ public class ChatFilter extends WaveXinModule {
             String player = privateMessagePlayer(normalized);
             return !playerListContains(privateMessageAllowlist.get(), player);
         }
-        if (hidePublicMessages.get() && publicMessagePlayer(normalized) != null) {
-            String player = publicMessagePlayer(normalized);
-            if (showOwnPublicMessages.get() && isOwnPlayer(player)) return false;
-            return !playerListContains(publicMessageAllowlist.get(), player);
+        if (hidePublicMessages.get()) {
+            return shouldHidePublicMessage(
+                normalized,
+                publicMessageAllowlist.get(),
+                showOwnPublicMessages.get(),
+                ownAccountName(),
+                ownDisplayName()
+            );
         }
         return false;
     }
@@ -164,7 +167,7 @@ public class ChatFilter extends WaveXinModule {
 
     static String publicMessagePlayer(String message) {
         Matcher matcher = PUBLIC_MESSAGE_PLAYER_PATTERN.matcher(message);
-        if (!matcher.find()) return null;
+        if (!matcher.matches()) return null;
 
         for (int i = 1; i <= matcher.groupCount(); i++) {
             String group = matcher.group(i);
@@ -173,11 +176,21 @@ public class ChatFilter extends WaveXinModule {
         return null;
     }
 
-    private boolean isOwnPlayer(String player) {
-        if (mc.player == null) return false;
-        if (samePlayerName(mc.player.getName().getString(), player)) return true;
+    static boolean shouldHidePublicMessage(String message, List<String> allowlist, boolean showOwn, String ownAccountName, String ownDisplayName) {
+        String player = publicMessagePlayer(normalize(message));
+        if (player == null) return false;
+        if (showOwn && (samePlayerName(ownAccountName, player) || samePlayerName(ownDisplayName, player))) return false;
+        return !playerListContains(allowlist, player);
+    }
+
+    private String ownAccountName() {
+        return mc.player == null ? null : mc.player.getName().getString();
+    }
+
+    private String ownDisplayName() {
+        if (mc.player == null) return null;
         Text displayName = mc.player.getDisplayName();
-        return displayName != null && samePlayerName(displayName.getString(), player);
+        return displayName == null ? null : displayName.getString();
     }
 
     static boolean samePlayerName(String expected, String actual) {
