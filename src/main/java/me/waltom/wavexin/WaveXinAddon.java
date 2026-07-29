@@ -4,6 +4,7 @@ import me.waltom.wavexin.modules.sniffernametags.SnifferNametags;
 import me.waltom.wavexin.modules.simpleelytraflypath.SimpleElytraFlyPath;
 import me.waltom.wavexin.modules.chickennametags.ChickenNametags;
 import me.waltom.wavexin.modules.chatfilter.ChatFilter;
+import me.waltom.wavexin.modules.turtlepotionthrower.TurtlePotionThrower;
 import me.waltom.wavexin.modules.betterelytrafly.BetterElytraFly;
 import me.waltom.wavexin.modules.basefinder.BaseFinder;
 import me.waltom.wavexin.modules.autologin.AutoLogin;
@@ -40,6 +41,7 @@ public class WaveXinAddon extends MeteorAddon {
         Modules.get().add(new SnifferNametags());
         Modules.get().add(new AutoLogin());
         Modules.get().add(new ChatFilter());
+        Modules.get().add(new TurtlePotionThrower());
         Modules.get().add(new BaseFinder());
         WaveXinI18n.validateResources(Modules.get().getAll());
     }
