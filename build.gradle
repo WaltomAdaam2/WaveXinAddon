@@ -331,9 +331,23 @@ tasks.register("testWaveXinChatFilterBehavior", JavaExec) {
     mainClass = "me.waltom.wavexin.modules.chatfilter.ChatFilterBehaviorTest"
 }
 
+tasks.register("testWaveXinBaseFinderBehavior", JavaExec) {
+    dependsOn(tasks.named("testClasses"))
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = "me.waltom.wavexin.modules.basefinder.BaseFinderBehaviorTest"
+}
+
+tasks.register("testWaveXinTurtlePotionThrowerBehavior", JavaExec) {
+    dependsOn(tasks.named("testClasses"))
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = "me.waltom.wavexin.modules.turtlepotionthrower.TurtlePotionThrowerBehaviorTest"
+}
+
 tasks.named("test") {
     dependsOn(tasks.named("testWaveXinI18nBehavior"))
     dependsOn(tasks.named("testWaveXinChatFilterBehavior"))
+    dependsOn(tasks.named("testWaveXinBaseFinderBehavior"))
+    dependsOn(tasks.named("testWaveXinTurtlePotionThrowerBehavior"))
     failOnNoDiscoveredTests = false
 }
 
