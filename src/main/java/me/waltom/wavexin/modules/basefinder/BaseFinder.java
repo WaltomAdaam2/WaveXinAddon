@@ -145,6 +145,7 @@ public class BaseFinder extends WaveXinModule {
     private final List<BlockPos> createdWaypointPositions = new ArrayList<>();
     private final Set<Long> warnedMissingLoadedChunks = new HashSet<>();
     private final Set<String> warnedNormalDebugStates = new HashSet<>();
+    private String warnedSpiralCenteringKey;
     private int nextWaypointNumber = 1;
     private boolean warnedEmptyContainerBlocks;
     private boolean warnedContainerScanUnavailable;
@@ -813,7 +814,18 @@ public class BaseFinder extends WaveXinModule {
                     originChunk.z + chunkLoadRadius.get() * currentCircle * 2);
         }
 
-        if (mc.player.getChunkPos().equals(targetChunk)) {
+        if (targetChunk == null) {
+            setNormalDebugState("NO_TARGET", "turnDelay=" + turnDelayTimer);
+            setScanForwardKey(false);
+            return;
+        }
+
+
+        Vec3d targetPos = getChunkCenter(targetChunk);
+        double distance2D = horizontalDistanceTo(targetPos);
+        boolean inTargetChunk = mc.player.getChunkPos().equals(targetChunk);
+
+        if (inTargetChunk && distance2D < 1.0) {
             setNormalDebugState("AT_TARGET", "turnDelay=" + turnDelayTimer);
             setScanForwardKey(false);
             if (turnDelayTimer == 0) {
@@ -829,26 +841,15 @@ public class BaseFinder extends WaveXinModule {
             return;
         }
 
-        if (targetChunk == null || turnDelayTimer > 0) {
-            setNormalDebugState(targetChunk == null ? "NO_TARGET" : "TURN_DELAY", "turnDelay=" + turnDelayTimer);
-            setScanForwardKey(false);
-            return;
-        }
+        if (turnDelayTimer > 0) turnDelayTimer = 0;
 
-        Vec3d playerPos = new Vec3d(mc.player.getX(), mc.player.getY(), mc.player.getZ());
-        Vec3d targetPos = new Vec3d(targetChunk.getStartX() + 8, mc.player.getY(), targetChunk.getStartZ() + 8);
-
-        double deltaX = targetPos.x - playerPos.x;
-        double deltaZ = targetPos.z - playerPos.z;
-
-        double distance2D = Math.sqrt(deltaX * deltaX + deltaZ * deltaZ);
         if (distance2D < 1.0) {
             setNormalDebugState("WITHIN_TARGET_BLOCK", "distance=" + distance2D);
             setScanForwardKey(false);
             return;
         }
 
-        targetYaw = (float) Math.toDegrees(Math.atan2(-deltaX, deltaZ));
+        targetYaw = yawTo(targetPos);
         applyNormalMovementYaw(targetYaw);
 
         if (waitChunkLoad.get()) {
@@ -873,7 +874,7 @@ public class BaseFinder extends WaveXinModule {
             mc.player.setSprinting(true);
         }
 
-        setNormalDebugState("MOVING", "distance=" + distance2D);
+        setNormalDebugState(inTargetChunk ? "CENTERING_TARGET_CHUNK" : "MOVING", "distance=" + distance2D);
         setScanForwardKey(true);
     }
 
@@ -971,28 +972,17 @@ public class BaseFinder extends WaveXinModule {
     }
 
     private boolean moveToResumeCheckpoint() {
-        if (mc.player.getChunkPos().equals(resumeCheckpointChunk)) {
+        Vec3d checkpointCenter = getChunkCenter(resumeCheckpointChunk);
+        double distance = horizontalDistanceTo(checkpointCenter);
+        boolean inCheckpointChunk = mc.player.getChunkPos().equals(resumeCheckpointChunk);
+
+        if (inCheckpointChunk && distance < 1.0) {
             setScanForwardKey(false);
             setNormalDebugState("AT_RESUME_CHECKPOINT", "checkpoint=" + chunkDebugLabel(resumeCheckpointChunk));
             return true;
         }
 
-        Vec3d playerPos = new Vec3d(mc.player.getX(), mc.player.getY(), mc.player.getZ());
-        Vec3d checkpointCenter = new Vec3d(
-            resumeCheckpointChunk.getStartX() + 8,
-            mc.player.getY(),
-            resumeCheckpointChunk.getStartZ() + 8
-        );
-        double deltaX = checkpointCenter.x - playerPos.x;
-        double deltaZ = checkpointCenter.z - playerPos.z;
-        double distance = Math.sqrt(deltaX * deltaX + deltaZ * deltaZ);
-
-        if (distance < 1.0) {
-            setScanForwardKey(false);
-            return true;
-        }
-
-        targetYaw = (float) Math.toDegrees(Math.atan2(-deltaX, deltaZ));
+        targetYaw = yawTo(checkpointCenter);
         applyNormalMovementYaw(targetYaw);
 
         if (waitChunkLoad.get()) {
@@ -1013,11 +1003,12 @@ public class BaseFinder extends WaveXinModule {
             }
         }
 
-        setNormalDebugState("RETURNING_TO_CHECKPOINT", "checkpoint=" + chunkDebugLabel(resumeCheckpointChunk));
+        setNormalDebugState(inCheckpointChunk ? "CENTERING_RESUME_CHUNK" : "RETURNING_TO_CHECKPOINT", "checkpoint=" + chunkDebugLabel(resumeCheckpointChunk) + ",distance=" + distance);
         if (moveSpeed.get() > 1.0) mc.player.setSprinting(true);
         setScanForwardKey(true);
         return false;
     }
+
     private void applyNormalMovementYaw(float yaw) {
         if (lockView.get()) {
             restoreNormalViewYaw();
@@ -1108,6 +1099,8 @@ public class BaseFinder extends WaveXinModule {
         return normalDebugState.equals("WAITING_PLAYER_OR_WORLD")
             || normalDebugState.equals("WAITING_START_READY")
             || normalDebugState.equals("WAITING_CURRENT_CHUNK")
+            || normalDebugState.equals("CENTERING_TARGET_CHUNK")
+            || normalDebugState.equals("CENTERING_RESUME_CHUNK")
             || normalDebugState.equals("WAITING_RESUME_NEIGHBOR_CHUNKS")
             || normalDebugState.equals("WAITING_RESUME_CURRENT_CHUNK");
     }
@@ -1120,6 +1113,22 @@ public class BaseFinder extends WaveXinModule {
 
     private String chunkDebugLabel(ChunkPos chunk) {
         return chunk == null ? "null" : "(" + chunk.x + "," + chunk.z + ")";
+    }
+
+    private Vec3d getChunkCenter(ChunkPos chunk) {
+        return new Vec3d(chunk.getStartX() + 8, mc.player.getY(), chunk.getStartZ() + 8);
+    }
+
+    private double horizontalDistanceTo(Vec3d target) {
+        double deltaX = target.x - mc.player.getX();
+        double deltaZ = target.z - mc.player.getZ();
+        return Math.sqrt(deltaX * deltaX + deltaZ * deltaZ);
+    }
+
+    private float yawTo(Vec3d target) {
+        double deltaX = target.x - mc.player.getX();
+        double deltaZ = target.z - mc.player.getZ();
+        return (float) Math.toDegrees(Math.atan2(-deltaX, deltaZ));
     }
 
     private ChunkPos findFirstUnloadedNeighborChunk(float yaw) {
@@ -1152,6 +1161,7 @@ public class BaseFinder extends WaveXinModule {
         double z = Math.cos(radians);
         return Math.abs(z) > Math.abs(x) ? (z > 0 ? 1 : -1) : 0;
     }
+
     private int getChunkWaitRadius() {
         return Math.min(Math.max(0, chunkLoadRadius.get()), Math.max(0, chunkWaitDistance.get()));
     }
@@ -1567,7 +1577,7 @@ public class BaseFinder extends WaveXinModule {
         handleSpiralAutoWalk();
 
 
-        if (!hasReachedSpiralTarget(playerChunk)) return;
+        if (!hasReachedSpiralTarget()) return;
         boolean smoothRotation = advanceSpiralDirection();
         updateSpiralTarget();
         saveSpiralProgress();
@@ -1587,17 +1597,34 @@ public class BaseFinder extends WaveXinModule {
             return;
         }
 
-        setScanForwardKey(true);
-        if (spiralSprint.get()) mc.player.setSprinting(true);
+        Vec3d targetCenter = getChunkCenter(spiralTargetChunk);
+        double distance = horizontalDistanceTo(targetCenter);
+        if (distance >= 1.0) applySpiralRotation(yawTo(targetCenter));
+        if (mc.player.getChunkPos().equals(spiralTargetChunk) && distance >= 1.0) {
+            logSpiralCenteringIfNeeded(distance);
+        }
+
+        setScanForwardKey(distance >= 1.0);
+        if (distance >= 1.0 && spiralSprint.get()) mc.player.setSprinting(true);
     }
 
-    private boolean hasReachedSpiralTarget(ChunkPos currentChunk) {
-        return switch (spiralDirection) {
-            case EAST -> currentChunk.x >= spiralTargetChunk.x;
-            case WEST -> currentChunk.x <= spiralTargetChunk.x;
-            case NORTH -> currentChunk.z <= spiralTargetChunk.z;
-            case SOUTH -> currentChunk.z >= spiralTargetChunk.z;
-        };
+    private boolean hasReachedSpiralTarget() {
+        return mc.player.getChunkPos().equals(spiralTargetChunk)
+            && horizontalDistanceTo(getChunkCenter(spiralTargetChunk)) < 1.0;
+    }
+
+    private void logSpiralCenteringIfNeeded(double distance) {
+        String key = spiralTargetChunk.x + ":" + spiralTargetChunk.z + ":" + spiralSegments;
+        if (key.equals(warnedSpiralCenteringKey)) return;
+        warnedSpiralCenteringKey = key;
+        WaveXinAddon.LOG.warn(
+            "[BaseFinderDebug] event=STATE state=CENTERING_SPIRAL_TARGET detail=target={} distance={} playerChunk={} direction={} segments={}",
+            chunkDebugLabel(spiralTargetChunk),
+            distance,
+            chunkDebugLabel(mc.player.getChunkPos()),
+            spiralDirection,
+            spiralSegments
+        );
     }
 
     private boolean advanceSpiralDirection() {
@@ -1630,6 +1657,7 @@ public class BaseFinder extends WaveXinModule {
             spiralChunkStep.get()
         );
         spiralTargetChunk = ScanProgressManager.calculateTargetChunkPos(progress, spiralChunkStep.get());
+        warnedSpiralCenteringKey = null;
     }
 
     private ChunkPos getSpiralCorner(int completedSegments) {
@@ -1703,6 +1731,7 @@ public class BaseFinder extends WaveXinModule {
         spiralStepLength = 1;
         spiralRotating = false;
         spiralNeedsInitialRotation = false;
+        warnedSpiralCenteringKey = null;
     }
 
     @EventHandler(priority = EventPriority.HIGHEST)
