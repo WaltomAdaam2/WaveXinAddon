@@ -286,6 +286,8 @@ setting.wavexin.chat_filter.general.hide_death_messages.description
 setting.wavexin.chat_filter.general.hide_death_messages.title
 setting.wavexin.chat_filter.general.hide_msg_private_messages.description
 setting.wavexin.chat_filter.general.hide_msg_private_messages.title
+setting.wavexin.chat_filter.general.msg_allowlist.description
+setting.wavexin.chat_filter.general.msg_allowlist.title
 setting.wavexin.chat_filter.general.hide_public_messages.description
 setting.wavexin.chat_filter.general.hide_public_messages.title
 setting.wavexin.chicken_nametags.general.render_range.description

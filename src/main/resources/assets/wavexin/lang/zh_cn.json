@@ -132,6 +132,8 @@
   "setting.wavexin.auto_login.delays.maximum_retries.description": "每个自动登录阶段允许的最大重试次数。",
   "setting.wavexin.chat_filter.general.hide_msg_private_messages.title": "隐藏 MSG 私聊",
   "setting.wavexin.chat_filter.general.hide_msg_private_messages.description": "隐藏通过 MSG 系统发送的私聊消息。",
+  "setting.wavexin.chat_filter.general.msg_allowlist.title": "MSG 白名单",
+  "setting.wavexin.chat_filter.general.msg_allowlist.description": "即使启用 MSG 私聊过滤，也显示涉及这些玩家的 MSG 私聊消息。",
   "setting.wavexin.chat_filter.general.hide_public_messages.title": "隐藏公共聊天",
   "setting.wavexin.chat_filter.general.hide_public_messages.description": "隐藏普通公共聊天消息。",
   "setting.wavexin.chat_filter.general.hide_death_messages.title": "隐藏死亡消息",

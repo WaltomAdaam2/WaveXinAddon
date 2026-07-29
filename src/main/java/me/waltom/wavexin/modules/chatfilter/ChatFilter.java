@@ -3,12 +3,25 @@ package me.waltom.wavexin.modules.chatfilter;
 import me.waltom.wavexin.WaveXinAddon;
 import me.waltom.wavexin.core.WaveXinModule;
 import meteordevelopment.meteorclient.events.game.ReceiveMessageEvent;
+import meteordevelopment.meteorclient.gui.GuiTheme;
+import meteordevelopment.meteorclient.gui.utils.CharFilter;
+import meteordevelopment.meteorclient.gui.utils.SettingsWidgetFactory;
+import meteordevelopment.meteorclient.gui.widgets.containers.WHorizontalList;
+import meteordevelopment.meteorclient.gui.widgets.containers.WTable;
+import meteordevelopment.meteorclient.gui.widgets.input.WTextBox;
+import meteordevelopment.meteorclient.gui.widgets.pressable.WMinus;
+import meteordevelopment.meteorclient.gui.widgets.pressable.WPlus;
 import meteordevelopment.meteorclient.settings.BoolSetting;
+import meteordevelopment.meteorclient.settings.IVisible;
 import meteordevelopment.meteorclient.settings.Setting;
 import meteordevelopment.meteorclient.settings.SettingGroup;
+import meteordevelopment.meteorclient.settings.StringListSetting;
 import meteordevelopment.meteorclient.systems.modules.Modules;
 import meteordevelopment.orbit.EventHandler;
 import net.minecraft.text.Text;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 public class ChatFilter extends WaveXinModule {
@@ -33,9 +46,17 @@ public class ChatFilter extends WaveXinModule {
             + ")" + DEATH_COUNT + "$",
         Pattern.CASE_INSENSITIVE
     );
-    private static final Pattern PRIVATE_MESSAGE_HEADER_PATTERN = Pattern.compile("(?im)(?:^|\\R)\\s*(?:(?:from|to)\\s+[^\\r\\n:：]{1,64}\\s*[:：]|来自\\s*[^\\r\\n:：]{1,64}\\s*[:：]|[^\\r\\n:：]{1,64}\\s+(?:whispers|tells you)\\b)");
+    private static final Pattern PRIVATE_MESSAGE_PLAYER_PATTERN = Pattern.compile("(?im)(?:^|\\R)\\s*(?:(?:from|to)\\s+([^\\r\\n:：]{1,64})\\s*[:：]|来自\\s*([^\\r\\n:：]{1,64})\\s*[:：]|([^\\r\\n:：]{1,64})\\s+(?:whispers|tells you)\\b)");
     private static final Pattern PRIVATE_MESSAGE_TAG_PATTERN = Pattern.compile("(?i)\\[[^\\]]*(?:private\\s+message|私聊信息|私信|密语|悄悄话)[^\\]]*\\]");
     private static final Pattern PUBLIC_MESSAGE_PATTERN = Pattern.compile("(?:^\\s*<[^>]+>\\s+.+|^\\s*[^\\s:]{1,32}:\\s+.+)");
+    private static final CharFilter PLAYER_NAME_FILTER = (text, c) -> c != ' ' && c != ':' && c != '：' && c != '\n' && c != '\r';
+
+    static {
+        SettingsWidgetFactory.registerCustomFactory(PlayerNameListSetting.class, theme -> (table, setting) -> {
+            WTable playerTable = table.add(theme.table()).expandX().widget();
+            fillPlayerNameTable(theme, playerTable, (PlayerNameListSetting) setting);
+        });
+    }
 
     private final SettingGroup sgGeneral = settings.getDefaultGroup();
 
@@ -45,6 +66,12 @@ public class ChatFilter extends WaveXinModule {
         .defaultValue(false)
         .build()
     );
+
+    private final Setting<List<String>> privateMessageAllowlist = sgGeneral.add(new PlayerNameListSetting(
+        "MSG Allowlist",
+        "Shows MSG private messages involving these players even when MSG filtering is enabled.",
+        hidePrivateMessages::get
+    ));
 
     private final Setting<Boolean> hidePublicMessages = sgGeneral.add(new BoolSetting.Builder()
         .name("Hide Public Messages")
@@ -86,7 +113,10 @@ public class ChatFilter extends WaveXinModule {
         String normalized = normalize(message);
         if (normalized.isEmpty()) return false;
 
-        if (hidePrivateMessages.get() && isPrivateMessage(normalized)) return true;
+        if (hidePrivateMessages.get() && isPrivateMessage(normalized)) {
+            String player = privateMessagePlayer(normalized);
+            return !playerListContains(privateMessageAllowlist.get(), player);
+        }
         return hidePublicMessages.get() && PUBLIC_MESSAGE_PATTERN.matcher(normalized).find();
     }
 
@@ -100,8 +130,69 @@ public class ChatFilter extends WaveXinModule {
             || ENGLISH_DEATH_MESSAGE_PATTERN.matcher(message).matches();
     }
 
+    static String privateMessagePlayer(String message) {
+        Matcher matcher = PRIVATE_MESSAGE_PLAYER_PATTERN.matcher(message);
+        if (!matcher.find()) return null;
+
+        for (int i = 1; i <= matcher.groupCount(); i++) {
+            String group = matcher.group(i);
+            if (group != null && !group.isBlank()) return group.trim();
+        }
+        return null;
+    }
+
+    static boolean playerListContains(List<String> players, String player) {
+        if (players == null || player == null || player.isBlank()) return false;
+        for (String candidate : players) {
+            if (candidate != null && candidate.trim().equalsIgnoreCase(player.trim())) return true;
+        }
+        return false;
+    }
+
     private boolean isPrivateMessage(String message) {
-        return PRIVATE_MESSAGE_HEADER_PATTERN.matcher(message).find()
+        return privateMessagePlayer(message) != null
             || PRIVATE_MESSAGE_TAG_PATTERN.matcher(message).find();
+    }
+
+    private static void fillPlayerNameTable(GuiTheme theme, WTable table, PlayerNameListSetting setting) {
+        table.clear();
+        ArrayList<String> players = new ArrayList<>(setting.get());
+
+        for (String player : setting.get()) {
+            if (player == null || player.isBlank()) continue;
+
+            table.add(theme.label(player)).expandX();
+            WMinus remove = table.add(theme.minus()).expandCellX().right().widget();
+            remove.action = () -> {
+                players.removeIf(candidate -> candidate != null && candidate.equalsIgnoreCase(player));
+                setting.set(players);
+                fillPlayerNameTable(theme, table, setting);
+            };
+            table.row();
+        }
+
+        WHorizontalList inputRow = table.add(theme.horizontalList()).expandX().widget();
+        WTextBox nameInput = inputRow.add(theme.textBox("", PLAYER_NAME_FILTER)).expandX().widget();
+        WPlus add = inputRow.add(theme.plus()).widget();
+        add.action = () -> {
+            if (addPlayerName(players, nameInput.get())) {
+                setting.set(players);
+                fillPlayerNameTable(theme, table, setting);
+            }
+        };
+    }
+
+    static boolean addPlayerName(List<String> players, String rawName) {
+        if (players == null) return false;
+        String name = rawName == null ? "" : rawName.trim();
+        if (name.isEmpty() || playerListContains(players, name)) return false;
+        players.add(name);
+        return true;
+    }
+
+    private static class PlayerNameListSetting extends StringListSetting {
+        private PlayerNameListSetting(String name, String description, IVisible visible) {
+            super(name, description, new ArrayList<>(), null, null, visible, null, PLAYER_NAME_FILTER);
+        }
     }
 }

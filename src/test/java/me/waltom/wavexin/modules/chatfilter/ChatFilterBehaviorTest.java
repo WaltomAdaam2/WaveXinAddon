@@ -1,5 +1,8 @@
 package me.waltom.wavexin.modules.chatfilter;
 
+import java.util.ArrayList;
+import java.util.List;
+
 public final class ChatFilterBehaviorTest {
     private ChatFilterBehaviorTest() {
     }
@@ -21,6 +24,29 @@ public final class ChatFilterBehaviorTest {
         assertNotDeath("[WaveXin] Base found! Chunk: 50332, 50469", "base found message");
         assertNotDeath("Server restarting in 5 minutes", "server notice");
         assertNotDeath("<player> hello world", "public chat");
+        assertEquals("Alice", ChatFilter.privateMessagePlayer("From Alice: hi"), "from private player");
+        assertEquals("Bob", ChatFilter.privateMessagePlayer("Bob whispers: hi"), "whisper private player");
+        assertEquals("小明", ChatFilter.privateMessagePlayer("来自 小明: 你好"), "chinese private player");
+        assertTrue(ChatFilter.playerListContains(List.of("Alice"), "alice"), "case-insensitive allowlist");
+        assertFalse(ChatFilter.playerListContains(List.of("Alice"), "Bob"), "different allowlist player");
+
+        ArrayList<String> players = new ArrayList<>();
+        assertTrue(ChatFilter.addPlayerName(players, "Alice"), "add allowlist player");
+        assertFalse(ChatFilter.addPlayerName(players, "alice"), "skip duplicate allowlist player");
+    }
+
+    private static void assertTrue(boolean actual, String label) {
+        if (!actual) throw new AssertionError(label + " should be true");
+    }
+
+    private static void assertFalse(boolean actual, String label) {
+        if (actual) throw new AssertionError(label + " should be false");
+    }
+
+    private static void assertEquals(String expected, String actual, String label) {
+        if (!expected.equals(actual)) {
+            throw new AssertionError(label + ": expected [" + expected + "] but got [" + actual + "]");
+        }
     }
 
     private static void assertDeath(String message, String label) {

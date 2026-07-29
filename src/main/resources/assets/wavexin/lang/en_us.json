@@ -132,6 +132,8 @@
   "setting.wavexin.auto_login.delays.maximum_retries.description": "Maximum retry attempts per automated stage.",
   "setting.wavexin.chat_filter.general.hide_msg_private_messages.title": "Hide MSG Private Messages",
   "setting.wavexin.chat_filter.general.hide_msg_private_messages.description": "Hides private MSG messages.",
+  "setting.wavexin.chat_filter.general.msg_allowlist.title": "MSG Allowlist",
+  "setting.wavexin.chat_filter.general.msg_allowlist.description": "Shows MSG private messages involving these players even when MSG filtering is enabled.",
   "setting.wavexin.chat_filter.general.hide_public_messages.title": "Hide Public Messages",
   "setting.wavexin.chat_filter.general.hide_public_messages.description": "Hides normal public chat messages.",
   "setting.wavexin.chat_filter.general.hide_death_messages.title": "Hide Death Messages",
