@@ -94,6 +94,14 @@ public class ChatFilter extends WaveXinModule {
         .build()
     );
 
+    private final Setting<Boolean> showOwnPublicMessages = sgGeneral.add(new BoolSetting.Builder()
+        .name("Show Own Public Messages")
+        .description("Shows your own public messages even when public chat filtering is enabled.")
+        .defaultValue(true)
+        .visible(hidePublicMessages::get)
+        .build()
+    );
+
     public ChatFilter() {
         super(WaveXinAddon.CATEGORY, "chat-filter", "Filters selected chat message types");
     }
@@ -126,6 +134,7 @@ public class ChatFilter extends WaveXinModule {
         }
         if (hidePublicMessages.get() && PUBLIC_MESSAGE_PATTERN.matcher(normalized).find()) {
             String player = publicMessagePlayer(normalized);
+            if (showOwnPublicMessages.get() && isOwnPlayer(player)) return false;
             return !playerListContains(publicMessageAllowlist.get(), player);
         }
         return false;
@@ -161,6 +170,14 @@ public class ChatFilter extends WaveXinModule {
             if (group != null && !group.isBlank()) return group.trim();
         }
         return null;
+    }
+
+    private boolean isOwnPlayer(String player) {
+        return mc.player != null && samePlayerName(mc.player.getName().getString(), player);
+    }
+
+    static boolean samePlayerName(String expected, String actual) {
+        return expected != null && actual != null && !expected.isBlank() && expected.trim().equalsIgnoreCase(actual.trim());
     }
 
     static boolean playerListContains(List<String> players, String player) {

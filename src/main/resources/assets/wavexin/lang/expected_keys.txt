@@ -284,6 +284,8 @@ setting.wavexin.better_elytra_fly.general.stop_in_unloaded_chunks.description
 setting.wavexin.better_elytra_fly.general.stop_in_unloaded_chunks.title
 setting.wavexin.chat_filter.general.hide_death_messages.description
 setting.wavexin.chat_filter.general.hide_death_messages.title
+setting.wavexin.chat_filter.general.show_own_public_messages.description
+setting.wavexin.chat_filter.general.show_own_public_messages.title
 setting.wavexin.chat_filter.general.hide_msg_private_messages.description
 setting.wavexin.chat_filter.general.hide_msg_private_messages.title
 setting.wavexin.chat_filter.general.msg_allowlist.description

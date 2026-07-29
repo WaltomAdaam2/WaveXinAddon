@@ -30,6 +30,8 @@ public final class ChatFilterBehaviorTest {
         assertEquals("Alice", ChatFilter.publicMessagePlayer("<Alice> hello"), "angle public player");
         assertEquals("Bob", ChatFilter.publicMessagePlayer("Bob: hello"), "colon public player");
         assertTrue(ChatFilter.playerListContains(List.of("Alice"), "alice"), "case-insensitive allowlist");
+        assertTrue(ChatFilter.samePlayerName("Alice", "alice"), "case-insensitive own player");
+        assertFalse(ChatFilter.samePlayerName("Alice", "Bob"), "different own player");
         assertFalse(ChatFilter.playerListContains(List.of("Alice"), "Bob"), "different allowlist player");
 
         ArrayList<String> players = new ArrayList<>();
