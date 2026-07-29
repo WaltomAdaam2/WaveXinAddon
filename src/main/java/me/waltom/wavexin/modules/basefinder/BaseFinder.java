@@ -115,8 +115,8 @@ public class BaseFinder extends WaveXinModule {
     private SweepRoute currentPath;
     private int turnDelayTimer;
     private float targetYaw;
-    private float normalViewYaw;
-    private boolean normalViewRestorePending;
+    private final BaseFinderStateLogic.ViewRotationState movementViewState = new BaseFinderStateLogic.ViewRotationState();
+    private final BaseFinderStateLogic.SprintState scanSprintState = new BaseFinderStateLogic.SprintState();
 
     private boolean forcingForward;
 
@@ -145,7 +145,6 @@ public class BaseFinder extends WaveXinModule {
     private final List<BlockPos> createdWaypointPositions = new ArrayList<>();
     private final Set<Long> warnedMissingLoadedChunks = new HashSet<>();
     private final Set<String> warnedNormalDebugStates = new HashSet<>();
-    private String warnedSpiralCenteringKey;
     private int nextWaypointNumber = 1;
     private boolean warnedEmptyContainerBlocks;
     private boolean warnedContainerScanUnavailable;
@@ -614,7 +613,8 @@ public class BaseFinder extends WaveXinModule {
         }
 
         turnDelayTimer = 0;
-        normalViewRestorePending = false;
+        movementViewState.clear();
+        scanSprintState.clear();
         lastCompletedNormalRing = -1;
         resumeCheckpointChunk = null;
         if (lastBegin.get()) {
@@ -861,17 +861,16 @@ public class BaseFinder extends WaveXinModule {
                 return;
             }
 
-            int chunkX = (int) (mc.player.getX() / 16);
-            int chunkZ = (int) (mc.player.getZ() / 16);
-            if (!mc.world.getChunkManager().isChunkLoaded(chunkX, chunkZ)) {
-                setNormalDebugState("WAITING_CURRENT_CHUNK", "checkedChunk=(" + chunkX + "," + chunkZ + ")");
+            ChunkPos currentChunk = mc.player.getChunkPos();
+            if (!mc.world.getChunkManager().isChunkLoaded(currentChunk.x, currentChunk.z)) {
+                setNormalDebugState("WAITING_CURRENT_CHUNK", "checkedChunk=" + chunkDebugLabel(currentChunk));
                 setScanForwardKey(false);
                 return;
             }
         }
 
         if (moveSpeed.get() > 1.0) {
-            mc.player.setSprinting(true);
+            forceScanSprint();
         }
 
         setNormalDebugState(inTargetChunk ? "CENTERING_TARGET_CHUNK" : "MOVING", "distance=" + distance2D);
@@ -880,8 +879,8 @@ public class BaseFinder extends WaveXinModule {
 
     @EventHandler
     private void onPostTick(TickEvent.Post event) {
+        restoreMovementViewAfterTick();
         if (activeScanMethod != ScanMethod.NORMAL) return;
-        restoreNormalViewYaw();
         if (normalDebugTicks > 0 && normalDebugTicks % NORMAL_DEBUG_HEARTBEAT_TICKS == 0) {
             logNormalDebugSnapshot("HEARTBEAT", "stateUnchanged");
         }
@@ -994,50 +993,71 @@ public class BaseFinder extends WaveXinModule {
                 return false;
             }
 
-            int chunkX = (int) (mc.player.getX() / 16);
-            int chunkZ = (int) (mc.player.getZ() / 16);
-            if (!mc.world.getChunkManager().isChunkLoaded(chunkX, chunkZ)) {
-                setNormalDebugState("WAITING_RESUME_CURRENT_CHUNK", "checkedChunk=(" + chunkX + "," + chunkZ + ")");
+            ChunkPos currentChunk = mc.player.getChunkPos();
+            if (!mc.world.getChunkManager().isChunkLoaded(currentChunk.x, currentChunk.z)) {
+                setNormalDebugState("WAITING_RESUME_CURRENT_CHUNK", "checkedChunk=" + chunkDebugLabel(currentChunk));
                 setScanForwardKey(false);
                 return false;
             }
         }
 
         setNormalDebugState(inCheckpointChunk ? "CENTERING_RESUME_CHUNK" : "RETURNING_TO_CHECKPOINT", "checkpoint=" + chunkDebugLabel(resumeCheckpointChunk) + ",distance=" + distance);
-        if (moveSpeed.get() > 1.0) mc.player.setSprinting(true);
+        if (moveSpeed.get() > 1.0) forceScanSprint();
         setScanForwardKey(true);
         return false;
     }
 
     private void applyNormalMovementYaw(float yaw) {
-        if (lockView.get()) {
-            restoreNormalViewYaw();
-            mc.player.setYaw(yaw);
-            return;
-        }
+        applyMovementYaw(yaw, lockView.get());
+    }
 
-        normalViewYaw = mc.player.getYaw();
+    private void applyMovementYaw(float yaw, boolean keepVisible) {
+        if (mc.player == null || mc.world == null) return;
+        movementViewState.captureIfNeeded(mc.player, mc.world, mc.player.getYaw(), mc.player.getPitch(), mc.player.headYaw, mc.player.bodyYaw, !keepVisible);
         mc.player.setYaw(yaw);
-        normalViewRestorePending = true;
+        mc.player.headYaw = yaw;
+        mc.player.bodyYaw = yaw;
     }
 
     private void restoreNormalViewYaw() {
-        if (!normalViewRestorePending) return;
-        if (mc.player != null) mc.player.setYaw(normalViewYaw);
-        normalViewRestorePending = false;
-        lastCompletedNormalRing = -1;
+        restoreMovementView();
+    }
+
+    private void restoreMovementViewAfterTick() {
+        if (movementViewState.shouldRestoreAfterTick()) restoreMovementView();
+    }
+
+    private void restoreMovementView() {
+        BaseFinderStateLogic.Snapshot snapshot = movementViewState.consumeRestore(mc.player, mc.world);
+        if (snapshot == null || mc.player == null) return;
+        mc.player.setYaw(snapshot.yaw());
+        mc.player.setPitch(snapshot.pitch());
+        mc.player.headYaw = snapshot.headYaw();
+        mc.player.bodyYaw = snapshot.bodyYaw();
+    }
+
+    private void forceScanSprint() {
+        if (mc.player == null || mc.world == null) return;
+        scanSprintState.captureIfNeeded(mc.player, mc.world, mc.player.isSprinting());
+        mc.player.setSprinting(true);
+    }
+
+    private void restoreScanSprint() {
+        Boolean sprinting = scanSprintState.consumeRestore(mc.player, mc.world);
+        if (sprinting != null && mc.player != null) mc.player.setSprinting(sprinting);
     }
 
     private void setScanForwardKey(boolean pressed) {
-        if (mc.options == null) return;
-
         if (pressed) {
-            mc.options.forwardKey.setPressed(true);
+            if (mc.options != null) mc.options.forwardKey.setPressed(true);
             forcingForward = true;
-        } else if (forcingForward) {
-            mc.options.forwardKey.setPressed(false);
-            forcingForward = false;
+            return;
         }
+
+        if (mc.options != null && forcingForward) mc.options.forwardKey.setPressed(false);
+        forcingForward = false;
+        restoreScanSprint();
+        restoreMovementView();
     }
 
     private void setNormalDebugState(String state, String detail) {
@@ -1095,14 +1115,7 @@ public class BaseFinder extends WaveXinModule {
     }
 
     private boolean shouldLogNormalDebugSnapshot(String event) {
-        if ("DEACTIVATE".equals(event)) return true;
-        return normalDebugState.equals("WAITING_PLAYER_OR_WORLD")
-            || normalDebugState.equals("WAITING_START_READY")
-            || normalDebugState.equals("WAITING_CURRENT_CHUNK")
-            || normalDebugState.equals("CENTERING_TARGET_CHUNK")
-            || normalDebugState.equals("CENTERING_RESUME_CHUNK")
-            || normalDebugState.equals("WAITING_RESUME_NEIGHBOR_CHUNKS")
-            || normalDebugState.equals("WAITING_RESUME_CURRENT_CHUNK");
+        return BaseFinderStateLogic.shouldLogNormalDebugSnapshot(event, normalDebugState);
     }
 
     private String describeStartReadiness() {
@@ -1450,7 +1463,7 @@ public class BaseFinder extends WaveXinModule {
         spiralRotating = false;
         spiralNeedsInitialRotation = false;
         updateSpiralTarget();
-        applySpiralRotation(spiralDirection.yaw);
+        if (spiralLockView.get()) applySpiralRotation(spiralDirection.yaw);
         saveSpiralProgress();
 
         if (spiralDebug.get()) {
@@ -1529,8 +1542,14 @@ public class BaseFinder extends WaveXinModule {
     }
 
     private void calibrateSpiralDirection() {
+        if (!spiralLockView.get()) {
+            spiralNeedsInitialRotation = false;
+            spiralRotating = false;
+            return;
+        }
+
         if (spiralDirection.isFacingDirection(mc.player.getYaw())) {
-            if (spiralLockView.get()) applySpiralRotation(spiralDirection.yaw);
+            applySpiralRotation(spiralDirection.yaw);
             return;
         }
 
@@ -1546,8 +1565,8 @@ public class BaseFinder extends WaveXinModule {
             return;
         }
 
-        setScanForwardKey(false);
         if (spiralPauseOnScreen.get() && mc.currentScreen != null) {
+            setScanForwardKey(false);
             return;
         }
 
@@ -1555,6 +1574,7 @@ public class BaseFinder extends WaveXinModule {
         recordLoadedContainerChunksNear(playerChunk);
 
         if (spiralMaximumSegments.get() > 0 && spiralSegments >= spiralMaximumSegments.get()) {
+            setScanForwardKey(false);
             infoKey("message.wavexin.base_finder.spiral_complete", "Maximum segments reached. Spiral scan complete.");
             toggle();
             return;
@@ -1562,12 +1582,18 @@ public class BaseFinder extends WaveXinModule {
 
         if (spiralNeedsInitialRotation && spiralRotating) {
             smoothSpiralRotation();
-            if (spiralRotating) return;
+            if (spiralRotating) {
+                setScanForwardKey(false);
+                return;
+            }
         }
 
         if (spiralRotating) {
             smoothSpiralRotation();
-            if (spiralRotating) return;
+            if (spiralRotating) {
+                setScanForwardKey(false);
+                return;
+            }
         }
 
         if (spiralLockView.get() && !spiralRotating && !spiralNeedsInitialRotation) {
@@ -1599,13 +1625,10 @@ public class BaseFinder extends WaveXinModule {
 
         Vec3d targetCenter = getChunkCenter(spiralTargetChunk);
         double distance = horizontalDistanceTo(targetCenter);
-        if (distance >= 1.0) applySpiralRotation(yawTo(targetCenter));
-        if (mc.player.getChunkPos().equals(spiralTargetChunk) && distance >= 1.0) {
-            logSpiralCenteringIfNeeded(distance);
-        }
+        if (distance >= 1.0) applyMovementYaw(yawTo(targetCenter), spiralLockView.get());
 
         setScanForwardKey(distance >= 1.0);
-        if (distance >= 1.0 && spiralSprint.get()) mc.player.setSprinting(true);
+        if (distance >= 1.0 && spiralSprint.get()) forceScanSprint();
     }
 
     private boolean hasReachedSpiralTarget() {
@@ -1613,19 +1636,6 @@ public class BaseFinder extends WaveXinModule {
             && horizontalDistanceTo(getChunkCenter(spiralTargetChunk)) < 1.0;
     }
 
-    private void logSpiralCenteringIfNeeded(double distance) {
-        String key = spiralTargetChunk.x + ":" + spiralTargetChunk.z + ":" + spiralSegments;
-        if (key.equals(warnedSpiralCenteringKey)) return;
-        warnedSpiralCenteringKey = key;
-        WaveXinAddon.LOG.warn(
-            "[BaseFinderDebug] event=STATE state=CENTERING_SPIRAL_TARGET detail=target={} distance={} playerChunk={} direction={} segments={}",
-            chunkDebugLabel(spiralTargetChunk),
-            distance,
-            chunkDebugLabel(mc.player.getChunkPos()),
-            spiralDirection,
-            spiralSegments
-        );
-    }
 
     private boolean advanceSpiralDirection() {
         spiralDirection = spiralDirection.getNext();
@@ -1639,9 +1649,8 @@ public class BaseFinder extends WaveXinModule {
 
         if (spiralLockView.get()) {
             applySpiralRotation(spiralDirection.yaw);
-            return false;
         }
-        return true;
+        return false;
     }
 
     private void updateSpiralTarget() {
@@ -1657,7 +1666,6 @@ public class BaseFinder extends WaveXinModule {
             spiralChunkStep.get()
         );
         spiralTargetChunk = ScanProgressManager.calculateTargetChunkPos(progress, spiralChunkStep.get());
-        warnedSpiralCenteringKey = null;
     }
 
     private ChunkPos getSpiralCorner(int completedSegments) {
@@ -1704,9 +1712,7 @@ public class BaseFinder extends WaveXinModule {
     }
 
     private void applySpiralRotation(float yaw) {
-        mc.player.setYaw(yaw);
-        mc.player.headYaw = yaw;
-        mc.player.bodyYaw = yaw;
+        applyMovementYaw(yaw, true);
     }
 
     private void saveSpiralProgress() {
@@ -1731,7 +1737,6 @@ public class BaseFinder extends WaveXinModule {
         spiralStepLength = 1;
         spiralRotating = false;
         spiralNeedsInitialRotation = false;
-        warnedSpiralCenteringKey = null;
     }
 
     @EventHandler(priority = EventPriority.HIGHEST)
