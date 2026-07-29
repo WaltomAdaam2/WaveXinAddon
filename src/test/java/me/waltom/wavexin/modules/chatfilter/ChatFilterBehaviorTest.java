@@ -19,6 +19,15 @@ public final class ChatFilterBehaviorTest {
         assertDeath("阿尔法彬 被 大6 推到了虚空", "void by player");
         assertDeath("夏冲日出蝉鸣 被 缺物资kit加q3775733955 用岩浆烧死", "lava by player");
         assertDeath("根本不一样吧 was impaled by give我是人", "english impaled");
+        assertDeath("Alice 使用床炸死自己", "bed self explosion");
+        assertDeath("Alice 用烟花炸死了自己", "firework self explosion");
+        assertDeath("Alice 被 坠落的物品砸死", "falling block death");
+        assertDeath("Alice 被 Zombie 窒息而死", "suffocated by entity");
+        assertDeath("Alice 被 Bob 用火球击杀", "fireball by player");
+        assertDeath("Alice 被自己的三叉戟射死", "own trident death");
+        assertDeath("Alice 跳出世界边界而自杀", "world border suicide");
+        assertDeath("Alice 在扔末影珍珠时死亡", "ender pearl death");
+        assertDeath("Alice 被自己扔出的鸡蛋打死", "own egg death");
 
         assertNotDeath("[WaveXin] Created Xaero waypoint: Base 1", "waypoint message");
         assertNotDeath("[WaveXin] Base found! Chunk: 50332, 50469", "base found message");
@@ -29,6 +38,12 @@ public final class ChatFilterBehaviorTest {
         assertEquals("小明", ChatFilter.privateMessagePlayer("来自 小明: 你好"), "chinese private player");
         assertEquals("Alice", ChatFilter.publicMessagePlayer("<Alice> hello"), "angle public player");
         assertEquals("Bob", ChatFilter.publicMessagePlayer("Bob: hello"), "colon public player");
+        assertNull(ChatFilter.publicMessagePlayer("使用方式: /S <%command_name%> <%command_name%>"), "usage server message");
+        assertNull(ChatFilter.publicMessagePlayer("[Server: 已将某玩家设置为服务器管理员]"), "server operator message");
+        assertNull(ChatFilter.publicMessagePlayer("系统: 正在保存世界"), "system server message");
+        assertNull(ChatFilter.publicMessagePlayer("Warning: reconnect soon"), "warning server message");
+        assertNull(ChatFilter.publicMessagePlayer("Error: connection failed"), "error server message");
+        assertEquals("Alice", ChatFilter.normalizePlayerName("§a[VIP] Alice"), "display prefix stripping");
         assertTrue(ChatFilter.playerListContains(List.of("Alice"), "alice"), "case-insensitive allowlist");
         assertTrue(ChatFilter.samePlayerName("Alice", "alice"), "case-insensitive own player");
         assertFalse(ChatFilter.samePlayerName("Alice", "Bob"), "different own player");
@@ -45,6 +60,10 @@ public final class ChatFilterBehaviorTest {
 
     private static void assertFalse(boolean actual, String label) {
         if (actual) throw new AssertionError(label + " should be false");
+    }
+
+    private static void assertNull(String actual, String label) {
+        if (actual != null) throw new AssertionError(label + " should be null but got [" + actual + "]");
     }
 
     private static void assertEquals(String expected, String actual, String label) {

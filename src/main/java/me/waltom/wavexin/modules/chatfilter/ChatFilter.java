@@ -26,13 +26,14 @@ import java.util.regex.Pattern;
 
 public class ChatFilter extends WaveXinModule {
     private static final Pattern LEGACY_FORMATTING_PATTERN = Pattern.compile("(?i)\\xA7[0-9A-FK-OR]");
+    private static final Pattern DISPLAY_NAME_PREFIX_PATTERN = Pattern.compile("^(?:[\\[\\(\\u3010\\uFF08][^\\]\\)\\u3011\\uFF09]{1,32}[\\]\\)\\u3011\\uFF09]\\s*)+");
     private static final String PLAYER_NAME = "[^\\s:\\[\\]<>\\uFF08\\uFF09()]{1,64}";
     private static final String DEATH_DETAIL = "[^\\r\\n]+?";
     private static final String DEATH_COUNT = "(?:\\s*[\\(\\uFF08]\\d+[\\)\\uFF09])?";
     private static final Pattern CHINESE_DEATH_MESSAGE_PATTERN = Pattern.compile(
         "^" + PLAYER_NAME + "\\s+(?:"
-            + "(?:自杀|在\\S{1,16}中自杀|撞墙自杀|跳入\\S{1,16}自杀|使用重生锚炸死自己|用TNT炸死了自己|炸死了自己|毒死了自己|饿死了自己|被自己的弓箭射死)"
-            + "|被\\s+" + DEATH_DETAIL + "\\s+(?:击杀|杀死|射杀|射死|炸死|刺死|火球击杀|推下悬崖而死亡|推到了虚空|用岩浆烧死)"
+            + "(?:自杀|在\\S{1,16}中自杀|撞墙自杀|跳入\\S{1,16}自杀|跳出世界边界而自杀|使用重生锚炸死自己|使用床炸死自己|用TNT炸死了自己|用烟花炸死了自己|炸死了自己|毒死了自己|饿死了自己|被自己的弓箭射死|被自己的三叉戟射死|被自己扔出的鸡蛋打死|被\\s*坠落的物品砸死|在扔末影珍珠时死亡)"
+            + "|被\\s+" + DEATH_DETAIL + "\\s+(?:击杀|杀死|射杀|射死|炸死|砸死|刺死|火球击杀|用火球击杀|窒息而死|推下悬崖而死亡|推到了虚空|用岩浆烧死)"
             + "|被\\s+" + DEATH_DETAIL + "\\s+的荆棘反杀"
             + "|(?:着火烧死|被烧死|窒息而亡|冻死|饿死|从高处摔死|摔死|摔得过猛|被魔法杀死)"
             + ")" + DEATH_COUNT + "$"
@@ -48,8 +49,8 @@ public class ChatFilter extends WaveXinModule {
     );
     private static final Pattern PRIVATE_MESSAGE_PLAYER_PATTERN = Pattern.compile("(?im)(?:^|\\R)\\s*(?:(?:from|to)\\s+([^\\r\\n:：]{1,64})\\s*[:：]|来自\\s*([^\\r\\n:：]{1,64})\\s*[:：]|([^\\r\\n:：]{1,64})\\s+(?:whispers|tells you)\\b)");
     private static final Pattern PRIVATE_MESSAGE_TAG_PATTERN = Pattern.compile("(?i)\\[[^\\]]*(?:private\\s+message|私聊信息|私信|密语|悄悄话)[^\\]]*\\]");
-    private static final Pattern PUBLIC_MESSAGE_PLAYER_PATTERN = Pattern.compile("(?im)(?:^|\\R)\\s*(?:<([^>]{1,64})>\\s+.+|([^\\s:：]{1,64})\\s*[:：]\\s+.+)");
-    private static final Pattern PUBLIC_MESSAGE_PATTERN = Pattern.compile("(?im)(?:^|\\R)\\s*(?:<[^>]+>\\s+.+|[^\\s:：]{1,64}\\s*[:：]\\s+.+)");
+    private static final String BLOCKED_PUBLIC_COLON_PREFIX = "(?!(?:使用方式|系统|Warning|Error|Server)\\s*[:：])";
+    private static final Pattern PUBLIC_MESSAGE_PLAYER_PATTERN = Pattern.compile("(?im)(?:^|\\R)\\s*(?:<(" + PLAYER_NAME + ")>\\s+.+|" + BLOCKED_PUBLIC_COLON_PREFIX + "(" + PLAYER_NAME + ")\\s*[:：]\\s+.+)");
     private static final CharFilter PLAYER_NAME_FILTER = (text, c) -> c != ' ' && c != ':' && c != '：' && c != '\n' && c != '\r';
 
     static {
@@ -132,7 +133,7 @@ public class ChatFilter extends WaveXinModule {
             String player = privateMessagePlayer(normalized);
             return !playerListContains(privateMessageAllowlist.get(), player);
         }
-        if (hidePublicMessages.get() && PUBLIC_MESSAGE_PATTERN.matcher(normalized).find()) {
+        if (hidePublicMessages.get() && publicMessagePlayer(normalized) != null) {
             String player = publicMessagePlayer(normalized);
             if (showOwnPublicMessages.get() && isOwnPlayer(player)) return false;
             return !playerListContains(publicMessageAllowlist.get(), player);
@@ -173,11 +174,21 @@ public class ChatFilter extends WaveXinModule {
     }
 
     private boolean isOwnPlayer(String player) {
-        return mc.player != null && samePlayerName(mc.player.getName().getString(), player);
+        if (mc.player == null) return false;
+        if (samePlayerName(mc.player.getName().getString(), player)) return true;
+        Text displayName = mc.player.getDisplayName();
+        return displayName != null && samePlayerName(displayName.getString(), player);
     }
 
     static boolean samePlayerName(String expected, String actual) {
-        return expected != null && actual != null && !expected.isBlank() && expected.trim().equalsIgnoreCase(actual.trim());
+        String left = normalizePlayerName(expected);
+        String right = normalizePlayerName(actual);
+        return !left.isBlank() && !right.isBlank() && left.equalsIgnoreCase(right);
+    }
+
+    static String normalizePlayerName(String player) {
+        if (player == null) return "";
+        return DISPLAY_NAME_PREFIX_PATTERN.matcher(normalize(player)).replaceFirst("").trim();
     }
 
     static boolean playerListContains(List<String> players, String player) {
