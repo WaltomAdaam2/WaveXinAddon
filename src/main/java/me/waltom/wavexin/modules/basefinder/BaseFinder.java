@@ -183,10 +183,15 @@ public class BaseFinder extends WaveXinModule {
     private ScanMethod activeScanMethod;
     private boolean scanStartPending;
     private static final int NORMAL_DEBUG_HEARTBEAT_TICKS = 40;
+    private static final int CONTAINER_RESCAN_INTERVAL_TICKS = 20;
     private int normalDebugTicks;
     private String normalDebugState = "INACTIVE";
     private int lastCompletedNormalRing = -1;
     private final Set<Long> recordedContainerChunks = new HashSet<>();
+    private final Set<ChunkPos> checkedContainerChunks = new HashSet<>();
+    private int containerScanTicks;
+    private int containerScanSettingsHash = Integer.MIN_VALUE;
+    private Object containerScanWorld;
     private final Set<UUID> recordedThrownPearls = new HashSet<>();
     private final List<BlockPos> createdWaypointPositions = new ArrayList<>();
     private final Set<Long> warnedMissingLoadedChunks = new HashSet<>();
@@ -472,9 +477,9 @@ public class BaseFinder extends WaveXinModule {
             .visible(this::showNormalResumeProgressSettings)
             .defaultValue(0)
             .min(0)
-            .max(1000)
+            .max(Integer.MAX_VALUE)
             .sliderMin(0)
-            .sliderMax(100)
+            .sliderMax(1500)
             .build());
 
     // Previous Chunk X
@@ -684,6 +689,10 @@ public class BaseFinder extends WaveXinModule {
 
         scanStartPending = false;
         recordedContainerChunks.clear();
+        checkedContainerChunks.clear();
+        containerScanTicks = 0;
+        containerScanSettingsHash = Integer.MIN_VALUE;
+        containerScanWorld = mc.world;
         recordedThrownPearls.clear();
         createdWaypointPositions.clear();
         warnedMissingLoadedChunks.clear();
@@ -834,6 +843,9 @@ public class BaseFinder extends WaveXinModule {
         }
 
         if (resumeCheckpointChunk != null) {
+            ChunkPos playerChunk = mc.player.getChunkPos();
+            visitedChunks.add(playerChunk);
+            recordLoadedContainerChunksNear(playerChunk);
             if (!normalDebugState.startsWith("WAITING_RESUME")) {
                 setNormalDebugState("RETURNING_TO_CHECKPOINT", "checkpoint=" + chunkDebugLabel(resumeCheckpointChunk));
             }
@@ -901,11 +913,13 @@ public class BaseFinder extends WaveXinModule {
             return;
         }
 
-        if (targetChunk == null || turnDelayTimer > 0) {
-            setNormalDebugState(targetChunk == null ? "NO_TARGET" : "TURN_DELAY", "turnDelay=" + turnDelayTimer);
+        if (targetChunk == null) {
+            setNormalDebugState("NO_TARGET", "turnDelay=" + turnDelayTimer);
             setScanForwardKey(false);
             return;
         }
+
+        turnDelayTimer = BaseFinderStateLogic.clearTurnDelayOutsideTarget(false, turnDelayTimer);
 
         Vec3d playerPos = new Vec3d(mc.player.getX(), mc.player.getY(), mc.player.getZ());
         Vec3d targetPos = new Vec3d(targetChunk.getStartX() + 8, mc.player.getY(), targetChunk.getStartZ() + 8);
@@ -932,18 +946,15 @@ public class BaseFinder extends WaveXinModule {
                 return;
             }
 
-            int chunkX = (int) (mc.player.getX() / 16);
-            int chunkZ = (int) (mc.player.getZ() / 16);
-            if (!mc.world.getChunkManager().isChunkLoaded(chunkX, chunkZ)) {
-                setNormalDebugState("WAITING_CURRENT_CHUNK", "checkedChunk=(" + chunkX + "," + chunkZ + ")");
+            ChunkPos currentChunk = mc.player.getChunkPos();
+            if (!mc.world.getChunkManager().isChunkLoaded(currentChunk.x, currentChunk.z)) {
+                setNormalDebugState("WAITING_CURRENT_CHUNK", "checkedChunk=" + chunkDebugLabel(currentChunk));
                 setScanForwardKey(false);
                 return;
             }
         }
 
-        if (moveSpeed.get() > 1.0) {
-            mc.player.setSprinting(true);
-        }
+        setScanSprint(moveSpeed.get() > 1.0);
 
         setNormalDebugState("MOVING", "distance=" + distance2D);
         setScanForwardKey(true);
@@ -951,6 +962,7 @@ public class BaseFinder extends WaveXinModule {
 
     @EventHandler
     private void onPostTick(TickEvent.Post event) {
+        restoreMovementViewAfterTick();
         if (activeScanMethod != ScanMethod.NORMAL) return;
         restoreNormalViewYaw();
         if (normalDebugTicks > 0 && normalDebugTicks % NORMAL_DEBUG_HEARTBEAT_TICKS == 0) {
@@ -967,7 +979,14 @@ public class BaseFinder extends WaveXinModule {
         if (stoppedScanMethod == ScanMethod.NORMAL) logNormalDebugSnapshot("DEACTIVATE", "moduleDisabled");
         ScanProgressManager.NormalScanProgress savedProgress = stoppedScanMethod == ScanMethod.NORMAL ? saveNormalScanProgress() : null;
         activeScanMethod = null;
+        recordedContainerChunks.clear();
+        checkedContainerChunks.clear();
+        containerScanTicks = 0;
+        containerScanSettingsHash = Integer.MIN_VALUE;
+        containerScanWorld = null;
         recordedThrownPearls.clear();
+        createdWaypointPositions.clear();
+        warnedMissingLoadedChunks.clear();
 
         if (stoppedScanMethod == ScanMethod.SPIRAL) {
             saveSpiralProgress();
@@ -1010,7 +1029,9 @@ public class BaseFinder extends WaveXinModule {
             checkpointChunk.x,
             checkpointChunk.z,
             currentCircle,
-            currentPath.name()
+            currentPath.name(),
+            currentServerKey(),
+            currentDimensionKey()
         );
         ScanProgressManager.saveNormalProgress(progress);
         syncRestartSettingsFromProgress(progress);
@@ -1066,17 +1087,16 @@ public class BaseFinder extends WaveXinModule {
                 return false;
             }
 
-            int chunkX = (int) (mc.player.getX() / 16);
-            int chunkZ = (int) (mc.player.getZ() / 16);
-            if (!mc.world.getChunkManager().isChunkLoaded(chunkX, chunkZ)) {
-                setNormalDebugState("WAITING_RESUME_CURRENT_CHUNK", "checkedChunk=(" + chunkX + "," + chunkZ + ")");
+            ChunkPos currentChunk = mc.player.getChunkPos();
+            if (!mc.world.getChunkManager().isChunkLoaded(currentChunk.x, currentChunk.z)) {
+                setNormalDebugState("WAITING_RESUME_CURRENT_CHUNK", "checkedChunk=" + chunkDebugLabel(currentChunk));
                 setScanForwardKey(false);
                 return false;
             }
         }
 
         setNormalDebugState("RETURNING_TO_CHECKPOINT", "checkpoint=" + chunkDebugLabel(resumeCheckpointChunk));
-        if (moveSpeed.get() > 1.0) mc.player.setSprinting(true);
+        setScanSprint(moveSpeed.get() > 1.0);
         setScanForwardKey(true);
         return false;
     }
@@ -1096,7 +1116,6 @@ public class BaseFinder extends WaveXinModule {
         if (!normalViewRestorePending) return;
         if (mc.player != null) mc.player.setYaw(normalViewYaw);
         normalViewRestorePending = false;
-        lastCompletedNormalRing = -1;
     }
 
     private void applyMovementYaw(float yaw, boolean keepVisible) {
@@ -1332,14 +1351,56 @@ public class BaseFinder extends WaveXinModule {
             return;
         }
 
+        if (containerScanWorld != mc.world) {
+            containerScanWorld = mc.world;
+            recordedContainerChunks.clear();
+            checkedContainerChunks.clear();
+            containerScanTicks = 0;
+            recordedThrownPearls.clear();
+            createdWaypointPositions.clear();
+            warnedMissingLoadedChunks.clear();
+            nextWaypointNumber = 1;
+            nextPearlWaypointNumber = 1;
+            containerScanSettingsHash = Integer.MIN_VALUE;
+        }
+
         detectThrownPearlsIfEnabled();
 
+        List<BlockEntityType<?>> selectedContainerBlocks = containerBlocks.get();
+        if (selectedContainerBlocks == null || selectedContainerBlocks.isEmpty()) {
+            checkedContainerChunks.clear();
+            containerScanTicks = 0;
+            if (!warnedEmptyContainerBlocks) {
+                WaveXinAddon.LOG.warn("[BaseFinderDebug] Container scan skipped because no container block types are selected. threshold={} method={}", containerThreshold.get(), activeScanMethod);
+                warnedEmptyContainerBlocks = true;
+            }
+            return;
+        }
+        warnedEmptyContainerBlocks = false;
+
+        int settingsHash = 31 * containerThreshold.get() + selectedContainerBlocks.hashCode();
+        if (settingsHash != containerScanSettingsHash) {
+            checkedContainerChunks.clear();
+            containerScanTicks = 0;
+            containerScanSettingsHash = settingsHash;
+        }
+
+        if (++containerScanTicks >= CONTAINER_RESCAN_INTERVAL_TICKS) {
+            checkedContainerChunks.clear();
+            containerScanTicks = 0;
+        }
+
         int radius = getContainerScanRadius();
+        checkedContainerChunks.removeIf(chunk ->
+            Math.abs((long) chunk.x - center.x) > radius
+                || Math.abs((long) chunk.z - center.z) > radius
+                || !mc.world.getChunkManager().isChunkLoaded(chunk.x, chunk.z)
+        );
+
         for (int chunkX = center.x - radius; chunkX <= center.x + radius; chunkX++) {
             for (int chunkZ = center.z - radius; chunkZ <= center.z + radius; chunkZ++) {
-                if (mc.world.getChunkManager().isChunkLoaded(chunkX, chunkZ)) {
-                    recordContainerChunkIfNeeded(new ChunkPos(chunkX, chunkZ));
-                }
+                if (!mc.world.getChunkManager().isChunkLoaded(chunkX, chunkZ)) continue;
+                recordContainerChunkIfNeeded(new ChunkPos(chunkX, chunkZ), selectedContainerBlocks);
             }
         }
     }
@@ -1350,23 +1411,14 @@ public class BaseFinder extends WaveXinModule {
         return Math.min(radius, Math.max(1, mc.options.getViewDistance().getValue()));
     }
 
-    private void recordContainerChunkIfNeeded(ChunkPos chunkPos) {
+    private void recordContainerChunkIfNeeded(ChunkPos chunkPos, List<BlockEntityType<?>> selectedContainerBlocks) {
         long key = chunkPos.toLong();
-        if (recordedContainerChunks.contains(key)) return;
+        if (recordedContainerChunks.contains(key) || checkedContainerChunks.contains(chunkPos)) return;
 
         WorldChunk chunk = mc.world.getChunkManager().getWorldChunk(chunkPos.x, chunkPos.z, false);
         if (chunk == null) {
             if (warnedMissingLoadedChunks.add(key)) {
                 WaveXinAddon.LOG.warn("[BaseFinderDebug] Loaded container candidate had no WorldChunk. chunk={} playerChunk={} method={} resume={}", chunkDebugLabel(chunkPos), chunkDebugLabel(mc.player.getChunkPos()), activeScanMethod, chunkDebugLabel(resumeCheckpointChunk));
-            }
-            return;
-        }
-
-        List<BlockEntityType<?>> selectedContainerBlocks = containerBlocks.get();
-        if (selectedContainerBlocks == null || selectedContainerBlocks.isEmpty()) {
-            if (!warnedEmptyContainerBlocks) {
-                WaveXinAddon.LOG.warn("[BaseFinderDebug] Container scan skipped because no container block types are selected. threshold={} method={}", containerThreshold.get(), activeScanMethod);
-                warnedEmptyContainerBlocks = true;
             }
             return;
         }
@@ -1381,6 +1433,7 @@ public class BaseFinder extends WaveXinModule {
             if (firstPos == null) firstPos = blockEntity.getPos();
         }
 
+        checkedContainerChunks.add(chunkPos);
         if (count < containerThreshold.get()) return;
 
         recordedContainerChunks.add(key);
@@ -1654,8 +1707,8 @@ public class BaseFinder extends WaveXinModule {
         }
 
         ChunkPos corner = getSpiralCorner(progress.totalSegments);
-        int differenceX = Math.abs(Math.abs(playerChunk.x) - Math.abs(corner.x));
-        int differenceZ = Math.abs(Math.abs(playerChunk.z) - Math.abs(corner.z));
+        long differenceX = BaseFinderStateLogic.coordinateDistance(playerChunk.x, corner.x);
+        long differenceZ = BaseFinderStateLogic.coordinateDistance(playerChunk.z, corner.z);
         if (differenceX > 2 || differenceZ > 2) {
             warningKey("warning.wavexin.base_finder.spiral_too_far", "Current position is too far from the calculated spiral route.");
             infoKey("message.wavexin.base_finder.spiral_recommended_chunk", "Recommended chunk: (%d, %d).", corner.x, corner.z);
@@ -1834,25 +1887,7 @@ public class BaseFinder extends WaveXinModule {
     }
 
     private ChunkPos getSpiralCorner(int completedSegments) {
-        int x = 0;
-        int z = 0;
-        MapScanDirection direction = MapScanDirection.EAST;
-        int length = 1;
-        int stepsAtLength = 0;
-
-        for (int segment = 0; segment < completedSegments; segment++) {
-            int distance = length * spiralChunkStep.get();
-            x += direction.dx * distance;
-            z += direction.dz * distance;
-            stepsAtLength++;
-            if (stepsAtLength >= 2) {
-                length++;
-                stepsAtLength = 0;
-            }
-            direction = direction.getNext();
-        }
-
-        return new ChunkPos(x, z);
+        return ScanProgressManager.calculateCompletedChunkPos(0, 0, completedSegments, spiralChunkStep.get());
     }
 
     private void smoothSpiralRotation() {

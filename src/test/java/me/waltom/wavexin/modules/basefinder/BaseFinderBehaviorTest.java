@@ -6,6 +6,9 @@ public final class BaseFinderBehaviorTest {
 
     public static void main(String[] args) {
         testBlockToChunk();
+        testTurnDelayRecovery();
+        testCoordinateDistance();
+        testSpiralProgressCalculation();
         testTemporaryViewRestore();
         testLockedViewRestore();
         testViewStateTargetChanges();
@@ -30,6 +33,52 @@ public final class BaseFinderBehaviorTest {
         assertEquals(-2, BaseFinderStateLogic.blockToChunk(-17), "chunk -17");
         assertEquals(7716049, BaseFinderStateLogic.blockToChunk(123456789), "large positive chunk");
         assertEquals(-7716050, BaseFinderStateLogic.blockToChunk(-123456789), "large negative chunk");
+    }
+
+    private static void testTurnDelayRecovery() {
+        assertEquals(0, BaseFinderStateLogic.clearTurnDelayOutsideTarget(false, 40), "turn delay clears after leaving target");
+        assertEquals(40, BaseFinderStateLogic.clearTurnDelayOutsideTarget(true, 40), "turn delay remains while still at target");
+        assertEquals(0, BaseFinderStateLogic.clearTurnDelayOutsideTarget(false, 0), "zero turn delay remains zero");
+    }
+
+    private static void testCoordinateDistance() {
+        assertEquals(100000L, BaseFinderStateLogic.coordinateDistance(-50000, 50000), "coordinate distance keeps sign");
+        assertEquals(0L, BaseFinderStateLogic.coordinateDistance(-50000, -50000), "same coordinate distance");
+    }
+
+    private static void testSpiralProgressCalculation() {
+        ScanProgressManager.ScanProgress firstCorner = ScanProgressManager.calculateProgressFromPosition(6, 0, 0, 0, 6);
+        assertEquals(1, firstCorner.totalSegments, "first spiral corner completed segments");
+        assertEquals(MapScanDirection.NORTH.ordinal(), firstCorner.currentDir, "first spiral corner next direction");
+
+        ScanProgressManager.ScanProgress farCorner = ScanProgressManager.calculateProgressFromPosition(50004, -50004, 0, 0, 6);
+        var completed = ScanProgressManager.calculateCompletedChunkCoordinates(
+            farCorner.startX,
+            farCorner.startZ,
+            farCorner.totalSegments,
+            farCorner.chunkStep
+        );
+        assertEquals(50004, completed.x(), "large-coordinate spiral corner X");
+        assertEquals(-50004, completed.z(), "large-coordinate spiral corner Z");
+
+        var completedAfterFour = ScanProgressManager.calculateCompletedChunkCoordinates(0, 0, 4, 6);
+        assertEquals(-6, completedAfterFour.x(), "four-segment completed corner X");
+        assertEquals(6, completedAfterFour.z(), "four-segment completed corner Z");
+
+        ScanProgressManager.ScanProgress initial = new ScanProgressManager.ScanProgress(0, 0, 0, MapScanDirection.EAST.ordinal(), 0, 1, 6);
+        var firstTarget = ScanProgressManager.calculateTargetChunkCoordinates(initial, 6);
+        assertEquals(6, firstTarget.x(), "initial spiral target X");
+        assertEquals(0, firstTarget.z(), "initial spiral target Z");
+
+        ScanProgressManager.ScanProgress offsetCorner = ScanProgressManager.calculateProgressFromPosition(-49904, 50104, 100, 100, 6);
+        var offsetCompleted = ScanProgressManager.calculateCompletedChunkCoordinates(
+            offsetCorner.startX,
+            offsetCorner.startZ,
+            offsetCorner.totalSegments,
+            offsetCorner.chunkStep
+        );
+        assertEquals(-49904, offsetCompleted.x(), "offset large-coordinate spiral corner X");
+        assertEquals(50104, offsetCompleted.z(), "offset large-coordinate spiral corner Z");
     }
 
     private static void testTemporaryViewRestore() {

@@ -187,44 +187,76 @@ public class ScanProgressManager {
         ScanProgress spiral;
         NormalScanProgress normal;
     }
-    public static ChunkPos calculateTargetChunkPos(ScanProgress progress, int chunkStep) {
-        if (progress == null) return null;
-        
-        // 计算从起点开始到当前段的累积偏移
-        int currentX = progress.startX;
-        int currentZ = progress.startZ;
-        
-        MapScanDirection[] directions = MapScanDirection.values();
-        int tempDirIdx = 0; // 从 EAST 开始
-        int tempStepLen = 1;
-        int tempStepsInLen = 0;
-        
-        // 累加所有已完成的段
-        for (int i = 0; i < progress.totalSegments; i++) {
-            // 步长序列：1, 1, 2, 2, 3, 3... （需要乘以 chunkStep）
-            int dist = tempStepLen * chunkStep;
-            MapScanDirection dir = directions[tempDirIdx];
-            currentX += dir.dx * dist;
-            currentZ += dir.dz * dist;
-            
-            tempStepsInLen++;
-            if (tempStepsInLen >= 2) {
-                tempStepLen++;
-                tempStepsInLen = 0;
-            }
-            
-            tempDirIdx = (tempDirIdx + 1) % 4;
-        }
-        
-        // 当前方向的目标 = 已完成的累积位置 + 当前段应移动的距离
-        MapScanDirection currentDir = directions[progress.currentDir];
-        int currentDist = progress.currentStepLength * chunkStep;  // 需要乘以 chunkStep
-        int targetX = currentX + currentDir.dx * currentDist;
-        int targetZ = currentZ + currentDir.dz * currentDist;
-        
-        return new ChunkPos(targetX, targetZ);
+
+    record ChunkCoordinates(int x, int z) {
     }
-    
+
+    public static ChunkPos calculateTargetChunkPos(ScanProgress progress, int chunkStep) {
+        ChunkCoordinates target = calculateTargetChunkCoordinates(progress, chunkStep);
+        return target == null ? null : new ChunkPos(target.x, target.z);
+    }
+
+    static ChunkCoordinates calculateTargetChunkCoordinates(ScanProgress progress, int chunkStep) {
+        if (progress == null) return null;
+
+        int safeChunkStep = Math.max(1, chunkStep);
+        ChunkCoordinates completed = calculateCompletedChunkCoordinates(progress.startX, progress.startZ, progress.totalSegments, safeChunkStep);
+        MapScanDirection[] directions = MapScanDirection.values();
+        int directionIndex = Math.floorMod(progress.currentDir, directions.length);
+        MapScanDirection currentDirection = directions[directionIndex];
+        long distance = (long) Math.max(1, progress.currentStepLength) * safeChunkStep;
+        return checkedChunkCoordinates(
+            (long) completed.x + currentDirection.dx * distance,
+            (long) completed.z + currentDirection.dz * distance
+        );
+    }
+
+    public static ChunkPos calculateCompletedChunkPos(int startX, int startZ, int completedSegments, int chunkStep) {
+        ChunkCoordinates completed = calculateCompletedChunkCoordinates(startX, startZ, completedSegments, chunkStep);
+        return new ChunkPos(completed.x, completed.z);
+    }
+
+    static ChunkCoordinates calculateCompletedChunkCoordinates(int startX, int startZ, int completedSegments, int chunkStep) {
+        int safeChunkStep = Math.max(1, chunkStep);
+        if (completedSegments <= 0) return new ChunkCoordinates(startX, startZ);
+
+        long lastSegment = (long) completedSegments - 1;
+        long ring = lastSegment / 4 + 1;
+        int phase = (int) (lastSegment % 4);
+        long relativeX;
+        long relativeZ;
+        switch (phase) {
+            case 0 -> {
+                relativeX = ring;
+                relativeZ = ring - 1;
+            }
+            case 1 -> {
+                relativeX = ring;
+                relativeZ = -ring;
+            }
+            case 2 -> {
+                relativeX = -ring;
+                relativeZ = -ring;
+            }
+            default -> {
+                relativeX = -ring;
+                relativeZ = ring;
+            }
+        }
+
+        return checkedChunkCoordinates(
+            (long) startX + relativeX * safeChunkStep,
+            (long) startZ + relativeZ * safeChunkStep
+        );
+    }
+
+    private static ChunkCoordinates checkedChunkCoordinates(long x, long z) {
+        if (x < Integer.MIN_VALUE || x > Integer.MAX_VALUE || z < Integer.MIN_VALUE || z > Integer.MAX_VALUE) {
+            throw new IllegalArgumentException("Calculated chunk position exceeds integer range: (" + x + ", " + z + ")");
+        }
+        return new ChunkCoordinates((int) x, (int) z);
+    }
+
     /**
      * 计算下一个目标区块坐标（前进一个区块段）
      */
@@ -264,84 +296,71 @@ public class ScanProgressManager {
      * @param chunkStep 区块步长（未使用，保留兼容性）
      * @return 计算出的进度，返回距离玩家最近的螺旋路径状态
      */
-    public static ScanProgress calculateProgressFromPosition(int playerChunkX, int playerChunkZ, 
+    public static ScanProgress calculateProgressFromPosition(int playerChunkX, int playerChunkZ,
                                                              int startX, int startZ, int chunkStep) {
-        MapScanDirection[] directions = MapScanDirection.values();
-        
-        int currentX = startX;
-        int currentZ = startZ;
-        int tempStepLen = 1;
-        int tempStepsInLen = 0;
-        int tempDirIdx = 0;
-        
-        // 记录距离玩家最近的拐点信息
-        int closestSegment = 0;
-        int closestDirIdx = 0;
-        int closestStepLen = 1;
-        int closestStepsInLen = 0;
-        double minDistance = Double.MAX_VALUE;
-        
-        // 模拟螺旋路径，查找距离玩家最近的拐点
-        int maxSearchSegments = 10000;
-        
-        for (int segment = 0; segment < maxSearchSegments; segment++) {
-            MapScanDirection dir = directions[tempDirIdx];
-            int dist = tempStepLen * chunkStep;  // 需要乘以 chunkStep
-            
-            // 当前段的终点（即拐点）
-            int cornerX = currentX + dir.dx * dist;
-            int cornerZ = currentZ + dir.dz * dist;
-            
-            // 计算玩家到该拐点的距离
-            double distance = Math.sqrt(
-                Math.pow(playerChunkX - cornerX, 2) + 
-                Math.pow(playerChunkZ - cornerZ, 2)
-            );
-            
-            // 如果这个拐点更近，更新记录
-            if (distance < minDistance) {
-                minDistance = distance;
-                closestSegment = segment;
-                closestDirIdx = tempDirIdx;
-                closestStepLen = tempStepLen;
-                closestStepsInLen = tempStepsInLen;
+        int safeChunkStep = Math.max(1, chunkStep);
+        long relativePlayerX = (long) playerChunkX - startX;
+        long relativePlayerZ = (long) playerChunkZ - startZ;
+
+        long bestSegment = -1;
+        double bestDistanceSquared = Double.POSITIVE_INFINITY;
+
+        for (int phase = 0; phase < 4; phase++) {
+            double estimatedRing = switch (phase) {
+                case 0 -> (relativePlayerX + relativePlayerZ + safeChunkStep) / (2.0 * safeChunkStep);
+                case 1 -> (relativePlayerX - relativePlayerZ) / (2.0 * safeChunkStep);
+                case 2 -> -(relativePlayerX + relativePlayerZ) / (2.0 * safeChunkStep);
+                default -> (-relativePlayerX + relativePlayerZ) / (2.0 * safeChunkStep);
+            };
+
+            long roundedRing = Math.max(1L, Math.round(estimatedRing));
+            for (long ring = Math.max(1L, roundedRing - 2); ring <= roundedRing + 2; ring++) {
+                long relativeCornerX;
+                long relativeCornerZ;
+                switch (phase) {
+                    case 0 -> {
+                        relativeCornerX = ring * safeChunkStep;
+                        relativeCornerZ = (ring - 1) * safeChunkStep;
+                    }
+                    case 1 -> {
+                        relativeCornerX = ring * safeChunkStep;
+                        relativeCornerZ = -ring * safeChunkStep;
+                    }
+                    case 2 -> {
+                        relativeCornerX = -ring * safeChunkStep;
+                        relativeCornerZ = -ring * safeChunkStep;
+                    }
+                    default -> {
+                        relativeCornerX = -ring * safeChunkStep;
+                        relativeCornerZ = ring * safeChunkStep;
+                    }
+                }
+
+                long deltaX = relativePlayerX - relativeCornerX;
+                long deltaZ = relativePlayerZ - relativeCornerZ;
+                double distanceSquared = (double) deltaX * deltaX + (double) deltaZ * deltaZ;
+                long segment = 4L * (ring - 1) + phase;
+                if (segment >= Integer.MAX_VALUE) continue;
+
+                if (distanceSquared < bestDistanceSquared
+                    || (distanceSquared == bestDistanceSquared && (bestSegment < 0 || segment < bestSegment))) {
+                    bestDistanceSquared = distanceSquared;
+                    bestSegment = segment;
+                }
             }
-            
-            // 如果距离开始变大，说明已经过了最近的拐点，可以提前结束
-            // 但为了保险起见，继续搜索一小段距离
-            if (distance > minDistance && segment > closestSegment + 50) {
-                break;
-            }
-            
-            // 移动到下一个拐点
-            currentX = cornerX;
-            currentZ = cornerZ;
-            
-            tempStepsInLen++;
-            if (tempStepsInLen >= 2) {
-                tempStepLen++;
-                tempStepsInLen = 0;
-            }
-            tempDirIdx = (tempDirIdx + 1) % 4;
-        }
-        
-        int nextTotalSegments = closestSegment + 1;
-        int nextDirIdx = (closestDirIdx + 1) % directions.length;
-        int nextStepsInLen = closestStepsInLen + 1;
-        int nextStepLen = closestStepLen;
-        if (nextStepsInLen >= 2) {
-            nextStepLen++;
-            nextStepsInLen = 0;
         }
 
-        // 返回距离玩家最近的拐点之后的下一段状态
+        if (bestSegment < 0) return null;
+
+        int completedSegments = (int) bestSegment + 1;
         return new ScanProgress(
-            startX, startZ,
-            nextTotalSegments,   // totalSegments
-            nextDirIdx,          // currentDir
-            nextStepsInLen,
-            nextStepLen,         // currentStepLength
-            chunkStep            // 必须传入 chunkStep，否则会使用默认值6导致计算错误
+            startX,
+            startZ,
+            completedSegments,
+            Math.floorMod(completedSegments, MapScanDirection.values().length),
+            completedSegments & 1,
+            completedSegments / 2 + 1,
+            safeChunkStep
         );
     }
 }

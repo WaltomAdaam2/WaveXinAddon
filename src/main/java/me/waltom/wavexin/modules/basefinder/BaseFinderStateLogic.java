@@ -12,6 +12,14 @@ final class BaseFinderStateLogic {
         return "WAITING_PLAYER_OR_WORLD".equals(state);
     }
 
+    static int clearTurnDelayOutsideTarget(boolean atTarget, int turnDelayTimer) {
+        return !atTarget && turnDelayTimer > 0 ? 0 : turnDelayTimer;
+    }
+
+    static long coordinateDistance(int first, int second) {
+        return Math.abs((long) first - second);
+    }
+
     static boolean shouldCancelSpiralRotation(boolean lockView, boolean rotating, boolean needsInitialRotation) {
         return !lockView && (rotating || needsInitialRotation);
     }
