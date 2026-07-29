@@ -369,3 +369,5 @@ warning.wavexin.turtle_potion_thrower.unavailable
 warning.wavexin.turtle_potion_thrower.no_potion
 warning.wavexin.turtle_potion_thrower.hotbar_required
 warning.wavexin.turtle_potion_thrower.swap_failed
+warning.wavexin.turtle_potion_thrower.restore_failed
+warning.wavexin.turtle_potion_thrower.throw_failed

@@ -2,9 +2,11 @@ package me.waltom.wavexin.modules.turtlepotionthrower;
 
 import me.waltom.wavexin.WaveXinAddon;
 import me.waltom.wavexin.core.WaveXinModule;
+import me.waltom.wavexin.i18n.WaveXinI18n;
 import meteordevelopment.meteorclient.settings.BoolSetting;
 import meteordevelopment.meteorclient.settings.Setting;
 import meteordevelopment.meteorclient.settings.SettingGroup;
+import meteordevelopment.meteorclient.utils.player.ChatUtils;
 import meteordevelopment.meteorclient.utils.player.FindItemResult;
 import meteordevelopment.meteorclient.utils.player.InvUtils;
 import net.minecraft.component.DataComponentTypes;
@@ -12,6 +14,7 @@ import net.minecraft.component.type.PotionContentsComponent;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.Items;
 import net.minecraft.potion.Potions;
+import net.minecraft.util.ActionResult;
 import net.minecraft.util.Hand;
 
 public class TurtlePotionThrower extends WaveXinModule {
@@ -61,6 +64,15 @@ public class TurtlePotionThrower extends WaveXinModule {
             return;
         }
 
+        if (result.isMainHand()) {
+            usePotion(Hand.MAIN_HAND);
+            return;
+        }
+        if (result.isOffhand()) {
+            usePotion(Hand.OFF_HAND);
+            return;
+        }
+
         if (!result.isHotbar() && !quickSwap.get()) {
             warnFailure("warning.wavexin.turtle_potion_thrower.hotbar_required", "No turtle potion was found in your hotbar. Enable Quick Swap to use inventory potions.");
             return;
@@ -68,22 +80,37 @@ public class TurtlePotionThrower extends WaveXinModule {
 
         int selectedSlot = mc.player.getInventory().getSelectedSlot();
         int itemSlot = result.slot();
-        boolean wasHeld = result.isMainHand();
 
-        if (!wasHeld) {
-            if (quickSwap.get()) {
+        if (quickSwap.get()) {
+            InvUtils.quickSwap().fromId(selectedSlot).to(itemSlot);
+            try {
+                usePotion(Hand.MAIN_HAND);
+            } finally {
                 InvUtils.quickSwap().fromId(selectedSlot).to(itemSlot);
-            } else if (!InvUtils.swap(itemSlot, false)) {
-                warnFailure("warning.wavexin.turtle_potion_thrower.swap_failed", "Failed to swap to the turtle potion slot.");
-                return;
+            }
+            return;
+        }
+
+        if (!InvUtils.swap(itemSlot, true)) {
+            warnFailure("warning.wavexin.turtle_potion_thrower.swap_failed", "Failed to swap to the turtle potion slot.");
+            return;
+        }
+
+        try {
+            usePotion(Hand.MAIN_HAND);
+        } finally {
+            if (!InvUtils.swapBack()) {
+                warnFailure("warning.wavexin.turtle_potion_thrower.restore_failed", "Failed to restore the previous hotbar slot after throwing turtle potion.");
             }
         }
+    }
 
-        mc.interactionManager.interactItem(mc.player, Hand.MAIN_HAND);
+    private boolean usePotion(Hand hand) {
+        ActionResult result = mc.interactionManager.interactItem(mc.player, hand);
+        if (result.isAccepted()) return true;
 
-        if (!wasHeld && quickSwap.get()) {
-            InvUtils.quickSwap().fromId(selectedSlot).to(itemSlot);
-        }
+        warnFailure("warning.wavexin.turtle_potion_thrower.throw_failed", "Turtle potion throw was rejected.");
+        return false;
     }
 
     static boolean isThrowableTurtlePotion(ItemStack stack) {
@@ -97,10 +124,8 @@ public class TurtlePotionThrower extends WaveXinModule {
     }
 
     private void warnFailure(String key, String fallback) {
-        if (notify.get()) {
-            warningKey(key, fallback);
-        } else {
-            WaveXinAddon.LOG.warn("[WaveXinDebug] module={} message={}", getClass().getSimpleName(), fallback);
-        }
+        String message = WaveXinI18n.tr(key, fallback);
+        WaveXinAddon.LOG.warn("[WaveXinDebug] module={} message={}", getClass().getSimpleName(), message);
+        if (notify.get()) ChatUtils.warning(message);
     }
 }
