@@ -4,7 +4,12 @@ import me.waltom.wavexin.core.WaveXinModule;
 import me.waltom.wavexin.core.WaveXinDataPaths;
 import me.waltom.wavexin.WaveXinAddon;
 import me.waltom.wavexin.i18n.WaveXinI18n;
+import me.waltom.wavexin.gui.WaveXinEnumDropdown;
 import meteordevelopment.meteorclient.MeteorClient;
+import meteordevelopment.meteorclient.gui.renderer.GuiRenderer;
+import meteordevelopment.meteorclient.gui.utils.SettingsWidgetFactory;
+import meteordevelopment.meteorclient.gui.widgets.input.WDropdown;
+import meteordevelopment.meteorclient.gui.widgets.input.WIntEdit;
 import meteordevelopment.meteorclient.utils.player.ChatUtils;
 import meteordevelopment.meteorclient.utils.render.color.Color;
 import meteordevelopment.meteorclient.utils.render.color.RainbowColors;
@@ -12,6 +17,7 @@ import net.minecraft.block.entity.BlockEntity;
 import net.minecraft.block.entity.BlockEntityType;
 import net.minecraft.world.chunk.WorldChunk;
 import java.io.IOException;
+import java.lang.ref.WeakReference;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
@@ -22,6 +28,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ThreadLocalRandom;
+import java.util.function.Consumer;
 import meteordevelopment.meteorclient.events.render.Render3DEvent;
 import meteordevelopment.meteorclient.events.world.TickEvent;
 import meteordevelopment.meteorclient.renderer.ShapeMode;
@@ -44,6 +51,43 @@ import java.util.Set;
 import java.util.UUID;
 
 public class BaseFinder extends WaveXinModule {
+    static {
+        SettingsWidgetFactory.registerCustomFactory(RestartIntSetting.class, theme -> (table, setting) -> {
+            RestartIntSetting intSetting = (RestartIntSetting) setting;
+            WIntEdit edit = table.add(theme.intEdit(intSetting.get(), intSetting.min, intSetting.max, intSetting.sliderMin, intSetting.sliderMax, intSetting.noSlider)).expandX().widget();
+            intSetting.addWidget(edit);
+            edit.action = () -> {
+                if (!intSetting.set(edit.get())) edit.set(intSetting.get());
+            };
+
+            var reset = table.add(theme.button(GuiRenderer.RESET)).widget();
+            reset.action = () -> {
+                intSetting.reset();
+                edit.set(intSetting.get());
+            };
+            reset.tooltip = WaveXinI18n.tr("tooltip.wavexin.common.reset", "Reset");
+        });
+        SettingsWidgetFactory.registerCustomFactory(RestartRouteSetting.class, theme -> (table, setting) -> {
+            RestartRouteSetting routeSetting = (RestartRouteSetting) setting;
+            WDropdown<SweepRoute> dropdown = table.add(new WaveXinEnumDropdown<>(SweepRoute.values(), routeSetting.get(), routeSetting.module)).expandCellX().widget();
+            routeSetting.addWidget(dropdown);
+            dropdown.action = () -> routeSetting.set(dropdown.get());
+
+            var reset = table.add(theme.button(GuiRenderer.RESET)).widget();
+            reset.action = () -> {
+                routeSetting.reset();
+                dropdown.set(routeSetting.get());
+            };
+            reset.tooltip = WaveXinI18n.tr("tooltip.wavexin.common.reset", "Reset");
+        });
+        SettingsWidgetFactory.registerCustomFactory(RestartButtonSetting.class, theme -> (table, setting) -> {
+            RestartButtonSetting buttonSetting = (RestartButtonSetting) setting;
+            var button = table.add(theme.button(WaveXinI18n.tr(buttonSetting.buttonKey, buttonSetting.buttonLabel))).expandX().widget();
+            button.action = buttonSetting::run;
+            button.tooltip = WaveXinI18n.tr(buttonSetting.tooltipKey, setting.description);
+        });
+    }
+
     public enum ScanMethod { SPIRAL("Spiral Scan"), NORMAL("Normal Scan"); private final String title; ScanMethod(String title) { this.title = title; } @Override public String toString() { return title; } }
     private static final Path CONTAINER_RECORD_PATH = WaveXinDataPaths.CONTAINER_DIRECTORY.resolve("container-records.txt");
     private static final Path LEGACY_CONTAINER_RECORD_PATH = MeteorClient.FOLDER.toPath().resolve("base-finder-xin").resolve("container-records.txt");
@@ -424,7 +468,7 @@ public class BaseFinder extends WaveXinModule {
             .visible(this::isNormalScan)
             .build());
 
-    private final Setting<Integer> lastCircle = sgRestart.add(new IntSetting.Builder()
+    private final Setting<Integer> lastCircle = sgRestart.add(new RestartIntSetting.Builder()
             .name("Previous Ring")
             .description("Saved ring number for resuming.")
             .visible(this::showNormalResumeProgressSettings)
@@ -436,7 +480,7 @@ public class BaseFinder extends WaveXinModule {
             .build());
 
     // Previous Chunk X
-    private final Setting<Integer> lastChunkX = sgRestart.add(new IntSetting.Builder()
+    private final Setting<Integer> lastChunkX = sgRestart.add(new RestartIntSetting.Builder()
             .name("Previous Chunk X")
             .description("Saved chunk X position for resuming.")
             .visible(this::showNormalResumeProgressSettings)
@@ -445,10 +489,11 @@ public class BaseFinder extends WaveXinModule {
             .max(Integer.MAX_VALUE)
             .sliderMin(Integer.MIN_VALUE)
             .sliderMax(Integer.MAX_VALUE)
+            .noSlider()
             .build());
 
     // Previous Chunk Z
-    private final Setting<Integer> lastChunkZ = sgRestart.add(new IntSetting.Builder()
+    private final Setting<Integer> lastChunkZ = sgRestart.add(new RestartIntSetting.Builder()
             .name("Previous Chunk Z")
             .description("Saved chunk Z position for resuming.")
             .visible(this::showNormalResumeProgressSettings)
@@ -457,10 +502,11 @@ public class BaseFinder extends WaveXinModule {
             .max(Integer.MAX_VALUE)
             .sliderMin(Integer.MIN_VALUE)
             .sliderMax(Integer.MAX_VALUE)
+            .noSlider()
             .build());
 
 // Previous route
-    private final Setting<SweepRoute> lastPath = sgRestart.add(new EnumSetting.Builder<SweepRoute>()
+    private final Setting<SweepRoute> lastPath = sgRestart.add(new RestartRouteSetting.Builder()
             .name("Previous Route")
             .description("Saved route point for resuming.")
             .visible(this::showNormalResumeProgressSettings)
@@ -468,7 +514,7 @@ public class BaseFinder extends WaveXinModule {
             .build());
 
     // Origin Chunk X
-    private final Setting<Integer> lastOriginX = sgRestart.add(new IntSetting.Builder()
+    private final Setting<Integer> lastOriginX = sgRestart.add(new RestartIntSetting.Builder()
             .name("Origin Chunk X")
             .description("Saved origin chunk X for resuming.")
             .visible(this::showNormalResumeProgressSettings)
@@ -477,10 +523,11 @@ public class BaseFinder extends WaveXinModule {
             .max(Integer.MAX_VALUE)
             .sliderMin(Integer.MIN_VALUE)
             .sliderMax(Integer.MAX_VALUE)
+            .noSlider()
             .build());
 
     // Origin Chunk Z
-    private final Setting<Integer> lastOriginZ = sgRestart.add(new IntSetting.Builder()
+    private final Setting<Integer> lastOriginZ = sgRestart.add(new RestartIntSetting.Builder()
             .name("Origin Chunk Z")
             .description("Saved origin chunk Z for resuming.")
             .visible(this::showNormalResumeProgressSettings)
@@ -489,17 +536,33 @@ public class BaseFinder extends WaveXinModule {
             .max(Integer.MAX_VALUE)
             .sliderMin(Integer.MIN_VALUE)
             .sliderMax(Integer.MAX_VALUE)
+            .noSlider()
+            .build());
+
+    private final Setting<Boolean> resetRestartData = sgRestart.add(new RestartButtonSetting.Builder()
+            .name("Reset Restart Data")
+            .description("Clears saved Normal Scan restart data.")
+            .buttonLabel("Reset")
+            .action(this::resetNormalRestartData)
+            .visible(this::isNormalScan)
+            .build());
+
+    private final Setting<Boolean> renderCompletedArea = sgRender.add(new BoolSetting.Builder()
+            .name("Render Completed Area")
+            .description("Keeps completed Normal Scan chunks rendered with the visited color.")
+            .defaultValue(false)
+            .visible(this::isNormalScan)
             .build());
 
 // Render distance setting
     public final Setting<Integer> renderDistance = sgRender.add(new IntSetting.Builder()
             .name("Render Distance")
             .description("Maximum route render distance in chunks.")
-            .defaultValue(32)
+            .defaultValue(128)
             .min(6)
-            .max(128)
+            .max(256)
             .sliderMin(6)
-            .sliderMax(128)
+            .sliderMax(256)
             .visible(this::isNormalScan)
             .build());
 
@@ -527,11 +590,11 @@ public class BaseFinder extends WaveXinModule {
     private final Setting<Integer> preloadCircles = sgRender.add(new IntSetting.Builder()
             .name("Preload Rings")
             .description("Number of scan rings to prepare ahead of time.")
-            .defaultValue(3)
+            .defaultValue(10)
             .min(1)
-            .max(10)
+            .max(20)
             .sliderMin(1)
-            .sliderMax(10)
+            .sliderMax(20)
             .visible(this::isNormalScan)
             .build());
 
@@ -709,6 +772,22 @@ public class BaseFinder extends WaveXinModule {
     private String getNormalProgressKey(ScanProgressManager.NormalScanProgress progress) {
         return progress.originX + ":" + progress.originZ + ":" + progress.playerX + ":" + progress.playerZ + ":" + progress.ring + ":" + progress.route;
     }
+
+    private void resetNormalRestartData() {
+        ScanProgressManager.clearNormalProgress();
+        syncedNormalProgressKey = null;
+        savedNormalScanChunk = null;
+        savedNormalScanCircle = -1;
+        savedNormalScanPath = null;
+        lastBegin.set(false);
+        lastCircle.set(0);
+        lastChunkX.set(0);
+        lastChunkZ.set(0);
+        lastOriginX.set(0);
+        lastOriginZ.set(0);
+        lastPath.set(SweepRoute.NEXT_CIRCLE);
+    }
+
     private boolean isChunkOnPreparedNormalRing(int chunkX, int chunkZ) {
         if (originChunk == null) return false;
 
@@ -891,9 +970,7 @@ public class BaseFinder extends WaveXinModule {
             }
         }
 
-        if (moveSpeed.get() > 1.0) {
-            forceScanSprint();
-        }
+        setScanSprint(moveSpeed.get() > 1.0);
 
         setNormalDebugState(inTargetChunk ? "CENTERING_TARGET_CHUNK" : "MOVING", "distance=" + distance2D);
         setScanForwardKey(true);
@@ -1025,7 +1102,7 @@ public class BaseFinder extends WaveXinModule {
         }
 
         setNormalDebugState(inCheckpointChunk ? "CENTERING_RESUME_CHUNK" : "RETURNING_TO_CHECKPOINT", "checkpoint=" + chunkDebugLabel(resumeCheckpointChunk) + ",distance=" + distance);
-        if (moveSpeed.get() > 1.0) forceScanSprint();
+        setScanSprint(moveSpeed.get() > 1.0);
         setScanForwardKey(true);
         return false;
     }
@@ -1065,12 +1142,17 @@ public class BaseFinder extends WaveXinModule {
         mc.player.setSprinting(true);
     }
 
+    private void setScanSprint(boolean shouldForce) {
+        if (shouldForce) forceScanSprint();
+        else restoreScanSprint();
+    }
+
     private void restoreScanSprint() {
         Boolean sprinting = scanSprintState.consumeRestore(mc.player, mc.world);
         if (sprinting != null && mc.player != null) mc.player.setSprinting(sprinting);
     }
 
-    private void setScanForwardKey(boolean pressed) {
+    private void setScanForwardKeyOnly(boolean pressed) {
         if (pressed) {
             if (mc.options != null) mc.options.forwardKey.setPressed(true);
             forcingForward = true;
@@ -1079,6 +1161,12 @@ public class BaseFinder extends WaveXinModule {
 
         if (mc.options != null && forcingForward) mc.options.forwardKey.setPressed(false);
         forcingForward = false;
+    }
+
+    private void setScanForwardKey(boolean pressed) {
+        setScanForwardKeyOnly(pressed);
+        if (pressed) return;
+
         restoreScanSprint();
         restoreMovementView();
     }
@@ -1627,6 +1715,8 @@ public class BaseFinder extends WaveXinModule {
             return;
         }
 
+        cancelSpiralRotationIfLockViewDisabled();
+
         if (spiralPauseOnScreen.get() && mc.currentScreen != null) {
             setScanForwardKey(false);
             return;
@@ -1645,7 +1735,8 @@ public class BaseFinder extends WaveXinModule {
         if (spiralNeedsInitialRotation && spiralRotating) {
             smoothSpiralRotation();
             if (spiralRotating) {
-                setScanForwardKey(false);
+                setScanForwardKeyOnly(false);
+                restoreScanSprint();
                 return;
             }
         }
@@ -1653,7 +1744,8 @@ public class BaseFinder extends WaveXinModule {
         if (spiralRotating) {
             smoothSpiralRotation();
             if (spiralRotating) {
-                setScanForwardKey(false);
+                setScanForwardKeyOnly(false);
+                restoreScanSprint();
                 return;
             }
         }
@@ -1679,18 +1771,31 @@ public class BaseFinder extends WaveXinModule {
         }
     }
 
+    private void cancelSpiralRotationIfLockViewDisabled() {
+        if (!BaseFinderStateLogic.shouldCancelSpiralRotation(spiralLockView.get(), spiralRotating, spiralNeedsInitialRotation)) return;
+
+        spiralRotating = false;
+        spiralNeedsInitialRotation = false;
+        restoreMovementView();
+    }
+
     private void handleSpiralAutoWalk() {
+        boolean lockView = spiralLockView.get();
         if (!spiralAutoWalk.get()) {
-            setScanForwardKey(false);
+            setScanForwardKeyOnly(false);
+            restoreScanSprint();
+            if (!lockView) restoreMovementView();
             return;
         }
 
         Vec3d targetCenter = getChunkCenter(spiralTargetChunk);
         double distance = horizontalDistanceTo(targetCenter);
-        if (distance >= 1.0) applyMovementYaw(yawTo(targetCenter), spiralLockView.get());
+        boolean shouldMove = distance >= 1.0;
+        if (shouldMove) applyMovementYaw(yawTo(targetCenter), lockView);
 
-        setScanForwardKey(distance >= 1.0);
-        if (distance >= 1.0 && spiralSprint.get()) forceScanSprint();
+        setScanForwardKeyOnly(shouldMove);
+        setScanSprint(shouldMove && spiralSprint.get());
+        if (!shouldMove && !lockView) restoreMovementView();
     }
 
     private boolean hasReachedSpiralTarget() {
@@ -1767,6 +1872,7 @@ public class BaseFinder extends WaveXinModule {
         if (Math.abs(difference) < rotationSpeed) {
             applySpiralRotation(spiralTargetYaw);
             spiralRotating = false;
+            spiralNeedsInitialRotation = false;
             if (spiralDebug.get()) infoKey("message.wavexin.base_finder.spiral_rotation_complete", "Spiral rotation complete.");
         } else {
             applySpiralRotation(currentYaw + Math.signum(difference) * rotationSpeed);
@@ -1834,11 +1940,12 @@ public class BaseFinder extends WaveXinModule {
                 double deltaZ = chunkZ * 16.0 + 8.0 - mc.player.getZ();
                 if (deltaX * deltaX + deltaZ * deltaZ > maxDistanceSq) continue;
 
+                ChunkPos chunk = new ChunkPos(chunkX, chunkZ);
                 boolean currentPathChunk = isChunkOnCurrentNormalPath(chunkX, chunkZ);
                 boolean targetPreviewChunk = isChunkOnPreparedNormalRing(chunkX, chunkZ);
-                if (!currentPathChunk && !targetPreviewChunk) continue;
+                boolean completedChunk = renderCompletedArea.get() && visitedChunks.contains(chunk);
+                if (!currentPathChunk && !targetPreviewChunk && !completedChunk) continue;
 
-                ChunkPos chunk = new ChunkPos(chunkX, chunkZ);
                 SettingColor sideColor;
                 SettingColor lineColor;
 
@@ -1973,7 +2080,242 @@ public class BaseFinder extends WaveXinModule {
         return spiralSegments + " | " + spiralDirection.name();
     }
 
+    private static class RestartIntSetting extends Setting<Integer> {
+        public final int min, max;
+        public final int sliderMin, sliderMax;
+        public final boolean noSlider;
+        private final List<WeakReference<WIntEdit>> widgets = new ArrayList<>();
+
+        private RestartIntSetting(String name, String description, int defaultValue, Consumer<Integer> onChanged, Consumer<Setting<Integer>> onModuleActivated, IVisible visible, int min, int max, int sliderMin, int sliderMax, boolean noSlider) {
+            super(name, description, defaultValue, onChanged, onModuleActivated, visible);
+            this.min = min;
+            this.max = max;
+            this.sliderMin = sliderMin;
+            this.sliderMax = sliderMax;
+            this.noSlider = noSlider;
+        }
+
+        @Override
+        public boolean set(Integer value) {
+            boolean changed = super.set(value);
+            if (changed) refreshWidgets();
+            return changed;
+        }
+
+        private void addWidget(WIntEdit widget) {
+            widgets.add(new WeakReference<>(widget));
+            widget.set(get());
+        }
+
+        private void refreshWidgets() {
+            widgets.removeIf(reference -> {
+                WIntEdit widget = reference.get();
+                if (widget == null) return true;
+                if (widget.get() != get()) widget.set(get());
+                return false;
+            });
+        }
+
+        @Override
+        protected Integer parseImpl(String str) {
+            try {
+                return Integer.parseInt(str.trim());
+            } catch (NumberFormatException ignored) {
+                return null;
+            }
+        }
+
+        @Override
+        protected boolean isValueValid(Integer value) {
+            return value != null && value >= min && value <= max;
+        }
+
+        @Override
+        protected NbtCompound save(NbtCompound tag) {
+            tag.putInt("value", get());
+            return tag;
+        }
+
+        @Override
+        protected Integer load(NbtCompound tag) {
+            set(tag.getInt("value", 0));
+            return get();
+        }
+
+        private static class Builder extends SettingBuilder<Builder, Integer, RestartIntSetting> {
+            private int min = Integer.MIN_VALUE, max = Integer.MAX_VALUE;
+            private int sliderMin = 0, sliderMax = 10;
+            private boolean noSlider = false;
+
+            private Builder() {
+                super(0);
+            }
+
+            public Builder min(int min) {
+                this.min = min;
+                return this;
+            }
+
+            public Builder max(int max) {
+                this.max = max;
+                return this;
+            }
+
+            public Builder sliderMin(int min) {
+                this.sliderMin = min;
+                return this;
+            }
+
+            public Builder sliderMax(int max) {
+                this.sliderMax = max;
+                return this;
+            }
+
+            public Builder noSlider() {
+                noSlider = true;
+                return this;
+            }
+
+            @Override
+            public RestartIntSetting build() {
+                return new RestartIntSetting(name, description, defaultValue, onChanged, onModuleActivated, visible, min, max, Math.max(sliderMin, min), Math.min(sliderMax, max), noSlider);
+            }
+        }
+    }
+
+    private static class RestartRouteSetting extends Setting<SweepRoute> {
+        private final List<WeakReference<WDropdown<SweepRoute>>> widgets = new ArrayList<>();
+
+        private RestartRouteSetting(String name, String description, SweepRoute defaultValue, Consumer<SweepRoute> onChanged, Consumer<Setting<SweepRoute>> onModuleActivated, IVisible visible) {
+            super(name, description, defaultValue, onChanged, onModuleActivated, visible);
+        }
+
+        @Override
+        public boolean set(SweepRoute value) {
+            boolean changed = super.set(value);
+            if (changed) refreshWidgets();
+            return changed;
+        }
+
+        private void addWidget(WDropdown<SweepRoute> widget) {
+            widgets.add(new WeakReference<>(widget));
+            widget.set(get());
+        }
+
+        private void refreshWidgets() {
+            widgets.removeIf(reference -> {
+                WDropdown<SweepRoute> widget = reference.get();
+                if (widget == null) return true;
+                if (widget.get() != get()) widget.set(get());
+                return false;
+            });
+        }
+
+        @Override
+        protected SweepRoute parseImpl(String str) {
+            try {
+                return SweepRoute.valueOf(str.trim());
+            } catch (IllegalArgumentException | NullPointerException ignored) {
+                return null;
+            }
+        }
+
+        @Override
+        protected boolean isValueValid(SweepRoute value) {
+            return value != null;
+        }
+
+        @Override
+        protected NbtCompound save(NbtCompound tag) {
+            tag.putString("value", get().name());
+            return tag;
+        }
+
+        @Override
+        protected SweepRoute load(NbtCompound tag) {
+            parse(tag.getString("value", SweepRoute.NEXT_CIRCLE.name()));
+            return get();
+        }
+
+        private static class Builder extends SettingBuilder<Builder, SweepRoute, RestartRouteSetting> {
+            private Builder() {
+                super(SweepRoute.NEXT_CIRCLE);
+            }
+
+            @Override
+            public RestartRouteSetting build() {
+                return new RestartRouteSetting(name, description, defaultValue, onChanged, onModuleActivated, visible);
+            }
+        }
+    }
+
+    private static class RestartButtonSetting extends Setting<Boolean> {
+        private final String buttonLabel;
+        private final String buttonKey;
+        private final String tooltipKey;
+        private final Runnable action;
+
+        private RestartButtonSetting(String name, String description, String buttonLabel, Runnable action, Consumer<Boolean> onChanged, Consumer<Setting<Boolean>> onModuleActivated, IVisible visible) {
+            super(name, description, false, onChanged, onModuleActivated, visible);
+            String segment = WaveXinI18n.keySegment(name);
+            this.buttonLabel = buttonLabel;
+            this.buttonKey = "button.wavexin.base_finder." + segment + ".label";
+            this.tooltipKey = "button.wavexin.base_finder." + segment + ".tooltip";
+            this.action = action;
+        }
+
+        private void run() {
+            if (action != null) action.run();
+        }
+
+        @Override
+        protected Boolean parseImpl(String str) {
+            return false;
+        }
+
+        @Override
+        protected boolean isValueValid(Boolean value) {
+            return true;
+        }
+
+        @Override
+        protected NbtCompound save(NbtCompound tag) {
+            tag.putBoolean("value", false);
+            return tag;
+        }
+
+        @Override
+        protected Boolean load(NbtCompound tag) {
+            set(false);
+            return false;
+        }
+
+        private static class Builder extends SettingBuilder<Builder, Boolean, RestartButtonSetting> {
+            private String buttonLabel = "Run";
+            private Runnable action;
+
+            private Builder() {
+                super(false);
+            }
+
+            private Builder buttonLabel(String buttonLabel) {
+                this.buttonLabel = buttonLabel;
+                return this;
+            }
+
+            private Builder action(Runnable action) {
+                this.action = action;
+                return this;
+            }
+
+            @Override
+            public RestartButtonSetting build() {
+                return new RestartButtonSetting(name, description, buttonLabel, action, onChanged, onModuleActivated, visible);
+            }
+        }
+    }
     public enum SweepRoute {
+
         NEXT_CIRCLE,
         CENTER_TO_LEFT,
         CENTER_LEFT_TO_UP_LEFT,

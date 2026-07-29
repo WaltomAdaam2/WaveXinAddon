@@ -46,11 +46,11 @@ public class BetterElytraFly extends WaveXinModule {
     public final Setting<Double> speed = sgGeneral.add(new DoubleSetting.Builder()
         .name("Flight Speed")
         .description("Horizontal flight speed")
-        .defaultValue(1.5)
+        .defaultValue(2)
         .min(0.1)
         .sliderMin(0.1)
-        .max(3)
-        .sliderMax(3)
+        .max(20)
+        .sliderMax(20)
         .build()
     );
 

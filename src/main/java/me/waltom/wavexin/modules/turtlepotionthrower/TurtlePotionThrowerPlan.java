@@ -22,10 +22,16 @@ final class TurtlePotionThrowerPlan {
         return warning("warning.wavexin.turtle_potion_thrower.unavailable", "Cannot throw turtle potion right now.");
     }
 
+    static Action preferredHandAction(boolean mainHandPotion, boolean offhandPotion) {
+        if (mainHandPotion) return Action.USE_MAIN_HAND;
+        if (offhandPotion) return Action.USE_OFFHAND;
+        return null;
+    }
+
     static Plan choose(boolean found, boolean mainHand, boolean offhand, boolean hotbar, int selectedSlot, int itemSlot, boolean quickSwap) {
         if (!found) return warning("warning.wavexin.turtle_potion_thrower.no_potion", "No throwable turtle potion was found.");
-        if (mainHand) return new Plan(Action.USE_MAIN_HAND, selectedSlot, itemSlot, null, null);
-        if (offhand) return new Plan(Action.USE_OFFHAND, selectedSlot, itemSlot, null, null);
+        Action preferredHand = preferredHandAction(mainHand, offhand);
+        if (preferredHand != null) return new Plan(preferredHand, selectedSlot, itemSlot, null, null);
 
         if (quickSwap) {
             if (!isValidHotbarSlot(selectedSlot) || itemSlot < 0) return swapFailed();
@@ -41,6 +47,14 @@ final class TurtlePotionThrowerPlan {
 
     static boolean isValidHotbarSlot(int slot) {
         return slot >= 0 && slot <= 8;
+    }
+
+    static boolean shouldAttemptQuickSwapRestore(boolean swapCompleted, boolean selectedNowContainsPotion) {
+        return swapCompleted || selectedNowContainsPotion;
+    }
+
+    static boolean shouldAttemptHotbarRestore(boolean swapCompleted, boolean selectedSlotChanged) {
+        return swapCompleted || selectedSlotChanged;
     }
 
     static boolean shouldChatNotify(boolean notify) {

@@ -9,12 +9,11 @@ final class BaseFinderStateLogic {
     }
 
     static boolean shouldLogNormalDebugSnapshot(String event, String state) {
-        if ("DEACTIVATE".equals(event)) return true;
-        return "WAITING_PLAYER_OR_WORLD".equals(state)
-            || "WAITING_START_READY".equals(state)
-            || "WAITING_CURRENT_CHUNK".equals(state)
-            || "WAITING_RESUME_NEIGHBOR_CHUNKS".equals(state)
-            || "WAITING_RESUME_CURRENT_CHUNK".equals(state);
+        return "WAITING_PLAYER_OR_WORLD".equals(state);
+    }
+
+    static boolean shouldCancelSpiralRotation(boolean lockView, boolean rotating, boolean needsInitialRotation) {
+        return !lockView && (rotating || needsInitialRotation);
     }
 
     static String pearlWaypointName(int number) {

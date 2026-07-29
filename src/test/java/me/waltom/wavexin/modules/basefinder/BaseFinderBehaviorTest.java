@@ -11,6 +11,7 @@ public final class BaseFinderBehaviorTest {
         testViewStateTargetChanges();
         testViewStateWorldAndNullCleanup();
         testSprintRestore();
+        testSpiralLockViewCancellation();
         testNormalDebugLogGate();
         testPerTargetDebugGate();
         testPearlWaypointLabels();
@@ -114,13 +115,21 @@ public final class BaseFinderBehaviorTest {
         assertFalse(state.pending(), "null player clears sprint state");
     }
 
+    private static void testSpiralLockViewCancellation() {
+        assertFalse(BaseFinderStateLogic.shouldCancelSpiralRotation(true, true, true), "enabled lock view keeps active rotation");
+        assertFalse(BaseFinderStateLogic.shouldCancelSpiralRotation(false, false, false), "disabled lock view with no rotation needs no cleanup");
+        assertTrue(BaseFinderStateLogic.shouldCancelSpiralRotation(false, true, false), "disabling lock view cancels active rotation");
+        assertTrue(BaseFinderStateLogic.shouldCancelSpiralRotation(false, false, true), "disabling lock view cancels pending initial rotation");
+    }
+
     private static void testNormalDebugLogGate() {
         assertFalse(BaseFinderStateLogic.shouldLogNormalDebugSnapshot("STATE", "CENTERING_TARGET_CHUNK"), "target centering is not warn-worthy");
         assertFalse(BaseFinderStateLogic.shouldLogNormalDebugSnapshot("STATE", "CENTERING_RESUME_CHUNK"), "resume centering is not warn-worthy");
         assertFalse(BaseFinderStateLogic.shouldLogNormalDebugSnapshot("STATE", "MOVING"), "normal movement is not warn-worthy");
         assertTrue(BaseFinderStateLogic.shouldLogNormalDebugSnapshot("STATE", "WAITING_PLAYER_OR_WORLD"), "missing player/world is warn-worthy");
-        assertTrue(BaseFinderStateLogic.shouldLogNormalDebugSnapshot("STATE", "WAITING_CURRENT_CHUNK"), "current chunk wait is warn-worthy");
-        assertTrue(BaseFinderStateLogic.shouldLogNormalDebugSnapshot("DEACTIVATE", "MOVING"), "deactivate snapshot remains enabled");
+        assertFalse(BaseFinderStateLogic.shouldLogNormalDebugSnapshot("STATE", "WAITING_CURRENT_CHUNK"), "ordinary chunk wait is not a warning");
+        assertFalse(BaseFinderStateLogic.shouldLogNormalDebugSnapshot("STATE", "WAITING_RESUME_CURRENT_CHUNK"), "ordinary resume wait is not a warning");
+        assertFalse(BaseFinderStateLogic.shouldLogNormalDebugSnapshot("DEACTIVATE", "MOVING"), "normal deactivation is not a warning");
     }
 
     private static void testPerTargetDebugGate() {

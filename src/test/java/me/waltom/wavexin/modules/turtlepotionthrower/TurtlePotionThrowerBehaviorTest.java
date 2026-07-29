@@ -11,6 +11,11 @@ public final class TurtlePotionThrowerBehaviorTest {
         assertPlan(TurtlePotionThrowerPlan.Action.WARNING, TurtlePotionThrowerPlan.choose(false, false, false, false, 0, -1, true), "missing potion warns");
         assertWarningKey("warning.wavexin.turtle_potion_thrower.no_potion", TurtlePotionThrowerPlan.choose(false, false, false, false, 0, -1, true), "missing potion key");
 
+        assertEquals(TurtlePotionThrowerPlan.Action.USE_MAIN_HAND, TurtlePotionThrowerPlan.preferredHandAction(true, false), "main hand is preferred directly");
+        assertEquals(TurtlePotionThrowerPlan.Action.USE_MAIN_HAND, TurtlePotionThrowerPlan.preferredHandAction(true, true), "main hand wins when both hands contain potions");
+        assertEquals(TurtlePotionThrowerPlan.Action.USE_OFFHAND, TurtlePotionThrowerPlan.preferredHandAction(false, true), "offhand is used when main hand has no potion");
+        assertNull(TurtlePotionThrowerPlan.preferredHandAction(false, false), "no hand potion falls through to inventory search");
+
         assertPlan(TurtlePotionThrowerPlan.Action.USE_MAIN_HAND, TurtlePotionThrowerPlan.choose(true, true, false, true, -1, -1, false), "main hand uses directly");
         assertPlan(TurtlePotionThrowerPlan.Action.USE_OFFHAND, TurtlePotionThrowerPlan.choose(true, false, true, false, -1, 45, false), "offhand uses directly");
 
@@ -36,6 +41,12 @@ public final class TurtlePotionThrowerBehaviorTest {
         assertTrue(TurtlePotionThrowerPlan.isValidHotbarSlot(8), "slot 8 valid");
         assertFalse(TurtlePotionThrowerPlan.isValidHotbarSlot(-1), "slot -1 invalid");
         assertFalse(TurtlePotionThrowerPlan.isValidHotbarSlot(9), "slot 9 invalid");
+        assertTrue(TurtlePotionThrowerPlan.shouldAttemptQuickSwapRestore(true, false), "completed quick swap must restore");
+        assertTrue(TurtlePotionThrowerPlan.shouldAttemptQuickSwapRestore(false, true), "partially completed quick swap must restore");
+        assertFalse(TurtlePotionThrowerPlan.shouldAttemptQuickSwapRestore(false, false), "failed quick swap without inventory change must not invert slots");
+        assertTrue(TurtlePotionThrowerPlan.shouldAttemptHotbarRestore(true, false), "completed hotbar swap must restore");
+        assertTrue(TurtlePotionThrowerPlan.shouldAttemptHotbarRestore(false, true), "partially completed hotbar selection must restore");
+        assertFalse(TurtlePotionThrowerPlan.shouldAttemptHotbarRestore(false, false), "failed hotbar swap without selection change needs no restore");
         assertTrue(TurtlePotionThrowerPlan.shouldChatNotify(true), "notify true shows chat");
         assertFalse(TurtlePotionThrowerPlan.shouldChatNotify(false), "notify false suppresses chat only");
     }
@@ -55,6 +66,10 @@ public final class TurtlePotionThrowerBehaviorTest {
 
     private static void assertFalse(boolean actual, String label) {
         if (actual) throw new AssertionError(label + " should be false");
+    }
+
+    private static void assertNull(Object actual, String label) {
+        if (actual != null) throw new AssertionError(label + " should be null but got [" + actual + "]");
     }
 
     private static void assertEquals(Object expected, Object actual, String label) {
