@@ -170,7 +170,7 @@ final class CommandScannerXin extends WaveXinModule {
         long now = System.currentTimeMillis();
         if (hasPendingRequest()) {
             if (now - currentRequestTime >= REQUEST_TIMEOUT_MS) {
-                ChatUtils.warning("CommandScannerXin request timed out for /%s", currentPrefix);
+                warning("CommandScannerXin request timed out for /%s", currentPrefix);
                 clearPendingRequest();
                 lastRequestTime = now;
             }
@@ -215,7 +215,7 @@ final class CommandScannerXin extends WaveXinModule {
 
     private void startScan() {
         if (mc.player == null || mc.getNetworkHandler() == null) {
-            ChatUtils.error("Enter a server before starting CommandScannerXin.");
+            error("Enter a server before starting CommandScannerXin.");
             return;
         }
 
@@ -230,7 +230,7 @@ final class CommandScannerXin extends WaveXinModule {
 
         List<Character> chars = getPrefixCharacters();
         if (chars.isEmpty()) {
-            ChatUtils.error("Enable Include Letters or Include Numbers before scanning.");
+            error("Enable Include Letters or Include Numbers before scanning.");
             state = ScanState.Idle;
             return;
         }
@@ -426,7 +426,7 @@ final class CommandScannerXin extends WaveXinModule {
 
             Files.write(getOutputPath(directory), lines, StandardCharsets.UTF_8);
         } catch (IOException e) {
-            ChatUtils.error("CommandScannerXin could not save results: %s", e.getMessage());
+            error("CommandScannerXin could not save results: %s", e.getMessage());
         }
     }
 
