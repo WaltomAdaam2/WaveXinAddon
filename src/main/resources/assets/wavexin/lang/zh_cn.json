@@ -229,8 +229,6 @@
   "setting.wavexin.base_finder.restart.origin_chunk_z.description": "恢复扫描时使用的已保存原点区块 Z 坐标。",
   "setting.wavexin.base_finder.restart.reset_restart_data.title": "重置恢复数据",
   "setting.wavexin.base_finder.restart.reset_restart_data.description": "清除已保存的普通扫描恢复数据。",
-  "setting.wavexin.base_finder.render.render_completed_area.title": "渲染已完成区域",
-  "setting.wavexin.base_finder.render.render_completed_area.description": "保留已完成普通扫描区块的已访问颜色渲染。",
   "setting.wavexin.base_finder.render.render_distance.title": "渲染距离",
   "setting.wavexin.base_finder.render.render_distance.description": "路线标记的最大渲染距离，单位为区块。",
   "setting.wavexin.base_finder.render.render_height.title": "渲染高度",

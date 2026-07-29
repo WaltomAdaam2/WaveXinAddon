@@ -216,8 +216,6 @@ setting.wavexin.base_finder.render.current_path_side_color.description
 setting.wavexin.base_finder.render.current_path_side_color.title
 setting.wavexin.base_finder.render.preload_rings.description
 setting.wavexin.base_finder.render.preload_rings.title
-setting.wavexin.base_finder.render.render_completed_area.description
-setting.wavexin.base_finder.render.render_completed_area.title
 setting.wavexin.base_finder.render.render_distance.description
 setting.wavexin.base_finder.render.render_distance.title
 setting.wavexin.base_finder.render.render_height.description

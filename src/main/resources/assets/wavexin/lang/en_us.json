@@ -229,8 +229,6 @@
   "setting.wavexin.base_finder.restart.origin_chunk_z.description": "Saved origin chunk Z for resuming.",
   "setting.wavexin.base_finder.restart.reset_restart_data.title": "Reset Restart Data",
   "setting.wavexin.base_finder.restart.reset_restart_data.description": "Clears saved Normal Scan restart data.",
-  "setting.wavexin.base_finder.render.render_completed_area.title": "Render Completed Area",
-  "setting.wavexin.base_finder.render.render_completed_area.description": "Keeps completed Normal Scan chunks rendered with the visited color.",
   "setting.wavexin.base_finder.render.render_distance.title": "Render Distance",
   "setting.wavexin.base_finder.render.render_distance.description": "Maximum route render distance in chunks.",
   "setting.wavexin.base_finder.render.render_height.title": "Render Height",

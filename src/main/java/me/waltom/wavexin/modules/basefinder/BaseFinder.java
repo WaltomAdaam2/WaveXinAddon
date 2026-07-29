@@ -545,13 +545,6 @@ public class BaseFinder extends WaveXinModule {
             .visible(this::isNormalScan)
             .build());
 
-    private final Setting<Boolean> renderCompletedArea = sgRender.add(new BoolSetting.Builder()
-            .name("Render Completed Area")
-            .description("Keeps completed Normal Scan chunks rendered with the visited color.")
-            .defaultValue(false)
-            .visible(this::isNormalScan)
-            .build());
-
 // Render distance setting
     public final Setting<Integer> renderDistance = sgRender.add(new IntSetting.Builder()
             .name("Render Distance")
@@ -969,9 +962,12 @@ public class BaseFinder extends WaveXinModule {
         }
 
         boolean scanCompleted = currentCircle > circleLimit.get();
+        boolean preservedResumeCheckpoint = resumeCheckpointChunk != null;
 
         if (!scanCompleted) {
-            if (savedProgress != null) {
+            if (savedProgress != null && preservedResumeCheckpoint) {
+                infoKey("message.wavexin.base_finder.normal_stopped_checkpoint_preserved", "Normal scan stopped. Last valid checkpoint was preserved: (%d, %d), ring %d, route %s.", savedProgress.playerX, savedProgress.playerZ, savedProgress.ring, WaveXinI18n.enumLabelOr(currentPath, "Unknown route"));
+            } else if (savedProgress != null) {
                 infoKey("message.wavexin.base_finder.normal_stopped_checkpoint", "Normal scan stopped. Saved checkpoint: (%d, %d), ring %d, route %s.", savedProgress.playerX, savedProgress.playerZ, savedProgress.ring, WaveXinI18n.enumLabelOr(currentPath, "Unknown route"));
             } else {
                 infoKey("message.wavexin.base_finder.normal_stopped", "Normal scan stopped.");
@@ -993,12 +989,12 @@ public class BaseFinder extends WaveXinModule {
     private ScanProgressManager.NormalScanProgress saveNormalScanProgress() {
         if (originChunk == null || currentPath == null || mc.player == null) return null;
 
-        ChunkPos playerChunk = mc.player.getChunkPos();
+        ChunkPos checkpointChunk = resumeCheckpointChunk != null ? resumeCheckpointChunk : mc.player.getChunkPos();
         ScanProgressManager.NormalScanProgress progress = new ScanProgressManager.NormalScanProgress(
             originChunk.x,
             originChunk.z,
-            playerChunk.x,
-            playerChunk.z,
+            checkpointChunk.x,
+            checkpointChunk.z,
             currentCircle,
             currentPath.name()
         );
@@ -1931,8 +1927,7 @@ public class BaseFinder extends WaveXinModule {
                 ChunkPos chunk = new ChunkPos(chunkX, chunkZ);
                 boolean currentPathChunk = isChunkOnCurrentNormalPath(chunkX, chunkZ);
                 boolean targetPreviewChunk = isChunkOnPreparedNormalRing(chunkX, chunkZ);
-                boolean completedChunk = renderCompletedArea.get() && visitedChunks.contains(chunk);
-                if (!currentPathChunk && !targetPreviewChunk && !completedChunk) continue;
+                if (!currentPathChunk && !targetPreviewChunk) continue;
 
                 SettingColor sideColor;
                 SettingColor lineColor;
@@ -2092,7 +2087,6 @@ public class BaseFinder extends WaveXinModule {
 
         private void addWidget(WIntEdit widget) {
             widgets.add(new WeakReference<>(widget));
-            widget.set(get());
         }
 
         private void refreshWidgets() {
