@@ -140,7 +140,11 @@ public class BaseFinder extends WaveXinModule {
     private int lastCompletedNormalRing = -1;
     private final Set<Long> recordedContainerChunks = new HashSet<>();
     private final List<BlockPos> createdWaypointPositions = new ArrayList<>();
+    private final Set<Long> warnedMissingLoadedChunks = new HashSet<>();
+    private final Set<String> warnedNormalDebugStates = new HashSet<>();
     private int nextWaypointNumber = 1;
+    private boolean warnedEmptyContainerBlocks;
+    private boolean warnedContainerScanUnavailable;
 
     private final Setting<ScanMethod> scanMethod = sgScanMode.add(new EnumSetting.Builder<ScanMethod>()
         .name("Scan Method")
@@ -593,7 +597,11 @@ public class BaseFinder extends WaveXinModule {
         scanStartPending = false;
         recordedContainerChunks.clear();
         createdWaypointPositions.clear();
+        warnedMissingLoadedChunks.clear();
+        warnedNormalDebugStates.clear();
         nextWaypointNumber = 1;
+        warnedEmptyContainerBlocks = false;
+        warnedContainerScanUnavailable = false;
         validateXaeroWaypointSetting();
         warnIfUnsafeScanHeight();
         if (activeScanMethod == ScanMethod.SPIRAL) {
@@ -746,6 +754,9 @@ public class BaseFinder extends WaveXinModule {
         }
 
         if (resumeCheckpointChunk != null) {
+            ChunkPos playerChunk = mc.player.getChunkPos();
+            visitedChunks.add(playerChunk);
+            recordLoadedContainerChunksNear(playerChunk);
             if (!normalDebugState.startsWith("WAITING_RESUME")) {
                 setNormalDebugState("RETURNING_TO_CHECKPOINT", "checkpoint=" + chunkDebugLabel(resumeCheckpointChunk));
             }
@@ -759,7 +770,7 @@ public class BaseFinder extends WaveXinModule {
 
         ChunkPos playerChunk = mc.player.getChunkPos();
         visitedChunks.add(playerChunk);
-        recordContainerChunkIfNeeded(playerChunk);
+        recordLoadedContainerChunksNear(playerChunk);
 
         saveNormalScanProgress(false);
 
@@ -1042,6 +1053,9 @@ public class BaseFinder extends WaveXinModule {
     }
 
     private void logNormalDebugSnapshot(String event, String detail) {
+        if (!shouldLogNormalDebugSnapshot(event)) return;
+        if (!"DEACTIVATE".equals(event) && !warnedNormalDebugStates.add(normalDebugState)) return;
+
         String playerState;
         if (mc.player == null) {
             playerState = "player=null";
@@ -1061,7 +1075,7 @@ public class BaseFinder extends WaveXinModule {
                 + " age=" + mc.player.age;
         }
 
-        WaveXinAddon.LOG.info(
+        WaveXinAddon.LOG.warn(
             "[BaseFinderDebug] event={} state={} detail={} method={} pending={} origin={} target={} resume={} ring={} route={} turnDelay={} targetYaw={} waitChunks={} chunkRadius={} waitDistance={} waitRadius={} viewDistance={} clampedViewDistance={} screen={} {}",
             event,
             normalDebugState,
@@ -1084,6 +1098,15 @@ public class BaseFinder extends WaveXinModule {
             mc.currentScreen == null ? "none" : mc.currentScreen.getClass().getSimpleName(),
             playerState
         );
+    }
+
+    private boolean shouldLogNormalDebugSnapshot(String event) {
+        if ("DEACTIVATE".equals(event)) return true;
+        return normalDebugState.equals("WAITING_PLAYER_OR_WORLD")
+            || normalDebugState.equals("WAITING_START_READY")
+            || normalDebugState.equals("WAITING_CURRENT_CHUNK")
+            || normalDebugState.equals("WAITING_RESUME_NEIGHBOR_CHUNKS")
+            || normalDebugState.equals("WAITING_RESUME_CURRENT_CHUNK");
     }
 
     private String describeStartReadiness() {
@@ -1165,18 +1188,57 @@ public class BaseFinder extends WaveXinModule {
             WaveXinAddon.LOG.error("Could not migrate container records to {}.", CONTAINER_RECORD_PATH, e);
         }
     }
+    private void recordLoadedContainerChunksNear(ChunkPos center) {
+        if (mc.world == null) {
+            if (!warnedContainerScanUnavailable) {
+                WaveXinAddon.LOG.warn("[BaseFinderDebug] Skipped container scan because world is null. method={} center={}", activeScanMethod, chunkDebugLabel(center));
+                warnedContainerScanUnavailable = true;
+            }
+            return;
+        }
+
+        int radius = getContainerScanRadius();
+        for (int chunkX = center.x - radius; chunkX <= center.x + radius; chunkX++) {
+            for (int chunkZ = center.z - radius; chunkZ <= center.z + radius; chunkZ++) {
+                if (mc.world.getChunkManager().isChunkLoaded(chunkX, chunkZ)) {
+                    recordContainerChunkIfNeeded(new ChunkPos(chunkX, chunkZ));
+                }
+            }
+        }
+    }
+
+    private int getContainerScanRadius() {
+        int radius = Math.max(1, getChunkWaitRadius());
+        if (mc.options == null) return radius;
+        return Math.min(radius, Math.max(1, mc.options.getViewDistance().getValue()));
+    }
+
     private void recordContainerChunkIfNeeded(ChunkPos chunkPos) {
         long key = chunkPos.toLong();
         if (recordedContainerChunks.contains(key)) return;
 
         WorldChunk chunk = mc.world.getChunkManager().getWorldChunk(chunkPos.x, chunkPos.z, false);
-        if (chunk == null) return;
+        if (chunk == null) {
+            if (warnedMissingLoadedChunks.add(key)) {
+                WaveXinAddon.LOG.warn("[BaseFinderDebug] Loaded container candidate had no WorldChunk. chunk={} playerChunk={} method={} resume={}", chunkDebugLabel(chunkPos), chunkDebugLabel(mc.player.getChunkPos()), activeScanMethod, chunkDebugLabel(resumeCheckpointChunk));
+            }
+            return;
+        }
+
+        List<BlockEntityType<?>> selectedContainerBlocks = containerBlocks.get();
+        if (selectedContainerBlocks == null || selectedContainerBlocks.isEmpty()) {
+            if (!warnedEmptyContainerBlocks) {
+                WaveXinAddon.LOG.warn("[BaseFinderDebug] Container scan skipped because no container block types are selected. threshold={} method={}", containerThreshold.get(), activeScanMethod);
+                warnedEmptyContainerBlocks = true;
+            }
+            return;
+        }
 
         int count = 0;
         BlockPos firstPos = null;
 
         for (BlockEntity blockEntity : chunk.getBlockEntities().values()) {
-            if (!containerBlocks.get().contains(blockEntity.getType())) continue;
+            if (!selectedContainerBlocks.contains(blockEntity.getType())) continue;
 
             count++;
             if (firstPos == null) firstPos = blockEntity.getPos();
@@ -1216,6 +1278,7 @@ public class BaseFinder extends WaveXinModule {
         for (BlockPos existing : createdWaypointPositions) {
             if (Math.abs(existing.getX() - candidate.getX()) > radiusBlocks || Math.abs(existing.getZ() - candidate.getZ()) > radiusBlocks) continue;
             if (++nearby >= maximumWaypointsPerArea.get()) {
+                WaveXinAddon.LOG.warn("[BaseFinderDebug] Skipped Xaero waypoint because area limit was reached. candidate=({}, {}) radiusChunks={} limit={}", candidate.getX(), candidate.getZ(), waypointLimitRadius.get(), maximumWaypointsPerArea.get());
                 infoKey("message.wavexin.base_finder.xaero_area_limit", "Skipped Xaero waypoint near (%d, %d): area limit of %d reached.", candidate.getX(), candidate.getZ(), maximumWaypointsPerArea.get());
                 return true;
             }
@@ -1248,6 +1311,7 @@ public class BaseFinder extends WaveXinModule {
                 java.nio.file.StandardOpenOption.APPEND
             );
         } catch (IOException e) {
+            WaveXinAddon.LOG.error("[BaseFinderDebug] Failed to save container chunk record. path={} chunk={} recordPos={} playerPos={} count={}", CONTAINER_RECORD_PATH, chunkDebugLabel(chunkPos), recordPos, playerPos, count, e);
             errorKey("error.wavexin.base_finder.record_save_failed", "Failed to save container chunk record: %s", e.getMessage());
         }
     }
@@ -1264,6 +1328,7 @@ public class BaseFinder extends WaveXinModule {
             Class<?> sessionClass = Class.forName("xaero.common.XaeroMinimapSession");
             Object currentSession = sessionClass.getMethod("getCurrentSession").invoke(null);
             if (currentSession == null) {
+                WaveXinAddon.LOG.warn("[BaseFinderDebug] Xaero waypoint skipped because current session is null. pos={} method={}", pos, activeScanMethod);
                 warningKey("warning.wavexin.base_finder.xaero_session_not_ready", "Xaero's Minimap session is not ready. Container record saved without a waypoint.");
                 return;
             }
@@ -1273,12 +1338,14 @@ public class BaseFinder extends WaveXinModule {
             Object worldManager = minimapSession.getClass().getMethod("getWorldManager").invoke(minimapSession);
             Object currentWorld = worldManager.getClass().getMethod("getCurrentWorld").invoke(worldManager);
             if (currentWorld == null) {
+                WaveXinAddon.LOG.warn("[BaseFinderDebug] Xaero waypoint skipped because current waypoint world is null. pos={} method={}", pos, activeScanMethod);
                 warningKey("warning.wavexin.base_finder.xaero_world_not_ready", "Xaero current waypoint world is not ready. Container record saved without a waypoint.");
                 return;
             }
 
             Object waypointSet = currentWorld.getClass().getMethod("getCurrentWaypointSet").invoke(currentWorld);
             if (waypointSet == null) {
+                WaveXinAddon.LOG.warn("[BaseFinderDebug] Xaero waypoint skipped because current waypoint set is null. pos={} method={}", pos, activeScanMethod);
                 warningKey("warning.wavexin.base_finder.xaero_set_not_ready", "Xaero current waypoint set is not ready. Container record saved without a waypoint.");
                 return;
             }
@@ -1295,6 +1362,7 @@ public class BaseFinder extends WaveXinModule {
             nextWaypointNumber++;
             infoKey("message.wavexin.base_finder.xaero_created", "Created Xaero waypoint: %s", name);
         } catch (ReflectiveOperationException | RuntimeException e) {
+            WaveXinAddon.LOG.warn("[BaseFinderDebug] Failed to create Xaero waypoint. pos={} method={} nextWaypointNumber={}", pos, activeScanMethod, nextWaypointNumber, e);
             warningKey("warning.wavexin.base_finder.xaero_create_failed", "Failed to create Xaero waypoint: %s", e.getMessage());
         }
     }
@@ -1314,6 +1382,7 @@ public class BaseFinder extends WaveXinModule {
         if (isXaeroAvailable()) return true;
 
         xaeroWaypoints.set(false);
+        WaveXinAddon.LOG.warn("[BaseFinderDebug] Xaero waypoint support is unavailable. Disabling Xaero Waypoints for this module instance.");
         warningKey("warning.wavexin.base_finder.xaero_missing", "Xaero's Minimap was not detected. Xaero Waypoints has been disabled, but container recording will continue.");
         return false;
     }
@@ -1451,7 +1520,7 @@ public class BaseFinder extends WaveXinModule {
         }
 
         ChunkPos playerChunk = mc.player.getChunkPos();
-        recordContainerChunkIfNeeded(playerChunk);
+        recordLoadedContainerChunksNear(playerChunk);
 
         if (spiralMaximumSegments.get() > 0 && spiralSegments >= spiralMaximumSegments.get()) {
             infoKey("message.wavexin.base_finder.spiral_complete", "Maximum segments reached. Spiral scan complete.");

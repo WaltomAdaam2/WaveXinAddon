@@ -1129,7 +1129,9 @@ public class AutoLogin extends WaveXinModule {
                 saved.passwords = null;
                 Files.writeString(CONFIG_PATH, GSON.toJson(saved), StandardCharsets.UTF_8);
             } catch (IOException e) {
-                ChatUtils.error(WaveXinI18n.tr("error.wavexin.auto_login.config_save_failed", "Auto Login config save failed: %s", e.getMessage()));
+                String message = WaveXinI18n.tr("error.wavexin.auto_login.config_save_failed", "Auto Login config save failed: %s", e.getMessage());
+                WaveXinAddon.LOG.error("[WaveXinDebug] module=AutoLogin message={}", message, e);
+                ChatUtils.error(message);
             }
         }
 
