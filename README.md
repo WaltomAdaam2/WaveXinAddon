@@ -29,6 +29,14 @@ WaveXinAddon 是一个为 **2b2t.xin** 服务器设计的 Meteor Client Addon (�
 * Fabric API
 * Meteor Client
 
+### 可选组件
+
+Base Finder 的 Xaero 路径点功能可能会使用以下组件：
+
+* Xaero's Minimap
+* Xaero's World Map
+* XaeroPlus
+
 ## 构建方法
 
 Windows：

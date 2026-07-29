@@ -29,6 +29,14 @@ For implementation details and feature-specific notes, see the [Feature Logic Gu
 * Fabric API
 * Meteor Client
 
+### Optional
+
+Base Finder's Xaero waypoint features may use the following components:
+
+* Xaero's Minimap
+* Xaero's World Map
+* XaeroPlus
+
 ## Build
 
 Windows:

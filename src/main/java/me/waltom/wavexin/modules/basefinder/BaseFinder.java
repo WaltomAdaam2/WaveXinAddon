@@ -4,8 +4,12 @@ import me.waltom.wavexin.core.WaveXinModule;
 import me.waltom.wavexin.core.WaveXinDataPaths;
 import me.waltom.wavexin.WaveXinAddon;
 import me.waltom.wavexin.i18n.WaveXinI18n;
+import me.waltom.wavexin.gui.WaveXinEnumDropdown;
 import meteordevelopment.meteorclient.MeteorClient;
+import meteordevelopment.meteorclient.gui.renderer.GuiRenderer;
 import meteordevelopment.meteorclient.gui.utils.SettingsWidgetFactory;
+import meteordevelopment.meteorclient.gui.widgets.input.WDropdown;
+import meteordevelopment.meteorclient.gui.widgets.input.WIntEdit;
 import meteordevelopment.meteorclient.utils.player.ChatUtils;
 import meteordevelopment.meteorclient.utils.render.color.Color;
 import meteordevelopment.meteorclient.utils.render.color.RainbowColors;
@@ -48,6 +52,34 @@ import java.util.UUID;
 
 public class BaseFinder extends WaveXinModule {
     static {
+        SettingsWidgetFactory.registerCustomFactory(RestartIntSetting.class, theme -> (table, setting) -> {
+            RestartIntSetting intSetting = (RestartIntSetting) setting;
+            WIntEdit edit = table.add(theme.intEdit(intSetting.get(), intSetting.min, intSetting.max, intSetting.sliderMin, intSetting.sliderMax, intSetting.noSlider)).expandX().widget();
+            intSetting.addWidget(edit);
+            edit.action = () -> {
+                if (!intSetting.set(edit.get())) edit.set(intSetting.get());
+            };
+
+            var reset = table.add(theme.button(GuiRenderer.RESET)).widget();
+            reset.action = () -> {
+                intSetting.reset();
+                edit.set(intSetting.get());
+            };
+            reset.tooltip = WaveXinI18n.tr("tooltip.wavexin.common.reset", "Reset");
+        });
+        SettingsWidgetFactory.registerCustomFactory(RestartRouteSetting.class, theme -> (table, setting) -> {
+            RestartRouteSetting routeSetting = (RestartRouteSetting) setting;
+            WDropdown<SweepRoute> dropdown = table.add(new WaveXinEnumDropdown<>(SweepRoute.values(), routeSetting.get(), routeSetting.module)).expandCellX().widget();
+            routeSetting.addWidget(dropdown);
+            dropdown.action = () -> routeSetting.set(dropdown.get());
+
+            var reset = table.add(theme.button(GuiRenderer.RESET)).widget();
+            reset.action = () -> {
+                routeSetting.reset();
+                dropdown.set(routeSetting.get());
+            };
+            reset.tooltip = WaveXinI18n.tr("tooltip.wavexin.common.reset", "Reset");
+        });
         SettingsWidgetFactory.registerCustomFactory(RestartButtonSetting.class, theme -> (table, setting) -> {
             RestartButtonSetting buttonSetting = (RestartButtonSetting) setting;
             var button = table.add(theme.button(WaveXinI18n.tr(buttonSetting.buttonKey, buttonSetting.buttonLabel))).expandX().widget();
@@ -147,16 +179,12 @@ public class BaseFinder extends WaveXinModule {
     private ChunkPos spiralTargetChunk;
     private float spiralTargetYaw;
     private boolean spiralRotating;
-    private ChunkPos savedNormalScanChunk;
-    private int savedNormalScanCircle = -1;
-    private SweepRoute savedNormalScanPath;
     private boolean spiralNeedsInitialRotation;
     private ScanMethod activeScanMethod;
     private boolean scanStartPending;
     private static final int NORMAL_DEBUG_HEARTBEAT_TICKS = 40;
     private int normalDebugTicks;
     private String normalDebugState = "INACTIVE";
-    private String syncedNormalProgressKey;
     private int lastCompletedNormalRing = -1;
     private final Set<Long> recordedContainerChunks = new HashSet<>();
     private final Set<UUID> recordedThrownPearls = new HashSet<>();
@@ -167,7 +195,6 @@ public class BaseFinder extends WaveXinModule {
     private int nextPearlWaypointNumber = 1;
     private boolean warnedEmptyContainerBlocks;
     private boolean warnedContainerScanUnavailable;
-    private ScanProgressManager.NormalScanProgress lastSavedNormalProgress;
 
     private final Setting<ScanMethod> scanMethod = sgScanMode.add(new EnumSetting.Builder<ScanMethod>()
         .name("Scan Method")
@@ -439,7 +466,7 @@ public class BaseFinder extends WaveXinModule {
             .visible(this::isNormalScan)
             .build());
 
-    private final Setting<Integer> lastCircle = sgRestart.add(new IntSetting.Builder()
+    private final Setting<Integer> lastCircle = sgRestart.add(new RestartIntSetting.Builder()
             .name("Previous Ring")
             .description("Saved ring number for resuming.")
             .visible(this::showNormalResumeProgressSettings)
@@ -451,7 +478,7 @@ public class BaseFinder extends WaveXinModule {
             .build());
 
     // Previous Chunk X
-    private final Setting<Integer> lastChunkX = sgRestart.add(new IntSetting.Builder()
+    private final Setting<Integer> lastChunkX = sgRestart.add(new RestartIntSetting.Builder()
             .name("Previous Chunk X")
             .description("Saved chunk X position for resuming.")
             .visible(this::showNormalResumeProgressSettings)
@@ -464,7 +491,7 @@ public class BaseFinder extends WaveXinModule {
             .build());
 
     // Previous Chunk Z
-    private final Setting<Integer> lastChunkZ = sgRestart.add(new IntSetting.Builder()
+    private final Setting<Integer> lastChunkZ = sgRestart.add(new RestartIntSetting.Builder()
             .name("Previous Chunk Z")
             .description("Saved chunk Z position for resuming.")
             .visible(this::showNormalResumeProgressSettings)
@@ -477,7 +504,7 @@ public class BaseFinder extends WaveXinModule {
             .build());
 
 // Previous route
-    private final Setting<SweepRoute> lastPath = sgRestart.add(new EnumSetting.Builder<SweepRoute>()
+    private final Setting<SweepRoute> lastPath = sgRestart.add(new RestartRouteSetting.Builder()
             .name("Previous Route")
             .description("Saved route point for resuming.")
             .visible(this::showNormalResumeProgressSettings)
@@ -485,7 +512,7 @@ public class BaseFinder extends WaveXinModule {
             .build());
 
     // Origin Chunk X
-    private final Setting<Integer> lastOriginX = sgRestart.add(new IntSetting.Builder()
+    private final Setting<Integer> lastOriginX = sgRestart.add(new RestartIntSetting.Builder()
             .name("Origin Chunk X")
             .description("Saved origin chunk X for resuming.")
             .visible(this::showNormalResumeProgressSettings)
@@ -498,7 +525,7 @@ public class BaseFinder extends WaveXinModule {
             .build());
 
     // Origin Chunk Z
-    private final Setting<Integer> lastOriginZ = sgRestart.add(new IntSetting.Builder()
+    private final Setting<Integer> lastOriginZ = sgRestart.add(new RestartIntSetting.Builder()
             .name("Origin Chunk Z")
             .description("Saved origin chunk Z for resuming.")
             .visible(this::showNormalResumeProgressSettings)
@@ -681,9 +708,6 @@ public class BaseFinder extends WaveXinModule {
 
         visitedChunks.clear();
         targetChunk = null;
-        savedNormalScanChunk = null;
-        savedNormalScanCircle = -1;
-        savedNormalScanPath = null;
         if (resumed) {
             infoKey("message.wavexin.base_finder.normal_resumed", "Resumed normal scan at ring %d, route %s.", currentCircle, WaveXinI18n.enumLabelOr(currentPath, "Unknown route"));
         } else {
@@ -709,10 +733,7 @@ public class BaseFinder extends WaveXinModule {
         currentPath = lastPath.get();
         return true;
     }
-    private void syncRestartSettingsFromProgress(ScanProgressManager.NormalScanProgress progress, boolean force) {
-        String key = getNormalProgressKey(progress);
-        if (!force && key.equals(syncedNormalProgressKey)) return;
-
+    private void syncRestartSettingsFromProgress(ScanProgressManager.NormalScanProgress progress) {
         lastCircle.set(Math.max(0, progress.ring));
         lastChunkX.set(progress.playerX);
         lastChunkZ.set(progress.playerZ);
@@ -723,20 +744,9 @@ public class BaseFinder extends WaveXinModule {
         } catch (IllegalArgumentException | NullPointerException ignored) {
             lastPath.set(SweepRoute.NEXT_CIRCLE);
         }
-        syncedNormalProgressKey = key;
     }
-
-    private String getNormalProgressKey(ScanProgressManager.NormalScanProgress progress) {
-        return progress.originX + ":" + progress.originZ + ":" + progress.playerX + ":" + progress.playerZ + ":" + progress.ring + ":" + progress.route + ":" + progress.server + ":" + progress.dimension;
-    }
-
     private void resetNormalRestartData() {
         ScanProgressManager.clearNormalProgress();
-        syncedNormalProgressKey = null;
-        savedNormalScanChunk = null;
-        savedNormalScanCircle = -1;
-        savedNormalScanPath = null;
-        lastSavedNormalProgress = null;
         lastBegin.set(false);
         lastCircle.set(0);
         lastChunkX.set(0);
@@ -831,8 +841,6 @@ public class BaseFinder extends WaveXinModule {
         ChunkPos playerChunk = mc.player.getChunkPos();
         visitedChunks.add(playerChunk);
         recordLoadedContainerChunksNear(playerChunk);
-
-        saveNormalScanProgress(false);
 
         if (currentCircle > circleLimit.get()) {
             setNormalDebugState("COMPLETE", "ringLimit=" + circleLimit.get());
@@ -950,6 +958,7 @@ public class BaseFinder extends WaveXinModule {
         scanStartPending = false;
         ScanMethod stoppedScanMethod = activeScanMethod;
         if (stoppedScanMethod == ScanMethod.NORMAL) logNormalDebugSnapshot("DEACTIVATE", "moduleDisabled");
+        ScanProgressManager.NormalScanProgress savedProgress = stoppedScanMethod == ScanMethod.NORMAL ? saveNormalScanProgress() : null;
         activeScanMethod = null;
         recordedThrownPearls.clear();
 
@@ -960,15 +969,10 @@ public class BaseFinder extends WaveXinModule {
         }
 
         boolean scanCompleted = currentCircle > circleLimit.get();
-        boolean returningToResumeCheckpoint = resumeCheckpointChunk != null;
-        if (!returningToResumeCheckpoint) saveNormalScanProgress(true);
 
         if (!scanCompleted) {
-            if (returningToResumeCheckpoint) {
-                infoKey("message.wavexin.base_finder.normal_stopped_returning", "Normal scan stopped while returning to its saved checkpoint. Saved progress was preserved.");
-            } else if (lastBegin.get() && mc.player != null) {
-                ChunkPos playerChunk = mc.player.getChunkPos();
-                infoKey("message.wavexin.base_finder.normal_stopped_checkpoint", "Normal scan stopped. Saved checkpoint: (%d, %d), ring %d, route %s.", playerChunk.x, playerChunk.z, currentCircle, WaveXinI18n.enumLabelOr(currentPath, "Unknown route"));
+            if (savedProgress != null) {
+                infoKey("message.wavexin.base_finder.normal_stopped_checkpoint", "Normal scan stopped. Saved checkpoint: (%d, %d), ring %d, route %s.", savedProgress.playerX, savedProgress.playerZ, savedProgress.ring, WaveXinI18n.enumLabelOr(currentPath, "Unknown route"));
             } else {
                 infoKey("message.wavexin.base_finder.normal_stopped", "Normal scan stopped.");
             }
@@ -986,16 +990,10 @@ public class BaseFinder extends WaveXinModule {
         activeScanMethod = null;
     }
 
-    private void saveNormalScanProgress(boolean force) {
-        if (!lastBegin.get() || originChunk == null || currentPath == null || mc.player == null) return;
+    private ScanProgressManager.NormalScanProgress saveNormalScanProgress() {
+        if (originChunk == null || currentPath == null || mc.player == null) return null;
 
         ChunkPos playerChunk = mc.player.getChunkPos();
-        if (!force && playerChunk.equals(savedNormalScanChunk)
-            && currentCircle == savedNormalScanCircle
-            && currentPath == savedNormalScanPath) {
-            return;
-        }
-
         ScanProgressManager.NormalScanProgress progress = new ScanProgressManager.NormalScanProgress(
             originChunk.x,
             originChunk.z,
@@ -1005,13 +1003,9 @@ public class BaseFinder extends WaveXinModule {
             currentPath.name()
         );
         ScanProgressManager.saveNormalProgress(progress);
-        syncRestartSettingsFromProgress(progress, true);
-
-        savedNormalScanChunk = playerChunk;
-        savedNormalScanCircle = currentCircle;
-        savedNormalScanPath = currentPath;
+        syncRestartSettingsFromProgress(progress);
+        return progress;
     }
-
 
     private void warnIfUnsafeScanHeight() {
         if (mc.player == null || mc.world == null || isSafeScanHeight()) return;
@@ -2072,6 +2066,175 @@ public class BaseFinder extends WaveXinModule {
     public String getInfoString() {
         if (activeScanMethod != ScanMethod.SPIRAL) return null;
         return spiralSegments + " | " + spiralDirection.name();
+    }
+
+    private static class RestartIntSetting extends Setting<Integer> {
+        public final int min, max;
+        public final int sliderMin, sliderMax;
+        public final boolean noSlider;
+        private final List<WeakReference<WIntEdit>> widgets = new ArrayList<>();
+
+        private RestartIntSetting(String name, String description, int defaultValue, Consumer<Integer> onChanged, Consumer<Setting<Integer>> onModuleActivated, IVisible visible, int min, int max, int sliderMin, int sliderMax, boolean noSlider) {
+            super(name, description, defaultValue, onChanged, onModuleActivated, visible);
+            this.min = min;
+            this.max = max;
+            this.sliderMin = sliderMin;
+            this.sliderMax = sliderMax;
+            this.noSlider = noSlider;
+        }
+
+        @Override
+        public boolean set(Integer value) {
+            boolean changed = super.set(value);
+            if (changed) refreshWidgets();
+            return changed;
+        }
+
+        private void addWidget(WIntEdit widget) {
+            widgets.add(new WeakReference<>(widget));
+            widget.set(get());
+        }
+
+        private void refreshWidgets() {
+            widgets.removeIf(reference -> {
+                WIntEdit widget = reference.get();
+                if (widget == null) return true;
+                if (widget.get() != get()) widget.set(get());
+                return false;
+            });
+        }
+
+        @Override
+        protected Integer parseImpl(String str) {
+            try {
+                return Integer.parseInt(str.trim());
+            } catch (NumberFormatException ignored) {
+                return null;
+            }
+        }
+
+        @Override
+        protected boolean isValueValid(Integer value) {
+            return value != null && value >= min && value <= max;
+        }
+
+        @Override
+        protected NbtCompound save(NbtCompound tag) {
+            tag.putInt("value", get());
+            return tag;
+        }
+
+        @Override
+        protected Integer load(NbtCompound tag) {
+            set(tag.getInt("value", 0));
+            return get();
+        }
+
+        private static class Builder extends SettingBuilder<Builder, Integer, RestartIntSetting> {
+            private int min = Integer.MIN_VALUE, max = Integer.MAX_VALUE;
+            private int sliderMin = 0, sliderMax = 10;
+            private boolean noSlider = false;
+
+            private Builder() {
+                super(0);
+            }
+
+            public Builder min(int min) {
+                this.min = min;
+                return this;
+            }
+
+            public Builder max(int max) {
+                this.max = max;
+                return this;
+            }
+
+            public Builder sliderMin(int min) {
+                this.sliderMin = min;
+                return this;
+            }
+
+            public Builder sliderMax(int max) {
+                this.sliderMax = max;
+                return this;
+            }
+
+            public Builder noSlider() {
+                noSlider = true;
+                return this;
+            }
+
+            @Override
+            public RestartIntSetting build() {
+                return new RestartIntSetting(name, description, defaultValue, onChanged, onModuleActivated, visible, min, max, Math.max(sliderMin, min), Math.min(sliderMax, max), noSlider);
+            }
+        }
+    }
+
+    private static class RestartRouteSetting extends Setting<SweepRoute> {
+        private final List<WeakReference<WDropdown<SweepRoute>>> widgets = new ArrayList<>();
+
+        private RestartRouteSetting(String name, String description, SweepRoute defaultValue, Consumer<SweepRoute> onChanged, Consumer<Setting<SweepRoute>> onModuleActivated, IVisible visible) {
+            super(name, description, defaultValue, onChanged, onModuleActivated, visible);
+        }
+
+        @Override
+        public boolean set(SweepRoute value) {
+            boolean changed = super.set(value);
+            if (changed) refreshWidgets();
+            return changed;
+        }
+
+        private void addWidget(WDropdown<SweepRoute> widget) {
+            widgets.add(new WeakReference<>(widget));
+            widget.set(get());
+        }
+
+        private void refreshWidgets() {
+            widgets.removeIf(reference -> {
+                WDropdown<SweepRoute> widget = reference.get();
+                if (widget == null) return true;
+                if (widget.get() != get()) widget.set(get());
+                return false;
+            });
+        }
+
+        @Override
+        protected SweepRoute parseImpl(String str) {
+            try {
+                return SweepRoute.valueOf(str.trim());
+            } catch (IllegalArgumentException | NullPointerException ignored) {
+                return null;
+            }
+        }
+
+        @Override
+        protected boolean isValueValid(SweepRoute value) {
+            return value != null;
+        }
+
+        @Override
+        protected NbtCompound save(NbtCompound tag) {
+            tag.putString("value", get().name());
+            return tag;
+        }
+
+        @Override
+        protected SweepRoute load(NbtCompound tag) {
+            parse(tag.getString("value", SweepRoute.NEXT_CIRCLE.name()));
+            return get();
+        }
+
+        private static class Builder extends SettingBuilder<Builder, SweepRoute, RestartRouteSetting> {
+            private Builder() {
+                super(SweepRoute.NEXT_CIRCLE);
+            }
+
+            @Override
+            public RestartRouteSetting build() {
+                return new RestartRouteSetting(name, description, defaultValue, onChanged, onModuleActivated, visible);
+            }
+        }
     }
 
     private static class RestartButtonSetting extends Setting<Boolean> {

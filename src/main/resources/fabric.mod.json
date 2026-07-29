@@ -6,6 +6,8 @@
   "description": "Meteor Addon for 2b2t.xin.",
   "license": "GPL-3.0-only",
   "contact": {
+    "homepage": "https://github.com/WaltomAdaam2/WaveXinAddon",
+    "issues": "https://github.com/WaltomAdaam2/WaveXinAddon/issues",
     "sources": "https://github.com/WaltomAdaam2/WaveXinAddon"
   },
   "authors": [
