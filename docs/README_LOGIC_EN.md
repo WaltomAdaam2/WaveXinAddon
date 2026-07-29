@@ -33,17 +33,25 @@ This page describes implementation details and notable behavior for the public C
 
 ### Chat Filter
 
-- Private and public chat continue to use their own settings and complete message formats.
-- `Hide Death Messages` no longer checks death keywords or death-text patterns.
-- It only checks server `GameMessageS2CPacket` messages: a message is hidden only when it contains both Minecraft bright green `§a` and bright red `§c`.
-- Both raw legacy formatting codes and actual Text component styles are supported. This color-pair rule does not apply to normal player chat.
+- MSG private messages, public chat, and death messages are filtered by separate settings using the complete message text.
+- `MSG Allowlist` and `Public Message Allowlist` keep separate player lists. Adding a player to one list does not sync that player to the other list.
+- The allowlist UI follows the Meteor Friends-style list input: existing players are shown as rows with a `-` button, and the bottom row has an input box plus a `+` button.
+- `Hide Death Messages` uses plain death-announcement format matching, including suicide, self-explosion, environmental deaths, player kills, shots, explosions, cliff or void pushes, and common Chinese/English server formats. It no longer depends on color pairs, so other colored server messages are not hidden by that rule.
+- `Show Own Public Messages` is enabled by default. When public-chat filtering is enabled, your own public messages remain visible unless this option is turned off.
+
+### Turtle Potion Thrower
+
+- The module is triggered by Meteor's built-in Bind. Pressing the bind throws once and then automatically disables the module instead of leaving a persistent listener active.
+- It only searches for splash turtle potions, accepting normal, long, and strong Turtle Master variants. Drinkable potions and other splash potions are ignored.
+- `Quick Swap` is enabled by default. If the target potion is in inventory, it is temporarily swapped into the selected hotbar slot, thrown with the normal right-click interaction, then swapped back using Meteor's original quick swap flow.
+- With `Quick Swap` disabled, only hotbar potions are used. Missing potions or failed slot swaps use the normal WaveXin warning chat format when `Notify` is enabled, and warn-level debug details are recorded in the game log.
 
 ### Base Finder
 
 - `Normal Scan` scans outward in rings from its starting chunk, moves between targets, and can wait for chunk loading. It prints one concise message after each completed ring. On disable it saves the current checkpoint; `Start From Previous Scan` restores the Normal Scan position, ring, and route.
 - `Spiral Scan` has an independent spiral route, step size, segment count, and rendering settings. Optional auto-walk, sprint, view lock, and screen pause are available. It does not reuse the Normal Scan checkpoint flow.
 - Both scan modes share container recording: a chunk is recorded when its selected-container count reaches the threshold.
-- Xaero waypoints are optional. Xaero Minimap is checked only when the option is enabled; if it is unavailable, the option turns off with a chat warning while normal container recording remains available. Waypoint names support a number, prefix, and suffix, with area-radius and per-area limits used for deduplication.
+- Xaero waypoints are optional. Xaero Minimap is checked only when the option is enabled; if it is unavailable, the option turns off with a chat warning while normal container recording remains available. Waypoint names support a number, prefix, and suffix, with area-radius and per-area limits used for deduplication. Successful creation messages keep the WaveXin prefix and render the waypoint name in bold using the actual color written to Xaero.
 
 ### Bilingual Implementation
 
