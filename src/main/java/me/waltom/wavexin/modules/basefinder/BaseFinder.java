@@ -34,6 +34,9 @@ import net.minecraft.util.math.Box;
 import net.minecraft.util.math.ChunkPos;
 import net.minecraft.util.math.Vec3d;
 import net.minecraft.nbt.NbtCompound;
+import net.minecraft.text.Style;
+import net.minecraft.text.Text;
+import net.minecraft.text.TextColor;
 import java.util.HashSet;
 import java.util.Set;
 
@@ -1290,6 +1293,24 @@ public class BaseFinder extends WaveXinModule {
         XaeroWaypointColor color = xaeroWaypointColor.get();
         return color == XaeroWaypointColor.RANDOM ? ThreadLocalRandom.current().nextInt(16) : color.colorId;
     }
+
+    private void sendXaeroCreatedMessage(String name, int colorId) {
+        Color color = getXaeroWaypointDisplayColor(colorId);
+        int rgb = ((color.r & 0xFF) << 16) | ((color.g & 0xFF) << 8) | (color.b & 0xFF);
+        Text message = Text.literal(WaveXinI18n.tr("message.wavexin.base_finder.xaero_created", "Created Xaero waypoint: %s", ""))
+            .append(Text.literal(name).setStyle(Style.EMPTY.withBold(true).withColor(TextColor.fromRgb(rgb))));
+
+        ChatUtils.forceNextPrefixClass(getClass());
+        ChatUtils.sendMsg(message);
+    }
+
+    private static Color getXaeroWaypointDisplayColor(int colorId) {
+        for (XaeroWaypointColor color : XaeroWaypointColor.values()) {
+            if (color.colorId == colorId) return color.displayColor;
+        }
+        return XaeroWaypointColor.RANDOM.displayColor;
+    }
+
     private void appendContainerRecord(ChunkPos chunkPos, BlockPos recordPos, BlockPos playerPos, int count) {
         String line = "%s | chunk=(%d,%d) | first-container=(%d,%d,%d) | player=(%d,%d,%d) | count=%d%n".formatted(
             LocalDateTime.now().format(RECORD_TIME_FORMAT),
@@ -1352,7 +1373,8 @@ public class BaseFinder extends WaveXinModule {
 
             Class<?> waypointClass = Class.forName("xaero.common.minimap.waypoints.Waypoint");
             Constructor<?> constructor = waypointClass.getConstructor(int.class, int.class, int.class, String.class, String.class, int.class);
-            Object waypoint = constructor.newInstance(pos.getX(), pos.getY(), pos.getZ(), name, initials, getXaeroWaypointColorId());
+            int colorId = getXaeroWaypointColorId();
+            Object waypoint = constructor.newInstance(pos.getX(), pos.getY(), pos.getZ(), name, initials, colorId);
             Method addMethod = waypointSet.getClass().getMethod("add", waypointClass);
             addMethod.invoke(waypointSet, waypoint);
 
@@ -1360,7 +1382,7 @@ public class BaseFinder extends WaveXinModule {
             waypointSession.getClass().getMethod("setSetChangedTime", long.class).invoke(waypointSession, System.currentTimeMillis());
             createdWaypointPositions.add(pos.toImmutable());
             nextWaypointNumber++;
-            infoKey("message.wavexin.base_finder.xaero_created", "Created Xaero waypoint: %s", name);
+            sendXaeroCreatedMessage(name, colorId);
         } catch (ReflectiveOperationException | RuntimeException e) {
             WaveXinAddon.LOG.warn("[BaseFinderDebug] Failed to create Xaero waypoint. pos={} method={} nextWaypointNumber={}", pos, activeScanMethod, nextWaypointNumber, e);
             warningKey("warning.wavexin.base_finder.xaero_create_failed", "Failed to create Xaero waypoint: %s", e.getMessage());
