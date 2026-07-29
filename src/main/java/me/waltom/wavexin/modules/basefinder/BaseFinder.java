@@ -29,6 +29,8 @@ import meteordevelopment.meteorclient.settings.*;
 import meteordevelopment.meteorclient.utils.render.color.SettingColor;
 import meteordevelopment.orbit.EventHandler;
 import meteordevelopment.orbit.EventPriority;
+import net.minecraft.entity.Entity;
+import net.minecraft.entity.EntityType;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Box;
 import net.minecraft.util.math.ChunkPos;
@@ -39,6 +41,7 @@ import net.minecraft.text.Text;
 import net.minecraft.text.TextColor;
 import java.util.HashSet;
 import java.util.Set;
+import java.util.UUID;
 
 public class BaseFinder extends WaveXinModule {
     public enum ScanMethod { SPIRAL("Spiral Scan"), NORMAL("Normal Scan"); private final String title; ScanMethod(String title) { this.title = title; } @Override public String toString() { return title; } }
@@ -142,10 +145,12 @@ public class BaseFinder extends WaveXinModule {
     private String syncedNormalProgressKey;
     private int lastCompletedNormalRing = -1;
     private final Set<Long> recordedContainerChunks = new HashSet<>();
+    private final Set<UUID> recordedThrownPearls = new HashSet<>();
     private final List<BlockPos> createdWaypointPositions = new ArrayList<>();
     private final Set<Long> warnedMissingLoadedChunks = new HashSet<>();
     private final Set<String> warnedNormalDebugStates = new HashSet<>();
     private int nextWaypointNumber = 1;
+    private int nextPearlWaypointNumber = 1;
     private boolean warnedEmptyContainerBlocks;
     private boolean warnedContainerScanUnavailable;
 
@@ -364,10 +369,25 @@ public class BaseFinder extends WaveXinModule {
         .build()
     );
 
+    private final Setting<Boolean> detectThrownPearls = sgContainerRecording.add(new BoolSetting.Builder()
+        .name("Detect Thrown Pearls")
+        .description("Announces thrown ender pearls detected while Base Finder is active.")
+        .defaultValue(false)
+        .build()
+    );
+
     private final Setting<Boolean> xaeroWaypoints = sgContainerRecording.add(new BoolSetting.Builder()
         .name("Xaero Waypoints")
         .description("Creates a Xaero waypoint when a container chunk is recorded. Requires Xaero's Minimap at runtime.")
         .defaultValue(false)
+        .build()
+    );
+
+    private final Setting<Boolean> recordThrownPearls = sgContainerRecording.add(new BoolSetting.Builder()
+        .name("Record Thrown Pearl")
+        .description("Creates unlimited Xaero waypoints for detected thrown ender pearls, using Pearl names and P aliases.")
+        .defaultValue(false)
+        .visible(xaeroWaypoints::get)
         .build()
     );
 
@@ -599,10 +619,12 @@ public class BaseFinder extends WaveXinModule {
 
         scanStartPending = false;
         recordedContainerChunks.clear();
+        recordedThrownPearls.clear();
         createdWaypointPositions.clear();
         warnedMissingLoadedChunks.clear();
         warnedNormalDebugStates.clear();
         nextWaypointNumber = 1;
+        nextPearlWaypointNumber = 1;
         warnedEmptyContainerBlocks = false;
         warnedContainerScanUnavailable = false;
         validateXaeroWaypointSetting();
@@ -894,6 +916,7 @@ public class BaseFinder extends WaveXinModule {
         ScanMethod stoppedScanMethod = activeScanMethod;
         if (stoppedScanMethod == ScanMethod.NORMAL) logNormalDebugSnapshot("DEACTIVATE", "moduleDisabled");
         activeScanMethod = null;
+        recordedThrownPearls.clear();
 
         if (stoppedScanMethod == ScanMethod.SPIRAL) {
             saveSpiralProgress();
@@ -1223,6 +1246,8 @@ public class BaseFinder extends WaveXinModule {
             return;
         }
 
+        detectThrownPearlsIfEnabled();
+
         int radius = getContainerScanRadius();
         for (int chunkX = center.x - radius; chunkX <= center.x + radius; chunkX++) {
             for (int chunkZ = center.z - radius; chunkZ <= center.z + radius; chunkZ++) {
@@ -1298,6 +1323,26 @@ public class BaseFinder extends WaveXinModule {
             chunkPos.x, chunkPos.z, recordPos.getX(), recordPos.getY(), recordPos.getZ(), count);
     }
 
+    private void detectThrownPearlsIfEnabled() {
+        if (!detectThrownPearls.get() || mc.world == null) return;
+
+        for (Entity entity : mc.world.getEntities()) {
+            if (entity.getType() != EntityType.ENDER_PEARL) continue;
+            UUID uuid = entity.getUuid();
+            if (!recordedThrownPearls.add(uuid)) continue;
+
+            BlockPos pearlPos = entity.getBlockPos();
+            ChunkPos pearlChunk = new ChunkPos(pearlPos);
+            announceThrownPearl(pearlChunk, pearlPos);
+            createPearlXaeroWaypointIfEnabled(pearlPos);
+        }
+    }
+
+    private void announceThrownPearl(ChunkPos chunkPos, BlockPos pos) {
+        warningKey("warning.wavexin.base_finder.pearl_found", "(highlight)(bold)Thrown pearl detected! (default)Chunk: (highlight)%d, %d(default) | Position: (highlight)%d, %d, %d(default)",
+            chunkPos.x, chunkPos.z, pos.getX(), pos.getY(), pos.getZ());
+    }
+
     private boolean hasReachedWaypointLimit(BlockPos candidate) {
         int radiusBlocks = waypointLimitRadius.get() * 16;
         int nearby = 0;
@@ -1362,19 +1407,36 @@ public class BaseFinder extends WaveXinModule {
 
     private void createXaeroWaypointIfEnabled(BlockPos pos) {
         if (!validateXaeroWaypointSetting()) return;
+        if (hasReachedWaypointLimit(pos)) return;
 
+        String name = xaeroWaypointPrefix.get() + nextWaypointNumber + xaeroWaypointSuffix.get();
+        String initials = makeWaypointInitials(name);
+        if (createXaeroWaypoint(pos, name, initials)) {
+            createdWaypointPositions.add(pos.toImmutable());
+            nextWaypointNumber++;
+        }
+    }
+
+    private void createPearlXaeroWaypointIfEnabled(BlockPos pos) {
+        if (!xaeroWaypoints.get() || !recordThrownPearls.get()) return;
+        if (!validateXaeroWaypointSetting()) return;
+
+        int number = nextPearlWaypointNumber;
+        String name = BaseFinderStateLogic.pearlWaypointName(number);
+        String initials = BaseFinderStateLogic.pearlWaypointAlias(number);
+        if (createXaeroWaypoint(pos, name, initials)) {
+            nextPearlWaypointNumber++;
+        }
+    }
+
+    private boolean createXaeroWaypoint(BlockPos pos, String name, String initials) {
         try {
-            if (hasReachedWaypointLimit(pos)) return;
-
-            String name = xaeroWaypointPrefix.get() + nextWaypointNumber + xaeroWaypointSuffix.get();
-            String initials = makeWaypointInitials(name);
-
             Class<?> sessionClass = Class.forName("xaero.common.XaeroMinimapSession");
             Object currentSession = sessionClass.getMethod("getCurrentSession").invoke(null);
             if (currentSession == null) {
-                WaveXinAddon.LOG.warn("[BaseFinderDebug] Xaero waypoint skipped because current session is null. pos={} method={}", pos, activeScanMethod);
-                warningKey("warning.wavexin.base_finder.xaero_session_not_ready", "Xaero's Minimap session is not ready. Container record saved without a waypoint.");
-                return;
+                WaveXinAddon.LOG.warn("[BaseFinderDebug] Xaero waypoint skipped because current session is null. pos={} method={} name={}", pos, activeScanMethod, name);
+                warningKey("warning.wavexin.base_finder.xaero_session_not_ready", "Xaero's Minimap session is not ready. Record saved without a waypoint.");
+                return false;
             }
 
             Object processor = currentSession.getClass().getMethod("getMinimapProcessor").invoke(currentSession);
@@ -1382,16 +1444,16 @@ public class BaseFinder extends WaveXinModule {
             Object worldManager = minimapSession.getClass().getMethod("getWorldManager").invoke(minimapSession);
             Object currentWorld = worldManager.getClass().getMethod("getCurrentWorld").invoke(worldManager);
             if (currentWorld == null) {
-                WaveXinAddon.LOG.warn("[BaseFinderDebug] Xaero waypoint skipped because current waypoint world is null. pos={} method={}", pos, activeScanMethod);
-                warningKey("warning.wavexin.base_finder.xaero_world_not_ready", "Xaero current waypoint world is not ready. Container record saved without a waypoint.");
-                return;
+                WaveXinAddon.LOG.warn("[BaseFinderDebug] Xaero waypoint skipped because current waypoint world is null. pos={} method={} name={}", pos, activeScanMethod, name);
+                warningKey("warning.wavexin.base_finder.xaero_world_not_ready", "Xaero current waypoint world is not ready. Record saved without a waypoint.");
+                return false;
             }
 
             Object waypointSet = currentWorld.getClass().getMethod("getCurrentWaypointSet").invoke(currentWorld);
             if (waypointSet == null) {
-                WaveXinAddon.LOG.warn("[BaseFinderDebug] Xaero waypoint skipped because current waypoint set is null. pos={} method={}", pos, activeScanMethod);
-                warningKey("warning.wavexin.base_finder.xaero_set_not_ready", "Xaero current waypoint set is not ready. Container record saved without a waypoint.");
-                return;
+                WaveXinAddon.LOG.warn("[BaseFinderDebug] Xaero waypoint skipped because current waypoint set is null. pos={} method={} name={}", pos, activeScanMethod, name);
+                warningKey("warning.wavexin.base_finder.xaero_set_not_ready", "Xaero current waypoint set is not ready. Record saved without a waypoint.");
+                return false;
             }
 
             Class<?> waypointClass = Class.forName("xaero.common.minimap.waypoints.Waypoint");
@@ -1403,12 +1465,12 @@ public class BaseFinder extends WaveXinModule {
 
             Object waypointSession = minimapSession.getClass().getMethod("getWaypointSession").invoke(minimapSession);
             waypointSession.getClass().getMethod("setSetChangedTime", long.class).invoke(waypointSession, System.currentTimeMillis());
-            createdWaypointPositions.add(pos.toImmutable());
-            nextWaypointNumber++;
             sendXaeroCreatedMessage(name, colorId);
+            return true;
         } catch (ReflectiveOperationException | RuntimeException e) {
-            WaveXinAddon.LOG.warn("[BaseFinderDebug] Failed to create Xaero waypoint. pos={} method={} nextWaypointNumber={}", pos, activeScanMethod, nextWaypointNumber, e);
+            WaveXinAddon.LOG.warn("[BaseFinderDebug] Failed to create Xaero waypoint. pos={} method={} name={}", pos, activeScanMethod, name, e);
             warningKey("warning.wavexin.base_finder.xaero_create_failed", "Failed to create Xaero waypoint: %s", e.getMessage());
+            return false;
         }
     }
 

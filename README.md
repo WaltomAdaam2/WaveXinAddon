@@ -16,7 +16,7 @@ WaveXinAddon 是一个为 **2b2t.xin** 服务器设计的 Meteor Client Addon (�
 * SnifferNametags：嗅探兽实体名牌显示
 * Auto Login：2b2t.xin 自动登录、自动加入和每日小红花签到
 * Chat Filter：私信、公共聊天和死亡消息过滤，支持 MSG / Public 独立白名单；Public 仅识别 `<玩家名> 消息` 格式，默认显示自己发送的公共聊天
-* Base Finder：普通扫描 / 螺旋扫描、容器记录、目标区块中心锁定、螺旋自动走路视角锁定/临时转向和可选 Xaero 路径点；创建提示会用实际 Xaero 颜色加粗显示路径点名称
+* Base Finder：普通扫描 / 螺旋扫描、容器记录、被扔出的末影珍珠检测、目标区块中心锁定、螺旋自动走路视角锁定/临时转向和可选 Xaero 路径点；创建提示会用实际 Xaero 颜色加粗显示路径点名称
 * Turtle Potion Thrower：绑定快捷键后一键投掷喷溅型神龟药水，支持副手、原槽位恢复、Quick Swap 和 Notify
 
 更多实现逻辑与注意事项请参阅 [功能逻辑说明](docs/README_LOGIC.md)。

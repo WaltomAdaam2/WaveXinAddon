@@ -16,7 +16,7 @@ WaveXinAddon is a Meteor Client addon designed for the **2b2t.xin** server. It p
 * SnifferNametags: Sniffer entity nametags
 * Auto Login: 2b2t.xin auto login, auto join, and daily flower check-in
 * Chat Filter: Private message, public chat, and death message filtering, with separate MSG / public allowlists; public chat is recognized only as `<player> message`, with a default bypass for your own public messages
-* Base Finder: Normal / spiral scanning, container recording, target-chunk center locking, spiral auto-walk view locking or temporary steering, and optional Xaero waypoints; created-waypoint chat names are bolded with the actual Xaero waypoint color
+* Base Finder: Normal / spiral scanning, container recording, thrown ender pearl detection, target-chunk center locking, spiral auto-walk view locking or temporary steering, and optional Xaero waypoints; created-waypoint chat names are bolded with the actual Xaero waypoint color
 * Turtle Potion Thrower: Throws a splash turtle potion from a bind, with offhand support, original-slot restore, Quick Swap, and Notify
 
 For implementation details and feature-specific notes, see the [Feature Logic Guide](docs/README_LOGIC_EN.md).

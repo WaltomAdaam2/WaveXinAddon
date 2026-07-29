@@ -17,6 +17,14 @@ final class BaseFinderStateLogic {
             || "WAITING_RESUME_CURRENT_CHUNK".equals(state);
     }
 
+    static String pearlWaypointName(int number) {
+        return "Pearl " + Math.max(1, number);
+    }
+
+    static String pearlWaypointAlias(int number) {
+        return "P" + Math.max(1, number);
+    }
+
     static final class ViewRotationState {
         private Object player;
         private Object world;

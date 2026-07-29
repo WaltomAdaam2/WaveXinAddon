@@ -179,6 +179,10 @@ setting.wavexin.base_finder.container_recording.container_blocks.description
 setting.wavexin.base_finder.container_recording.container_blocks.title
 setting.wavexin.base_finder.container_recording.container_threshold.description
 setting.wavexin.base_finder.container_recording.container_threshold.title
+setting.wavexin.base_finder.container_recording.detect_thrown_pearls.description
+setting.wavexin.base_finder.container_recording.detect_thrown_pearls.title
+setting.wavexin.base_finder.container_recording.record_thrown_pearl.description
+setting.wavexin.base_finder.container_recording.record_thrown_pearl.title
 setting.wavexin.base_finder.container_recording.waypoint_color.description
 setting.wavexin.base_finder.container_recording.waypoint_color.title
 setting.wavexin.base_finder.container_recording.waypoint_prefix.description
@@ -358,6 +362,7 @@ tooltip.wavexin.common.reset
 warning.wavexin.auto_login.questions_load_failed
 warning.wavexin.auto_login.questions_missing
 warning.wavexin.base_finder.base_found
+warning.wavexin.base_finder.pearl_found
 warning.wavexin.base_finder.spiral_too_far
 warning.wavexin.base_finder.xaero_create_failed
 warning.wavexin.base_finder.xaero_missing

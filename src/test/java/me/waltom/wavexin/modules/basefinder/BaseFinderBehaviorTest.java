@@ -13,6 +13,7 @@ public final class BaseFinderBehaviorTest {
         testSprintRestore();
         testNormalDebugLogGate();
         testPerTargetDebugGate();
+        testPearlWaypointLabels();
     }
 
     private static void testBlockToChunk() {
@@ -131,6 +132,15 @@ public final class BaseFinderBehaviorTest {
         assertTrue(gate.shouldEmit(true, 2, 2, 4), "target change emits");
         gate.clear();
         assertTrue(gate.shouldEmit(true, 2, 2, 4), "clear allows target again");
+    }
+
+    private static void testPearlWaypointLabels() {
+        assertEquals("Pearl 1", BaseFinderStateLogic.pearlWaypointName(1), "first pearl waypoint name");
+        assertEquals("P1", BaseFinderStateLogic.pearlWaypointAlias(1), "first pearl waypoint alias");
+        assertEquals("Pearl 2", BaseFinderStateLogic.pearlWaypointName(2), "second pearl waypoint name");
+        assertEquals("P2", BaseFinderStateLogic.pearlWaypointAlias(2), "second pearl waypoint alias");
+        assertEquals("Pearl 1", BaseFinderStateLogic.pearlWaypointName(0), "pearl waypoint name clamps low values");
+        assertEquals("P1", BaseFinderStateLogic.pearlWaypointAlias(0), "pearl waypoint alias clamps low values");
     }
 
     private static void assertSnapshot(BaseFinderStateLogic.Snapshot snapshot, float yaw, float pitch, float headYaw, float bodyYaw, String label) {
