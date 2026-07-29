@@ -36,21 +36,21 @@ This page describes implementation details and notable behavior for the public C
 - MSG private messages, public chat, and death messages are filtered by separate settings using the complete message text.
 - `MSG Allowlist` and `Public Message Allowlist` keep separate player lists. Adding a player to one list does not sync that player to the other list.
 - The allowlist UI follows the Meteor Friends-style list input: existing players are shown as rows with a `-` button, and the bottom row has an input box plus a `+` button.
-- `Hide Death Messages` uses plain death-announcement format matching, including suicide, self-explosion, environmental deaths, player kills, shots, explosions, cliff or void pushes, and common Chinese/English server formats. It no longer depends on color pairs, so other colored server messages are not hidden by that rule.
-- `Show Own Public Messages` is enabled by default. When public-chat filtering is enabled, your own public messages remain visible unless this option is turned off.
+- `Hide Death Messages` uses plain death-announcement format matching, including suicide, bed/firework/TNT self-explosions, ender-pearl deaths, world-border suicide, environmental deaths, player kills, shots, fireballs, suffocation, falling objects, cliff or void pushes, and common Chinese/English server formats. It no longer depends on color pairs, so other colored server messages are not hidden by that rule.
+- Public chat must parse to a player name. `<player> message` and restricted `player: message` forms are treated as public chat, while common server colon prefixes such as `使用方式:`, `系统:`, `Warning:`, `Error:`, and `Server:` are not. `Show Own Public Messages` is enabled by default and compares both the account name and the display name after formatting/prefix stripping.
 
 ### Turtle Potion Thrower
 
 - The module is triggered by Meteor's built-in Bind. Pressing the bind throws once and then automatically disables the module instead of leaving a persistent listener active.
 - It only searches for splash turtle potions, accepting normal, long, and strong Turtle Master variants. Drinkable potions and other splash potions are ignored.
-- `Quick Swap` is enabled by default. If the target potion is in inventory, it is temporarily swapped into the selected hotbar slot, thrown with the normal right-click interaction, then swapped back using Meteor's original quick swap flow.
-- With `Quick Swap` disabled, only hotbar potions are used. Missing potions or failed slot swaps use the normal WaveXin warning chat format when `Notify` is enabled, and warn-level debug details are recorded in the game log.
+- `Quick Swap` is enabled by default. If the target potion is already in the offhand or main hand, that hand is used directly. If it is in inventory, it is temporarily swapped into the selected hotbar slot, thrown with the normal right-click interaction, then swapped back from a `finally` block using Meteor's original quick swap flow.
+- With `Quick Swap` disabled, only offhand, main-hand, or hotbar potions are used; temporary hotbar swaps attempt to restore the original slot. Missing potions, failed swaps, rejected interactions, and restore failures always write warn-level game-log details. `Notify` only controls whether the normal WaveXin warning chat message is also shown.
 
 ### Base Finder
 
-- `Normal Scan` scans outward in rings from its starting chunk, moves between targets, and can wait for chunk loading. It prints one concise message after each completed ring. On disable it saves the current checkpoint; `Start From Previous Scan` restores the Normal Scan position, ring, and route.
-- `Spiral Scan` has an independent spiral route, step size, segment count, and rendering settings. Optional auto-walk, sprint, view lock, and screen pause are available. It does not reuse the Normal Scan checkpoint flow.
-- Both scan modes share container recording: a chunk is recorded when its selected-container count reaches the threshold.
+- `Normal Scan` scans outward in rings from its starting chunk, moves between targets, and can wait for chunk loading. Reaching a target or resume checkpoint now requires returning to the target chunk center, preventing manual input or other movement modules from drifting the scan route. It prints one concise message after each completed ring. On disable it saves the current checkpoint; `Start From Previous Scan` restores the Normal Scan position, ring, and route.
+- `Spiral Scan` has an independent spiral route, step size, segment count, and rendering settings. Auto-walk continuously aims at the current target chunk center, so edge drift is corrected before advancing to the next segment. Optional sprint, view lock, and screen pause are available. It does not reuse the Normal Scan checkpoint flow.
+- Both scan modes share container recording: a chunk is recorded when its selected-container count reaches the threshold. Center-correction abnormal states are written as `BaseFinderDebug` warn logs, while normal movement avoids info spam.
 - Xaero waypoints are optional. Xaero Minimap is checked only when the option is enabled; if it is unavailable, the option turns off with a chat warning while normal container recording remains available. Waypoint names support a number, prefix, and suffix, with area-radius and per-area limits used for deduplication. Successful creation messages keep the WaveXin prefix and render the waypoint name in bold using the actual color written to Xaero.
 
 ### Bilingual Implementation
