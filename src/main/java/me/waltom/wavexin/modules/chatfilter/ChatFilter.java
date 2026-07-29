@@ -14,18 +14,20 @@ import java.util.regex.Pattern;
 public class ChatFilter extends WaveXinModule {
     private static final Pattern LEGACY_FORMATTING_PATTERN = Pattern.compile("(?i)\\xA7[0-9A-FK-OR]");
     private static final String PLAYER_NAME = "[^\\s:\\[\\]<>\\uFF08\\uFF09()]{1,64}";
+    private static final String DEATH_DETAIL = "[^\\r\\n]+?";
     private static final String DEATH_COUNT = "(?:\\s*[\\(\\uFF08]\\d+[\\)\\uFF09])?";
     private static final Pattern CHINESE_DEATH_MESSAGE_PATTERN = Pattern.compile(
         "^" + PLAYER_NAME + "\\s+(?:"
-            + "\\u81EA\\u6740"
-            + "|\\u88AB\\s+.+?\\s+(?:\\u51FB\\u6740|\\u6740\\u6B7B|\\u5C04\\u6740|\\u5C04\\u6B7B|\\u70B8\\u6B7B|\\u6454\\u6B7B|\\u6EBA\\u6B7B|\\u70E7\\u6B7B|\\u7A92\\u606F|\\u51BB\\u6B7B|\\u997F\\u6B7B)"
-            + "|\\u88AB\\s+.+?(?:\\u800C\\u6B7B\\u4EA1|\\u6B7B\\u4EA1)"
-            + "|(?:\\u56E0|\\u4ECE)\\s+.+?(?:\\u6B7B\\u4EA1|\\u6454\\u6B7B|\\u6EBA\\u6B7B|\\u70E7\\u6B7B|\\u7A92\\u606F|\\u51BB\\u6B7B|\\u997F\\u6B7B)"
+            + "(?:自杀|在\\S{1,16}中自杀|撞墙自杀|跳入\\S{1,16}自杀|使用重生锚炸死自己|用TNT炸死了自己|炸死了自己|毒死了自己|饿死了自己|被自己的弓箭射死)"
+            + "|被\\s+" + DEATH_DETAIL + "\\s+(?:击杀|杀死|射杀|射死|炸死|刺死|火球击杀|推下悬崖而死亡|推到了虚空|用岩浆烧死)"
+            + "|被\\s+" + DEATH_DETAIL + "\\s+的荆棘反杀"
+            + "|(?:着火烧死|被烧死|窒息而亡|冻死|饿死|从高处摔死|摔死|摔得过猛|被魔法杀死)"
             + ")" + DEATH_COUNT + "$"
     );
     private static final Pattern ENGLISH_DEATH_MESSAGE_PATTERN = Pattern.compile(
         "^" + PLAYER_NAME + "\\s+(?:"
-            + "was (?:slain|shot|blown up|killed|doomed to fall|squashed|impaled|fireballed|stung|pummeled)"
+            + "was (?:impaled|shot|slain|bogged by) .+"
+            + "|was (?:slain|shot|blown up|killed|doomed to fall|squashed|impaled|fireballed|stung|pummeled)"
             + "|was (?:killed|blown up|shot|slain) by .+"
             + "|drowned|fell from a high place|hit the ground too hard|went up in flames|burned to death|starved to death|froze to death"
             + ")" + DEATH_COUNT + "$",
@@ -88,11 +90,11 @@ public class ChatFilter extends WaveXinModule {
         return hidePublicMessages.get() && PUBLIC_MESSAGE_PATTERN.matcher(normalized).find();
     }
 
-    private static String normalize(String message) {
+    static String normalize(String message) {
         return LEGACY_FORMATTING_PATTERN.matcher(message).replaceAll("").trim();
     }
 
-    private static boolean isDeathMessage(String message) {
+    static boolean isDeathMessage(String message) {
         if (message.isEmpty() || message.contains("\n") || message.contains("\r")) return false;
         return CHINESE_DEATH_MESSAGE_PATTERN.matcher(message).matches()
             || ENGLISH_DEATH_MESSAGE_PATTERN.matcher(message).matches();
