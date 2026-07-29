@@ -13,6 +13,7 @@ public final class BaseFinderBehaviorTest {
         testSprintRestore();
         testSpiralLockViewCancellation();
         testNormalDebugLogGate();
+        testNormalRouteCheckpointValidation();
         testPerTargetDebugGate();
         testPearlWaypointLabels();
     }
@@ -130,6 +131,17 @@ public final class BaseFinderBehaviorTest {
         assertFalse(BaseFinderStateLogic.shouldLogNormalDebugSnapshot("STATE", "WAITING_CURRENT_CHUNK"), "ordinary chunk wait is not a warning");
         assertFalse(BaseFinderStateLogic.shouldLogNormalDebugSnapshot("STATE", "WAITING_RESUME_CURRENT_CHUNK"), "ordinary resume wait is not a warning");
         assertFalse(BaseFinderStateLogic.shouldLogNormalDebugSnapshot("DEACTIVATE", "MOVING"), "normal deactivation is not a warning");
+    }
+
+    private static void testNormalRouteCheckpointValidation() {
+        BaseFinderStateLogic.NormalRouteCheckpoint upRight = BaseFinderStateLogic.normalRouteTarget(50763, 51597, 11, 8, BaseFinder.SweepRoute.UP_LEFT_TO_UP_RIGHT);
+        assertEquals(50939, upRight.x(), "ring 11 up-right target X");
+        assertEquals(51421, upRight.z(), "ring 11 up-right target Z");
+        assertTrue(BaseFinderStateLogic.isNormalRouteCheckpoint(50763, 51597, 50939, 51421, 11, 8, BaseFinder.SweepRoute.UP_LEFT_TO_UP_RIGHT), "valid saved checkpoint");
+
+        assertFalse(BaseFinderStateLogic.isNormalRouteCheckpoint(50763, 51597, 50756, 51581, 1, 8, BaseFinder.SweepRoute.UP_LEFT_TO_UP_RIGHT), "mid-route chunk is not a checkpoint");
+        assertFalse(BaseFinderStateLogic.isNormalRouteCheckpoint(50624, 50624, 0, 0, 31, 8, BaseFinder.SweepRoute.DOWN_RIGHT_TO_DOWN_LEFT), "login origin chunk is not a checkpoint");
+        assertFalse(BaseFinderStateLogic.isNormalRouteCheckpoint(50763, 51597, 50939, 51421, 0, 8, BaseFinder.SweepRoute.UP_LEFT_TO_UP_RIGHT), "ring zero checkpoint is invalid");
     }
 
     private static void testPerTargetDebugGate() {

@@ -1,5 +1,7 @@
 button.wavexin.auto_login.add_update_account.label
 button.wavexin.auto_login.add_update_account.tooltip
+button.wavexin.base_finder.reset_restart_data.label
+button.wavexin.base_finder.reset_restart_data.tooltip
 debug.wavexin.auto_login.server_detection
 debug.wavexin.auto_login.state
 debug.wavexin.auto_login.supported_server
@@ -102,6 +104,7 @@ message.wavexin.base_finder.normal_ring_completed
 message.wavexin.base_finder.normal_started
 message.wavexin.base_finder.normal_stopped
 message.wavexin.base_finder.normal_stopped_checkpoint
+message.wavexin.base_finder.normal_stopped_checkpoint_preserved
 message.wavexin.base_finder.normal_stopped_returning
 message.wavexin.base_finder.scan_complete
 message.wavexin.base_finder.spiral_calculated
@@ -213,6 +216,8 @@ setting.wavexin.base_finder.render.current_path_side_color.description
 setting.wavexin.base_finder.render.current_path_side_color.title
 setting.wavexin.base_finder.render.preload_rings.description
 setting.wavexin.base_finder.render.preload_rings.title
+setting.wavexin.base_finder.render.render_completed_area.description
+setting.wavexin.base_finder.render.render_completed_area.title
 setting.wavexin.base_finder.render.render_distance.description
 setting.wavexin.base_finder.render.render_distance.title
 setting.wavexin.base_finder.render.render_height.description
@@ -231,6 +236,8 @@ setting.wavexin.base_finder.restart.origin_chunk_x.description
 setting.wavexin.base_finder.restart.origin_chunk_x.title
 setting.wavexin.base_finder.restart.origin_chunk_z.description
 setting.wavexin.base_finder.restart.origin_chunk_z.title
+setting.wavexin.base_finder.restart.reset_restart_data.description
+setting.wavexin.base_finder.restart.reset_restart_data.title
 setting.wavexin.base_finder.restart.previous_chunk_x.description
 setting.wavexin.base_finder.restart.previous_chunk_x.title
 setting.wavexin.base_finder.restart.previous_chunk_z.description
@@ -362,6 +369,8 @@ tooltip.wavexin.common.reset
 warning.wavexin.auto_login.questions_load_failed
 warning.wavexin.auto_login.questions_missing
 warning.wavexin.base_finder.base_found
+warning.wavexin.base_finder.normal_progress_invalid
+warning.wavexin.base_finder.normal_progress_missing
 warning.wavexin.base_finder.pearl_found
 warning.wavexin.base_finder.spiral_too_far
 warning.wavexin.base_finder.xaero_create_failed

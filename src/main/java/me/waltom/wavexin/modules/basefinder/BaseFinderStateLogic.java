@@ -24,6 +24,28 @@ final class BaseFinderStateLogic {
         return "P" + Math.max(1, number);
     }
 
+    static NormalRouteCheckpoint normalRouteTarget(int originX, int originZ, int ring, int chunkLoadRadius, BaseFinder.SweepRoute route) {
+        if (route == null || route == BaseFinder.SweepRoute.NEXT_CIRCLE || ring <= 0) return null;
+
+        int radius = Math.max(0, chunkLoadRadius * ring * 2);
+        return switch (route) {
+            case CENTER_TO_LEFT, DOWN_LEFT_TO_LEFT -> new NormalRouteCheckpoint(originX - radius, originZ);
+            case CENTER_LEFT_TO_UP_LEFT -> new NormalRouteCheckpoint(originX - radius, originZ - radius);
+            case UP_LEFT_TO_UP_RIGHT -> new NormalRouteCheckpoint(originX + radius, originZ - radius);
+            case UP_RIGHT_TO_DOWN_RIGHT -> new NormalRouteCheckpoint(originX + radius, originZ + radius);
+            case DOWN_RIGHT_TO_DOWN_LEFT -> new NormalRouteCheckpoint(originX - radius, originZ + radius);
+            case NEXT_CIRCLE -> null;
+        };
+    }
+
+    static boolean isNormalRouteCheckpoint(int originX, int originZ, int checkpointX, int checkpointZ, int ring, int chunkLoadRadius, BaseFinder.SweepRoute route) {
+        NormalRouteCheckpoint target = normalRouteTarget(originX, originZ, ring, chunkLoadRadius, route);
+        return target != null && target.x() == checkpointX && target.z() == checkpointZ;
+    }
+
+    record NormalRouteCheckpoint(int x, int z) {
+    }
+
     static final class ViewRotationState {
         private Object player;
         private Object world;

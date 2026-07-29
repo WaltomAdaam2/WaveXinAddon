@@ -67,17 +67,25 @@ public class ScanProgressManager {
         public int playerZ;
         public int ring;
         public String route;
+        public String server;
+        public String dimension;
 
         public NormalScanProgress() {
         }
 
         public NormalScanProgress(int originX, int originZ, int playerX, int playerZ, int ring, String route) {
+            this(originX, originZ, playerX, playerZ, ring, route, null, null);
+        }
+
+        public NormalScanProgress(int originX, int originZ, int playerX, int playerZ, int ring, String route, String server, String dimension) {
             this.originX = originX;
             this.originZ = originZ;
             this.playerX = playerX;
             this.playerZ = playerZ;
             this.ring = ring;
             this.route = route;
+            this.server = server;
+            this.dimension = dimension;
         }
     }
 

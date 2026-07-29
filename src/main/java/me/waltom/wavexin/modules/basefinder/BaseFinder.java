@@ -4,12 +4,9 @@ import me.waltom.wavexin.core.WaveXinModule;
 import me.waltom.wavexin.core.WaveXinDataPaths;
 import me.waltom.wavexin.WaveXinAddon;
 import me.waltom.wavexin.i18n.WaveXinI18n;
-import me.waltom.wavexin.gui.WaveXinEnumDropdown;
 import meteordevelopment.meteorclient.MeteorClient;
-import meteordevelopment.meteorclient.gui.renderer.GuiRenderer;
 import meteordevelopment.meteorclient.gui.utils.SettingsWidgetFactory;
-import meteordevelopment.meteorclient.gui.widgets.input.WDropdown;
-import meteordevelopment.meteorclient.gui.widgets.input.WIntEdit;
+import meteordevelopment.meteorclient.gui.widgets.WLabel;
 import meteordevelopment.meteorclient.utils.player.ChatUtils;
 import meteordevelopment.meteorclient.utils.render.color.Color;
 import meteordevelopment.meteorclient.utils.render.color.RainbowColors;
@@ -41,6 +38,7 @@ import net.minecraft.entity.EntityType;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Box;
 import net.minecraft.util.math.ChunkPos;
+import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec3d;
 import net.minecraft.nbt.NbtCompound;
 import net.minecraft.text.Style;
@@ -54,31 +52,13 @@ public class BaseFinder extends WaveXinModule {
     static {
         SettingsWidgetFactory.registerCustomFactory(RestartIntSetting.class, theme -> (table, setting) -> {
             RestartIntSetting intSetting = (RestartIntSetting) setting;
-            WIntEdit edit = table.add(theme.intEdit(intSetting.get(), intSetting.min, intSetting.max, intSetting.sliderMin, intSetting.sliderMax, intSetting.noSlider)).expandX().widget();
-            intSetting.addWidget(edit);
-            edit.action = () -> {
-                if (!intSetting.set(edit.get())) edit.set(intSetting.get());
-            };
-
-            var reset = table.add(theme.button(GuiRenderer.RESET)).widget();
-            reset.action = () -> {
-                intSetting.reset();
-                edit.set(intSetting.get());
-            };
-            reset.tooltip = WaveXinI18n.tr("tooltip.wavexin.common.reset", "Reset");
+            WLabel label = table.add(theme.label(intSetting.displayValue())).expandX().widget();
+            intSetting.addWidget(label);
         });
         SettingsWidgetFactory.registerCustomFactory(RestartRouteSetting.class, theme -> (table, setting) -> {
             RestartRouteSetting routeSetting = (RestartRouteSetting) setting;
-            WDropdown<SweepRoute> dropdown = table.add(new WaveXinEnumDropdown<>(SweepRoute.values(), routeSetting.get(), routeSetting.module)).expandCellX().widget();
-            routeSetting.addWidget(dropdown);
-            dropdown.action = () -> routeSetting.set(dropdown.get());
-
-            var reset = table.add(theme.button(GuiRenderer.RESET)).widget();
-            reset.action = () -> {
-                routeSetting.reset();
-                dropdown.set(routeSetting.get());
-            };
-            reset.tooltip = WaveXinI18n.tr("tooltip.wavexin.common.reset", "Reset");
+            WLabel label = table.add(theme.label(routeSetting.displayValue())).expandX().widget();
+            routeSetting.addWidget(label);
         });
         SettingsWidgetFactory.registerCustomFactory(RestartButtonSetting.class, theme -> (table, setting) -> {
             RestartButtonSetting buttonSetting = (RestartButtonSetting) setting;
@@ -197,6 +177,7 @@ public class BaseFinder extends WaveXinModule {
     private int nextPearlWaypointNumber = 1;
     private boolean warnedEmptyContainerBlocks;
     private boolean warnedContainerScanUnavailable;
+    private ScanProgressManager.NormalScanProgress lastSavedNormalProgress;
 
     private final Setting<ScanMethod> scanMethod = sgScanMode.add(new EnumSetting.Builder<ScanMethod>()
         .name("Scan Method")
@@ -702,9 +683,10 @@ public class BaseFinder extends WaveXinModule {
         scanSprintState.clear();
         lastCompletedNormalRing = -1;
         resumeCheckpointChunk = null;
-        if (lastBegin.get()) {
-            restoreNormalScanProgress();
-        } else {
+        boolean resumed = false;
+        if (lastBegin.get()) resumed = restoreNormalScanProgress();
+        if (!resumed) {
+            lastBegin.set(false);
             currentCircle = 0;
             currentPath = SweepRoute.NEXT_CIRCLE;
             originChunk = mc.player.getChunkPos();
@@ -715,36 +697,35 @@ public class BaseFinder extends WaveXinModule {
         savedNormalScanChunk = null;
         savedNormalScanCircle = -1;
         savedNormalScanPath = null;
-        if (lastBegin.get()) {
+        if (resumed) {
             infoKey("message.wavexin.base_finder.normal_resumed", "Resumed normal scan at ring %d, route %s.", currentCircle, WaveXinI18n.enumLabelOr(currentPath, "Unknown route"));
         } else {
             infoKey("message.wavexin.base_finder.normal_started", "Normal scan started at origin chunk (%d, %d).", originChunk.x, originChunk.z);
         }
-        setNormalDebugState("INITIALIZED", "resume=" + lastBegin.get());
+        setNormalDebugState("INITIALIZED", "resume=" + resumed);
     }
-    private void restoreNormalScanProgress() {
+    private boolean restoreNormalScanProgress() {
         ScanProgressManager.NormalScanProgress progress = ScanProgressManager.loadNormalProgress();
         if (progress == null) {
-            progress = new ScanProgressManager.NormalScanProgress(
-                lastOriginX.get(),
-                lastOriginZ.get(),
-                lastChunkX.get(),
-                lastChunkZ.get(),
-                lastCircle.get(),
-                lastPath.get().name()
-            );
-            ScanProgressManager.saveNormalProgress(progress);
+            warningKey("warning.wavexin.base_finder.normal_progress_missing", "No saved Normal Scan progress was found.");
+            return false;
         }
+
+        NormalProgressValidation validation = validateNormalProgress(progress);
+        if (!validation.valid()) {
+            WaveXinAddon.LOG.warn("[BaseFinderDebug] Ignored saved Normal Scan progress: {} progress={}", validation.reason(), getNormalProgressKey(progress));
+            warningKey("warning.wavexin.base_finder.normal_progress_invalid", "Saved Normal Scan progress is invalid for this server, dimension, or route. Use Reset Restart Data before resuming.");
+            return false;
+        }
+
         syncRestartSettingsFromProgress(progress, true);
 
         currentCircle = Math.max(0, progress.ring);
         originChunk = new ChunkPos(progress.originX, progress.originZ);
         resumeCheckpointChunk = new ChunkPos(progress.playerX, progress.playerZ);
-        try {
-            currentPath = SweepRoute.valueOf(progress.route);
-        } catch (IllegalArgumentException | NullPointerException ignored) {
-            currentPath = SweepRoute.NEXT_CIRCLE;
-        }
+        currentPath = validation.route();
+        lastSavedNormalProgress = progress;
+        return true;
     }
     private void syncRestartSettingsFromSavedProgress(boolean force) {
         ScanProgressManager.NormalScanProgress progress = ScanProgressManager.loadNormalProgress();
@@ -770,7 +751,7 @@ public class BaseFinder extends WaveXinModule {
     }
 
     private String getNormalProgressKey(ScanProgressManager.NormalScanProgress progress) {
-        return progress.originX + ":" + progress.originZ + ":" + progress.playerX + ":" + progress.playerZ + ":" + progress.ring + ":" + progress.route;
+        return progress.originX + ":" + progress.originZ + ":" + progress.playerX + ":" + progress.playerZ + ":" + progress.ring + ":" + progress.route + ":" + progress.server + ":" + progress.dimension;
     }
 
     private void resetNormalRestartData() {
@@ -779,6 +760,7 @@ public class BaseFinder extends WaveXinModule {
         savedNormalScanChunk = null;
         savedNormalScanCircle = -1;
         savedNormalScanPath = null;
+        lastSavedNormalProgress = null;
         lastBegin.set(false);
         lastCircle.set(0);
         lastChunkX.set(0);
@@ -836,6 +818,46 @@ public class BaseFinder extends WaveXinModule {
         return value >= Math.min(a, b) && value <= Math.max(a, b);
     }
 
+    private NormalProgressValidation validateNormalProgress(ScanProgressManager.NormalScanProgress progress) {
+        if (progress == null) return new NormalProgressValidation(false, null, "missing");
+        if (progress.server == null || progress.dimension == null) return new NormalProgressValidation(false, null, "missingContext");
+        if (!progress.server.equals(currentServerKey())) return new NormalProgressValidation(false, null, "serverMismatch saved=" + progress.server + " current=" + currentServerKey());
+        if (!progress.dimension.equals(currentDimensionKey())) return new NormalProgressValidation(false, null, "dimensionMismatch saved=" + progress.dimension + " current=" + currentDimensionKey());
+        if (progress.ring <= 0) return new NormalProgressValidation(false, null, "invalidRing=" + progress.ring);
+
+        SweepRoute route = parseSweepRoute(progress.route);
+        if (route == null || route == SweepRoute.NEXT_CIRCLE) return new NormalProgressValidation(false, null, "invalidRoute=" + progress.route);
+
+        ChunkPos checkpoint = new ChunkPos(progress.playerX, progress.playerZ);
+        if (!isCheckpointValidForRoute(progress.originX, progress.originZ, checkpoint, progress.ring, route)) {
+            return new NormalProgressValidation(false, route, "checkpointNotOnRoute checkpoint=" + chunkDebugLabel(checkpoint));
+        }
+
+        return new NormalProgressValidation(true, route, "valid");
+    }
+
+    private SweepRoute parseSweepRoute(String route) {
+        try {
+            return SweepRoute.valueOf(route);
+        } catch (IllegalArgumentException | NullPointerException ignored) {
+            return null;
+        }
+    }
+
+    private boolean isCheckpointValidForRoute(ChunkPos checkpoint, int ring, SweepRoute route) {
+        if (originChunk == null) return false;
+        return isCheckpointValidForRoute(originChunk.x, originChunk.z, checkpoint, ring, route);
+    }
+
+    private boolean isCheckpointValidForRoute(int originX, int originZ, ChunkPos checkpoint, int ring, SweepRoute route) {
+        return BaseFinderStateLogic.isNormalRouteCheckpoint(originX, originZ, checkpoint.x, checkpoint.z, ring, chunkLoadRadius.get(), route);
+    }
+
+    private ChunkPos getRouteTargetChunk(int originX, int originZ, int ring, SweepRoute route) {
+        BaseFinderStateLogic.NormalRouteCheckpoint target = BaseFinderStateLogic.normalRouteTarget(originX, originZ, ring, chunkLoadRadius.get(), route);
+        return target == null ? null : new ChunkPos(target.x(), target.z());
+    }
+
     @EventHandler
     private void onTick(TickEvent.Pre event) {
         if (activeScanMethod == ScanMethod.NORMAL) normalDebugTicks++;
@@ -857,6 +879,7 @@ public class BaseFinder extends WaveXinModule {
             setScanForwardKey(false);
             return;
         }
+        constrainNormalScanInput();
 
         if (resumeCheckpointChunk != null) {
             ChunkPos playerChunk = mc.player.getChunkPos();
@@ -876,8 +899,6 @@ public class BaseFinder extends WaveXinModule {
         ChunkPos playerChunk = mc.player.getChunkPos();
         visitedChunks.add(playerChunk);
         recordLoadedContainerChunksNear(playerChunk);
-
-        saveNormalScanProgress(false);
 
         if (currentCircle > circleLimit.get()) {
             setNormalDebugState("COMPLETE", "ringLimit=" + circleLimit.get());
@@ -922,14 +943,15 @@ public class BaseFinder extends WaveXinModule {
         }
 
 
-        Vec3d targetPos = getChunkCenter(targetChunk);
-        double distance2D = horizontalDistanceTo(targetPos);
+        Vec3d targetCenter = getChunkCenter(targetChunk);
+        double distance2D = horizontalDistanceTo(targetCenter);
         boolean inTargetChunk = mc.player.getChunkPos().equals(targetChunk);
 
         if (inTargetChunk && distance2D < 1.0) {
             setNormalDebugState("AT_TARGET", "turnDelay=" + turnDelayTimer);
             setScanForwardKey(false);
             if (turnDelayTimer == 0) {
+                saveNormalScanProgressAt(targetChunk, false);
                 turnDelayTimer = turnDelay.get();
                 return;
             }
@@ -950,7 +972,8 @@ public class BaseFinder extends WaveXinModule {
             return;
         }
 
-        targetYaw = yawTo(targetPos);
+        Vec3d movementTarget = getConstrainedNormalMovementTarget(targetChunk);
+        targetYaw = yawTo(movementTarget);
         applyNormalMovementYaw(targetYaw);
 
         if (waitChunkLoad.get()) {
@@ -972,7 +995,7 @@ public class BaseFinder extends WaveXinModule {
 
         setScanSprint(moveSpeed.get() > 1.0);
 
-        setNormalDebugState(inTargetChunk ? "CENTERING_TARGET_CHUNK" : "MOVING", "distance=" + distance2D);
+        setNormalDebugState(inTargetChunk ? "CENTERING_TARGET_CHUNK" : "MOVING", "distance=" + distance2D + ",target=" + movementTarget);
         setScanForwardKey(true);
     }
 
@@ -1003,14 +1026,15 @@ public class BaseFinder extends WaveXinModule {
 
         boolean scanCompleted = currentCircle > circleLimit.get();
         boolean returningToResumeCheckpoint = resumeCheckpointChunk != null;
-        if (!returningToResumeCheckpoint) saveNormalScanProgress(true);
+        ScanProgressManager.NormalScanProgress savedOnStop = (!scanCompleted && !returningToResumeCheckpoint) ? saveCurrentNormalCheckpointIfValid(true) : null;
 
         if (!scanCompleted) {
             if (returningToResumeCheckpoint) {
                 infoKey("message.wavexin.base_finder.normal_stopped_returning", "Normal scan stopped while returning to its saved checkpoint. Saved progress was preserved.");
-            } else if (lastBegin.get() && mc.player != null) {
-                ChunkPos playerChunk = mc.player.getChunkPos();
-                infoKey("message.wavexin.base_finder.normal_stopped_checkpoint", "Normal scan stopped. Saved checkpoint: (%d, %d), ring %d, route %s.", playerChunk.x, playerChunk.z, currentCircle, WaveXinI18n.enumLabelOr(currentPath, "Unknown route"));
+            } else if (savedOnStop != null) {
+                infoKey("message.wavexin.base_finder.normal_stopped_checkpoint", "Normal scan stopped. Saved checkpoint: (%d, %d), ring %d, route %s.", savedOnStop.playerX, savedOnStop.playerZ, savedOnStop.ring, WaveXinI18n.enumLabelOr(parseSweepRoute(savedOnStop.route), "Unknown route"));
+            } else if (lastSavedNormalProgress != null) {
+                infoKey("message.wavexin.base_finder.normal_stopped_checkpoint_preserved", "Normal scan stopped. Last valid checkpoint was preserved: (%d, %d), ring %d, route %s.", lastSavedNormalProgress.playerX, lastSavedNormalProgress.playerZ, lastSavedNormalProgress.ring, WaveXinI18n.enumLabelOr(parseSweepRoute(lastSavedNormalProgress.route), "Unknown route"));
             } else {
                 infoKey("message.wavexin.base_finder.normal_stopped", "Normal scan stopped.");
             }
@@ -1028,32 +1052,63 @@ public class BaseFinder extends WaveXinModule {
         activeScanMethod = null;
     }
 
-    private void saveNormalScanProgress(boolean force) {
-        if (!lastBegin.get() || originChunk == null || currentPath == null || mc.player == null) return;
+    private ScanProgressManager.NormalScanProgress saveCurrentNormalCheckpointIfValid(boolean force) {
+        if (targetChunk == null || mc.player == null || !mc.player.getChunkPos().equals(targetChunk)) {
+            logSkippedNormalCheckpointSave("notAtTargetChunk");
+            return null;
+        }
 
-        ChunkPos playerChunk = mc.player.getChunkPos();
-        if (!force && playerChunk.equals(savedNormalScanChunk)
+        if (horizontalDistanceTo(getChunkCenter(targetChunk)) >= 1.0) {
+            logSkippedNormalCheckpointSave("notAtTargetCenter");
+            return null;
+        }
+
+        return saveNormalScanProgressAt(targetChunk, force);
+    }
+
+    private ScanProgressManager.NormalScanProgress saveNormalScanProgressAt(ChunkPos checkpointChunk, boolean force) {
+        if (originChunk == null || currentPath == null || mc.player == null || mc.world == null || checkpointChunk == null) return null;
+
+        if (!isCheckpointValidForRoute(checkpointChunk, currentCircle, currentPath)) {
+            logSkippedNormalCheckpointSave("invalidRouteCheckpoint checkpoint=" + chunkDebugLabel(checkpointChunk));
+            return null;
+        }
+
+        if (!force && checkpointChunk.equals(savedNormalScanChunk)
             && currentCircle == savedNormalScanCircle
             && currentPath == savedNormalScanPath) {
-            return;
+            return lastSavedNormalProgress;
         }
 
         ScanProgressManager.NormalScanProgress progress = new ScanProgressManager.NormalScanProgress(
             originChunk.x,
             originChunk.z,
-            playerChunk.x,
-            playerChunk.z,
+            checkpointChunk.x,
+            checkpointChunk.z,
             currentCircle,
-            currentPath.name()
+            currentPath.name(),
+            currentServerKey(),
+            currentDimensionKey()
         );
         ScanProgressManager.saveNormalProgress(progress);
         syncRestartSettingsFromProgress(progress, true);
 
-        savedNormalScanChunk = playerChunk;
+        savedNormalScanChunk = checkpointChunk;
         savedNormalScanCircle = currentCircle;
         savedNormalScanPath = currentPath;
+        lastSavedNormalProgress = progress;
+        return progress;
     }
 
+    private void logSkippedNormalCheckpointSave(String reason) {
+        WaveXinAddon.LOG.warn("[BaseFinderDebug] skipped Normal Scan checkpoint save: {} origin={} target={} ring={} route={} playerChunk={}",
+            reason,
+            chunkDebugLabel(originChunk),
+            chunkDebugLabel(targetChunk),
+            currentCircle,
+            currentPath,
+            mc.player == null ? "null" : chunkDebugLabel(mc.player.getChunkPos()));
+    }
 
     private void warnIfUnsafeScanHeight() {
         if (mc.player == null || mc.world == null || isSafeScanHeight()) return;
@@ -1113,6 +1168,12 @@ public class BaseFinder extends WaveXinModule {
 
     private void applyMovementYaw(float yaw, boolean keepVisible) {
         if (mc.player == null || mc.world == null) return;
+        if (Math.abs(MathHelper.wrapDegrees(mc.player.getYaw() - yaw)) < 0.05f
+            && Math.abs(MathHelper.wrapDegrees(mc.player.headYaw - yaw)) < 0.05f
+            && Math.abs(MathHelper.wrapDegrees(mc.player.bodyYaw - yaw)) < 0.05f) {
+            return;
+        }
+
         movementViewState.captureIfNeeded(mc.player, mc.world, mc.player.getYaw(), mc.player.getPitch(), mc.player.headYaw, mc.player.bodyYaw, !keepVisible);
         mc.player.setYaw(yaw);
         mc.player.headYaw = yaw;
@@ -1165,10 +1226,18 @@ public class BaseFinder extends WaveXinModule {
 
     private void setScanForwardKey(boolean pressed) {
         setScanForwardKeyOnly(pressed);
+        if (activeScanMethod == ScanMethod.NORMAL) constrainNormalScanInput();
         if (pressed) return;
 
         restoreScanSprint();
         restoreMovementView();
+    }
+
+    private void constrainNormalScanInput() {
+        if (mc.options == null) return;
+        mc.options.leftKey.setPressed(false);
+        mc.options.rightKey.setPressed(false);
+        mc.options.backKey.setPressed(false);
     }
 
     private void setNormalDebugState(String state, String detail) {
@@ -1239,8 +1308,71 @@ public class BaseFinder extends WaveXinModule {
         return chunk == null ? "null" : "(" + chunk.x + "," + chunk.z + ")";
     }
 
+    private String currentServerKey() {
+        if (mc.getCurrentServerEntry() != null && mc.getCurrentServerEntry().address != null) {
+            return mc.getCurrentServerEntry().address;
+        }
+
+        return mc.isInSingleplayer() ? "singleplayer" : "unknown";
+    }
+
+    private String currentDimensionKey() {
+        return mc.world == null ? "unknown" : mc.world.getRegistryKey().getValue().toString();
+    }
+
     private Vec3d getChunkCenter(ChunkPos chunk) {
         return new Vec3d(chunk.getStartX() + 8, mc.player.getY(), chunk.getStartZ() + 8);
+    }
+
+    private Vec3d getConstrainedNormalMovementTarget(ChunkPos finalTargetChunk) {
+        Vec3d finalTarget = getChunkCenter(finalTargetChunk);
+        RouteSegment segment = getCurrentRouteSegment();
+        if (segment == null || mc.player == null) return finalTarget;
+
+        double playerX = mc.player.getX();
+        double playerZ = mc.player.getZ();
+        double minX = Math.min(segment.start().x, segment.end().x);
+        double maxX = Math.max(segment.start().x, segment.end().x);
+        double minZ = Math.min(segment.start().z, segment.end().z);
+        double maxZ = Math.max(segment.start().z, segment.end().z);
+
+        if (Math.abs(segment.start().z - segment.end().z) < 0.001) {
+            double lineZ = segment.start().z;
+            double clampedX = clamp(playerX, minX, maxX);
+            if (Math.abs(playerZ - lineZ) > 1.0 || Math.abs(playerX - clampedX) > 1.0) {
+                return new Vec3d(clampedX, mc.player.getY(), lineZ);
+            }
+        } else if (Math.abs(segment.start().x - segment.end().x) < 0.001) {
+            double lineX = segment.start().x;
+            double clampedZ = clamp(playerZ, minZ, maxZ);
+            if (Math.abs(playerX - lineX) > 1.0 || Math.abs(playerZ - clampedZ) > 1.0) {
+                return new Vec3d(lineX, mc.player.getY(), clampedZ);
+            }
+        }
+
+        return finalTarget;
+    }
+
+    private RouteSegment getCurrentRouteSegment() {
+        if (originChunk == null || currentPath == null || currentPath == SweepRoute.NEXT_CIRCLE) return null;
+
+        int radius = Math.max(0, chunkLoadRadius.get() * currentCircle * 2);
+        ChunkPos start = switch (currentPath) {
+            case CENTER_TO_LEFT -> new ChunkPos(originChunk.x, originChunk.z);
+            case CENTER_LEFT_TO_UP_LEFT -> new ChunkPos(originChunk.x - radius, originChunk.z);
+            case UP_LEFT_TO_UP_RIGHT -> new ChunkPos(originChunk.x - radius, originChunk.z - radius);
+            case UP_RIGHT_TO_DOWN_RIGHT -> new ChunkPos(originChunk.x + radius, originChunk.z - radius);
+            case DOWN_RIGHT_TO_DOWN_LEFT -> new ChunkPos(originChunk.x + radius, originChunk.z + radius);
+            case DOWN_LEFT_TO_LEFT -> new ChunkPos(originChunk.x - radius, originChunk.z + radius);
+            case NEXT_CIRCLE -> null;
+        };
+        ChunkPos end = getRouteTargetChunk(originChunk.x, originChunk.z, currentCircle, currentPath);
+        if (start == null || end == null) return null;
+        return new RouteSegment(getChunkCenter(start), getChunkCenter(end));
+    }
+
+    private double clamp(double value, double min, double max) {
+        return Math.max(min, Math.min(max, value));
     }
 
     private double horizontalDistanceTo(Vec3d target) {
@@ -2080,11 +2212,17 @@ public class BaseFinder extends WaveXinModule {
         return spiralSegments + " | " + spiralDirection.name();
     }
 
+    private record NormalProgressValidation(boolean valid, SweepRoute route, String reason) {
+    }
+
+    private record RouteSegment(Vec3d start, Vec3d end) {
+    }
+
     private static class RestartIntSetting extends Setting<Integer> {
         public final int min, max;
         public final int sliderMin, sliderMax;
         public final boolean noSlider;
-        private final List<WeakReference<WIntEdit>> widgets = new ArrayList<>();
+        private final List<WeakReference<WLabel>> widgets = new ArrayList<>();
 
         private RestartIntSetting(String name, String description, int defaultValue, Consumer<Integer> onChanged, Consumer<Setting<Integer>> onModuleActivated, IVisible visible, int min, int max, int sliderMin, int sliderMax, boolean noSlider) {
             super(name, description, defaultValue, onChanged, onModuleActivated, visible);
@@ -2102,18 +2240,28 @@ public class BaseFinder extends WaveXinModule {
             return changed;
         }
 
-        private void addWidget(WIntEdit widget) {
+        private void addWidget(WLabel widget) {
             widgets.add(new WeakReference<>(widget));
-            widget.set(get());
+            widget.set(displayValue());
         }
 
         private void refreshWidgets() {
             widgets.removeIf(reference -> {
-                WIntEdit widget = reference.get();
+                WLabel widget = reference.get();
                 if (widget == null) return true;
-                if (widget.get() != get()) widget.set(get());
+                String displayValue = displayValue();
+                if (!widget.get().equals(displayValue)) widget.set(displayValue);
                 return false;
             });
+        }
+
+        private String displayValue() {
+            if (title.contains("Chunk")) {
+                long blocks = (long) get() * 16L;
+                return get() + " chunks (~" + blocks + " blocks)";
+            }
+
+            return Integer.toString(get());
         }
 
         @Override
@@ -2132,13 +2280,11 @@ public class BaseFinder extends WaveXinModule {
 
         @Override
         protected NbtCompound save(NbtCompound tag) {
-            tag.putInt("value", get());
             return tag;
         }
 
         @Override
         protected Integer load(NbtCompound tag) {
-            set(tag.getInt("value", 0));
             return get();
         }
 
@@ -2184,7 +2330,7 @@ public class BaseFinder extends WaveXinModule {
     }
 
     private static class RestartRouteSetting extends Setting<SweepRoute> {
-        private final List<WeakReference<WDropdown<SweepRoute>>> widgets = new ArrayList<>();
+        private final List<WeakReference<WLabel>> widgets = new ArrayList<>();
 
         private RestartRouteSetting(String name, String description, SweepRoute defaultValue, Consumer<SweepRoute> onChanged, Consumer<Setting<SweepRoute>> onModuleActivated, IVisible visible) {
             super(name, description, defaultValue, onChanged, onModuleActivated, visible);
@@ -2197,18 +2343,23 @@ public class BaseFinder extends WaveXinModule {
             return changed;
         }
 
-        private void addWidget(WDropdown<SweepRoute> widget) {
+        private void addWidget(WLabel widget) {
             widgets.add(new WeakReference<>(widget));
-            widget.set(get());
+            widget.set(displayValue());
         }
 
         private void refreshWidgets() {
             widgets.removeIf(reference -> {
-                WDropdown<SweepRoute> widget = reference.get();
+                WLabel widget = reference.get();
                 if (widget == null) return true;
-                if (widget.get() != get()) widget.set(get());
+                String displayValue = displayValue();
+                if (!widget.get().equals(displayValue)) widget.set(displayValue);
                 return false;
             });
+        }
+
+        private String displayValue() {
+            return WaveXinI18n.enumLabelOr(get(), get().name());
         }
 
         @Override
@@ -2227,13 +2378,11 @@ public class BaseFinder extends WaveXinModule {
 
         @Override
         protected NbtCompound save(NbtCompound tag) {
-            tag.putString("value", get().name());
             return tag;
         }
 
         @Override
         protected SweepRoute load(NbtCompound tag) {
-            parse(tag.getString("value", SweepRoute.NEXT_CIRCLE.name()));
             return get();
         }
 
