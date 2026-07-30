@@ -12,7 +12,7 @@ import java.util.Arrays;
 
 public abstract class WaveXinModule extends Module {
     protected WaveXinModule(Category category, String name, String description, String... aliases) {
-        super(category, name, description, aliases);
+        super(category, name, description);
     }
 
     @Override

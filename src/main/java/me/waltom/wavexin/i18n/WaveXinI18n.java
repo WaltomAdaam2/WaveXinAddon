@@ -6,7 +6,6 @@ import com.google.gson.JsonParser;
 import me.waltom.wavexin.WaveXinAddon;
 import meteordevelopment.meteorclient.settings.Setting;
 import meteordevelopment.meteorclient.settings.SettingGroup;
-import meteordevelopment.meteorclient.systems.config.Config;
 import meteordevelopment.meteorclient.systems.modules.Module;
 import meteordevelopment.meteorclient.utils.Utils;
 import net.minecraft.client.resource.language.I18n;
@@ -233,10 +232,6 @@ public final class WaveXinI18n {
         if (isWaveXin(module)) {
             candidates.add(module.name);
             candidates.add(moduleTitle(module));
-        }
-
-        if (Config.get().moduleAliases.get() && module.aliases != null) {
-            Collections.addAll(candidates, module.aliases);
         }
 
         return candidates;

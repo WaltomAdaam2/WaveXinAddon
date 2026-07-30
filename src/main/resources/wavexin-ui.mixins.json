@@ -3,7 +3,6 @@
   "package": "me.waltom.wavexin.mixins.ui",
   "compatibilityLevel": "JAVA_21",
   "client": [
-    "MixinMeteorGuiTheme",
     "MixinWMeteorModule",
     "MixinModuleScreen",
     "MixinDefaultSettingsWidgetFactory",
