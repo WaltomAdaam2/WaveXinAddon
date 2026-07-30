@@ -1040,7 +1040,7 @@ public class BaseFinder extends WaveXinModule {
 
     private void warnIfUnsafeScanHeight() {
         if (mc.player == null || mc.world == null || isSafeScanHeight()) return;
-        errorKey("error.wavexin.safe_flight_height", "Recommended to use above each dimension height limit: Nether (Y > 128), Overworld (Y > 320), End (Y > 256)");
+        warningKey("error.wavexin.safe_flight_height", "Recommended to use above each dimension height limit: Nether (Y > 128), Overworld (Y > 320), End (Y > 256)");
     }
 
     private boolean isSafeScanHeight() {
