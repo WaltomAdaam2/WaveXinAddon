@@ -1,5 +1,5 @@
 plugins {
-    id "fabric-loom" version "1.16.3"
+    id "fabric-loom" version "1.7-SNAPSHOT"
 }
 
 base {
@@ -21,6 +21,16 @@ repositories {
         url = "https://maven.fabricmc.net"
     }
     mavenCentral()
+}
+
+sourceSets {
+    main {
+        java {
+            exclude "me/waltom/wavexin/modules/commandscanner/**"
+            exclude "me/waltom/wavexin/modules/highwaywalker/**"
+            exclude "me/waltom/wavexin/mixins/ui/MixinMeteorGuiTheme.java"
+        }
+    }
 }
 
 dependencies {
@@ -348,7 +358,6 @@ tasks.named("test") {
     dependsOn(tasks.named("testWaveXinChatFilterBehavior"))
     dependsOn(tasks.named("testWaveXinBaseFinderBehavior"))
     dependsOn(tasks.named("testWaveXinTurtlePotionThrowerBehavior"))
-    failOnNoDiscoveredTests = false
 }
 
 tasks.named("check") {
