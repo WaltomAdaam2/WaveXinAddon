@@ -13,6 +13,8 @@ import meteordevelopment.meteorclient.settings.Setting;
 import meteordevelopment.meteorclient.utils.render.color.Color;
 import net.minecraft.nbt.NbtCompound;
 
+import java.util.Locale;
+import java.util.Map;
 import java.util.function.Consumer;
 
 public class XaeroWaypointColorSetting extends Setting<BaseFinder.XaeroWaypointColor> {
@@ -65,12 +67,27 @@ public class XaeroWaypointColorSetting extends Setting<BaseFinder.XaeroWaypointC
         values = BaseFinder.XaeroWaypointColor.values();
     }
 
+    private static final Map<String, BaseFinder.XaeroWaypointColor> LEGACY_ALIASES = Map.ofEntries(
+        Map.entry("orange", BaseFinder.XaeroWaypointColor.GOLD),
+        Map.entry("lime", BaseFinder.XaeroWaypointColor.GREEN),
+        Map.entry("cyan", BaseFinder.XaeroWaypointColor.DARK_AQUA),
+        Map.entry("light blue", BaseFinder.XaeroWaypointColor.AQUA),
+        Map.entry("magenta", BaseFinder.XaeroWaypointColor.PURPLE),
+        Map.entry("pink", BaseFinder.XaeroWaypointColor.PURPLE),
+        Map.entry("light gray", BaseFinder.XaeroWaypointColor.GRAY),
+        Map.entry("brown", BaseFinder.XaeroWaypointColor.GOLD)
+    );
+
     @Override
     protected BaseFinder.XaeroWaypointColor parseImpl(String str) {
+        if (str == null) return null;
+        String normalized = str.trim();
         for (BaseFinder.XaeroWaypointColor value : values) {
-            if (str.equalsIgnoreCase(value.toString()) || str.equalsIgnoreCase(label(value))) return value;
+            if (normalized.equalsIgnoreCase(value.name())
+                || normalized.equalsIgnoreCase(value.toString())
+                || normalized.equalsIgnoreCase(label(value))) return value;
         }
-        return null;
+        return LEGACY_ALIASES.get(normalized.toLowerCase(Locale.ROOT).replace('_', ' '));
     }
 
     @Override
@@ -87,7 +104,7 @@ public class XaeroWaypointColorSetting extends Setting<BaseFinder.XaeroWaypointC
 
     @Override
     protected NbtCompound save(NbtCompound tag) {
-        tag.putString("value", get().toString());
+        tag.putString("value", get().name());
         return tag;
     }
 

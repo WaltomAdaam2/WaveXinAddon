@@ -18,13 +18,13 @@ import net.minecraft.block.entity.BlockEntityType;
 import net.minecraft.world.chunk.WorldChunk;
 import java.io.IOException;
 import java.lang.ref.WeakReference;
-import java.lang.reflect.Constructor;
-import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import it.unimi.dsi.fastutil.longs.LongArrayList;
+import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ThreadLocalRandom;
@@ -39,7 +39,6 @@ import meteordevelopment.orbit.EventPriority;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.EntityType;
 import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Box;
 import net.minecraft.util.math.ChunkPos;
 import net.minecraft.util.math.Vec3d;
 import net.minecraft.nbt.NbtCompound;
@@ -112,22 +111,22 @@ public class BaseFinder extends WaveXinModule {
 
     public enum XaeroWaypointColor {
         RANDOM("Random", -1, 170, 170, 170),
-        RED("Red", 0, 255, 85, 85),
-        ORANGE("Orange", 1, 255, 170, 0),
-        YELLOW("Yellow", 2, 255, 255, 85),
-        LIME("Lime", 3, 85, 255, 85),
-        GREEN("Green", 4, 0, 170, 0),
-        CYAN("Cyan", 5, 0, 170, 170),
-        LIGHT_BLUE("Light Blue", 6, 85, 255, 255),
-        BLUE("Blue", 7, 85, 85, 255),
-        PURPLE("Purple", 8, 170, 0, 170),
-        MAGENTA("Magenta", 9, 255, 85, 255),
-        PINK("Pink", 10, 255, 85, 170),
-        WHITE("White", 11, 255, 255, 255),
-        LIGHT_GRAY("Light Gray", 12, 170, 170, 170),
-        GRAY("Gray", 13, 85, 85, 85),
-        BROWN("Brown", 14, 170, 85, 0),
-        BLACK("Black", 15, 0, 0, 0);
+        BLACK("Black", 0, 0, 0, 0),
+        DARK_BLUE("Dark Blue", 1, 0, 0, 170),
+        DARK_GREEN("Dark Green", 2, 0, 170, 0),
+        DARK_AQUA("Dark Aqua", 3, 0, 170, 170),
+        DARK_RED("Dark Red", 4, 170, 0, 0),
+        DARK_PURPLE("Dark Purple", 5, 170, 0, 170),
+        GOLD("Gold", 6, 255, 170, 0),
+        GRAY("Gray", 7, 170, 170, 170),
+        DARK_GRAY("Dark Gray", 8, 85, 85, 85),
+        BLUE("Blue", 9, 85, 85, 255),
+        GREEN("Green", 10, 85, 255, 85),
+        AQUA("Aqua", 11, 85, 255, 255),
+        RED("Red", 12, 255, 85, 85),
+        PURPLE("Purple", 13, 255, 85, 255),
+        YELLOW("Yellow", 14, 255, 255, 85),
+        WHITE("White", 15, 255, 255, 255);
 
         private final String title;
         private final int colorId;
@@ -141,6 +140,13 @@ public class BaseFinder extends WaveXinModule {
 
         public Color displayColor() {
             return this == RANDOM ? RainbowColors.GLOBAL : displayColor;
+        }
+
+        public static XaeroWaypointColor fromColorId(int colorId) {
+            for (XaeroWaypointColor color : values()) {
+                if (color.colorId == colorId) return color;
+            }
+            return RANDOM;
         }
 
         @Override
@@ -169,7 +175,16 @@ public class BaseFinder extends WaveXinModule {
 
     private boolean forcingForward;
 
-    private final Set<ChunkPos> visitedChunks = new HashSet<>();
+    // Primitive chunk keys avoid allocating a ChunkPos for every visited chunk. The set is
+    // cleared whenever a normal ring completes, because completed rings are no longer part of
+    // the active render preview. This keeps memory bounded by the current in-progress ring.
+    private final LongOpenHashSet visitedChunks = new LongOpenHashSet();
+    private final LongArrayList normalRenderChunks = new LongArrayList();
+    private long normalRenderCacheSignature = Long.MIN_VALUE;
+    private long normalRenderCachePlayerChunk = Long.MIN_VALUE;
+    private final XaeroWaypointBridge xaeroWaypointBridge = new XaeroWaypointBridge();
+    private XaeroWaypointBridge.Status lastXaeroWarningStatus;
+    private long lastXaeroWarningAt;
 
     private MapScanDirection spiralDirection = MapScanDirection.EAST;
     private int spiralStepsInCurrentLength;
@@ -442,7 +457,7 @@ public class BaseFinder extends WaveXinModule {
         .name("Waypoint Color").description("Xaero waypoint color, or a random supported color for each waypoint.").defaultValue(XaeroWaypointColor.RANDOM).visible(xaeroWaypoints::get).build()
     );
     private final Setting<Integer> waypointLimitRadius = sgContainerRecording.add(new IntSetting.Builder()
-        .name("Area Radius").description("Chunk radius used to group nearby waypoints into one base area.").defaultValue(8).range(1, 64).sliderRange(1, 32).visible(xaeroWaypoints::get).build()
+        .name("Area Radius").description("Chunk radius used to group nearby waypoints into one base area.").defaultValue(5).range(1, 64).sliderRange(1, 32).visible(xaeroWaypoints::get).build()
     );
     private final Setting<Integer> maximumWaypointsPerArea = sgContainerRecording.add(new IntSetting.Builder()
         .name("Waypoints per Area").description("Maximum waypoints created within one base area during the current scan.").defaultValue(3).range(1, 100).sliderRange(1, 20).visible(xaeroWaypoints::get).build()
@@ -723,6 +738,9 @@ public class BaseFinder extends WaveXinModule {
         }
 
         visitedChunks.clear();
+        normalRenderChunks.clear();
+        normalRenderCacheSignature = Long.MIN_VALUE;
+        normalRenderCachePlayerChunk = Long.MIN_VALUE;
         targetChunk = null;
         if (resumed) {
             infoKey("message.wavexin.base_finder.normal_resumed", "Resumed normal scan at ring %d, route %s.", currentCircle, WaveXinI18n.enumLabelOr(currentPath, "Unknown route"));
@@ -844,7 +862,7 @@ public class BaseFinder extends WaveXinModule {
 
         if (resumeCheckpointChunk != null) {
             ChunkPos playerChunk = mc.player.getChunkPos();
-            visitedChunks.add(playerChunk);
+            visitedChunks.add(chunkKey(playerChunk.x, playerChunk.z));
             recordLoadedContainerChunksNear(playerChunk);
             if (!normalDebugState.startsWith("WAITING_RESUME")) {
                 setNormalDebugState("RETURNING_TO_CHECKPOINT", "checkpoint=" + chunkDebugLabel(resumeCheckpointChunk));
@@ -858,7 +876,7 @@ public class BaseFinder extends WaveXinModule {
 
 
         ChunkPos playerChunk = mc.player.getChunkPos();
-        visitedChunks.add(playerChunk);
+        visitedChunks.add(chunkKey(playerChunk.x, playerChunk.z));
         recordLoadedContainerChunksNear(playerChunk);
 
         if (currentCircle > circleLimit.get()) {
@@ -873,6 +891,7 @@ public class BaseFinder extends WaveXinModule {
             if (currentCircle > 0 && currentCircle != lastCompletedNormalRing) {
                 infoKey("message.wavexin.base_finder.normal_ring_completed", "Completed normal scan ring %d.", currentCircle);
                 lastCompletedNormalRing = currentCircle;
+                visitedChunks.clear();
             }
 
             advanceSweepRoute();
@@ -1008,6 +1027,9 @@ public class BaseFinder extends WaveXinModule {
         }
 // Clear chunk data
         visitedChunks.clear();
+        normalRenderChunks.clear();
+        normalRenderCacheSignature = Long.MIN_VALUE;
+        normalRenderCachePlayerChunk = Long.MIN_VALUE;
 
 // Reset state
         originChunk = null;
@@ -1512,10 +1534,7 @@ public class BaseFinder extends WaveXinModule {
     }
 
     private static Color getXaeroWaypointDisplayColor(int colorId) {
-        for (XaeroWaypointColor color : XaeroWaypointColor.values()) {
-            if (color.colorId == colorId) return color.displayColor;
-        }
-        return XaeroWaypointColor.RANDOM.displayColor;
+        return XaeroWaypointColor.fromColorId(colorId).displayColor();
     }
 
     private void appendContainerRecord(ChunkPos chunkPos, BlockPos recordPos, BlockPos playerPos, int count) {
@@ -1569,66 +1588,43 @@ public class BaseFinder extends WaveXinModule {
     }
 
     private boolean createXaeroWaypoint(BlockPos pos, String name, String initials) {
-        try {
-            Class<?> sessionClass = Class.forName("xaero.common.XaeroMinimapSession");
-            Object currentSession = sessionClass.getMethod("getCurrentSession").invoke(null);
-            if (currentSession == null) {
-                WaveXinAddon.LOG.warn("[BaseFinderDebug] Xaero waypoint skipped because current session is null. pos={} method={} name={}", pos, activeScanMethod, name);
-                warningKey("warning.wavexin.base_finder.xaero_session_not_ready", "Xaero's Minimap session is not ready. Record saved without a waypoint.");
-                return false;
-            }
-
-            Object processor = currentSession.getClass().getMethod("getMinimapProcessor").invoke(currentSession);
-            Object minimapSession = processor.getClass().getMethod("getSession").invoke(processor);
-            Object worldManager = minimapSession.getClass().getMethod("getWorldManager").invoke(minimapSession);
-            Object currentWorld = worldManager.getClass().getMethod("getCurrentWorld").invoke(worldManager);
-            if (currentWorld == null) {
-                WaveXinAddon.LOG.warn("[BaseFinderDebug] Xaero waypoint skipped because current waypoint world is null. pos={} method={} name={}", pos, activeScanMethod, name);
-                warningKey("warning.wavexin.base_finder.xaero_world_not_ready", "Xaero current waypoint world is not ready. Record saved without a waypoint.");
-                return false;
-            }
-
-            Object waypointSet = currentWorld.getClass().getMethod("getCurrentWaypointSet").invoke(currentWorld);
-            if (waypointSet == null) {
-                WaveXinAddon.LOG.warn("[BaseFinderDebug] Xaero waypoint skipped because current waypoint set is null. pos={} method={} name={}", pos, activeScanMethod, name);
-                warningKey("warning.wavexin.base_finder.xaero_set_not_ready", "Xaero current waypoint set is not ready. Record saved without a waypoint.");
-                return false;
-            }
-
-            Class<?> waypointClass = Class.forName("xaero.common.minimap.waypoints.Waypoint");
-            Constructor<?> constructor = waypointClass.getConstructor(int.class, int.class, int.class, String.class, String.class, int.class);
-            int colorId = getXaeroWaypointColorId();
-            Object waypoint = constructor.newInstance(pos.getX(), pos.getY(), pos.getZ(), name, initials, colorId);
-            Method addMethod = waypointSet.getClass().getMethod("add", waypointClass);
-            addMethod.invoke(waypointSet, waypoint);
-
-            Object waypointSession = minimapSession.getClass().getMethod("getWaypointSession").invoke(minimapSession);
-            waypointSession.getClass().getMethod("setSetChangedTime", long.class).invoke(waypointSession, System.currentTimeMillis());
+        int colorId = getXaeroWaypointColorId();
+        XaeroWaypointBridge.Result result = xaeroWaypointBridge.create(pos, name, initials, colorId);
+        if (result.created()) {
             sendXaeroCreatedMessage(name, colorId);
             return true;
-        } catch (ReflectiveOperationException | RuntimeException e) {
-            WaveXinAddon.LOG.warn("[BaseFinderDebug] Failed to create Xaero waypoint. pos={} method={} name={}", pos, activeScanMethod, name, e);
-            warningKey("warning.wavexin.base_finder.xaero_create_failed", "Failed to create Xaero waypoint: %s", e.getMessage());
-            return false;
         }
+
+        warnXaeroFailure(result, pos, name);
+        return false;
     }
 
-    private boolean isXaeroAvailable() {
-        try {
-            Class.forName("xaero.common.XaeroMinimapSession");
-            Class.forName("xaero.common.minimap.waypoints.Waypoint");
-            return true;
-        } catch (ClassNotFoundException ignored) {
-            return false;
+    private void warnXaeroFailure(XaeroWaypointBridge.Result result, BlockPos pos, String name) {
+        long now = System.currentTimeMillis();
+        boolean repeatedTooSoon = result.status() == lastXaeroWarningStatus && now - lastXaeroWarningAt < 10_000L;
+        if (repeatedTooSoon) return;
+
+        lastXaeroWarningStatus = result.status();
+        lastXaeroWarningAt = now;
+        WaveXinAddon.LOG.warn("[BaseFinderDebug] Xaero waypoint creation skipped. status={} detail={} pos={} method={} name={}",
+            result.status(), result.detail(), pos, activeScanMethod, name);
+
+        switch (result.status()) {
+            case MISSING -> warningKey("warning.wavexin.base_finder.xaero_missing", "Xaero's Minimap was not detected. Container recording will continue without waypoints.");
+            case SESSION_NOT_READY -> warningKey("warning.wavexin.base_finder.xaero_session_not_ready", "Xaero's Minimap session is not ready. Record saved without a waypoint.");
+            case WORLD_NOT_READY -> warningKey("warning.wavexin.base_finder.xaero_world_not_ready", "Xaero current waypoint world is not ready. Record saved without a waypoint.");
+            case SET_NOT_READY -> warningKey("warning.wavexin.base_finder.xaero_set_not_ready", "Xaero current waypoint set is not ready. Record saved without a waypoint.");
+            case FAILED -> warningKey("warning.wavexin.base_finder.xaero_create_failed", "Failed to create Xaero waypoint: %s", result.detail());
+            case CREATED -> { }
         }
     }
 
     private boolean validateXaeroWaypointSetting() {
         if (!xaeroWaypoints.get()) return false;
-        if (isXaeroAvailable()) return true;
+        if (xaeroWaypointBridge.isAvailable()) return true;
 
         xaeroWaypoints.set(false);
-        WaveXinAddon.LOG.warn("[BaseFinderDebug] Xaero waypoint support is unavailable. Disabling Xaero Waypoints for this module instance.");
+        WaveXinAddon.LOG.warn("[BaseFinderDebug] Xaero waypoint support is unavailable. reason={}", xaeroWaypointBridge.unavailableReason());
         warningKey("warning.wavexin.base_finder.xaero_missing", "Xaero's Minimap was not detected. Xaero Waypoints has been disabled, but container recording will continue.");
         return false;
     }
@@ -1962,46 +1958,165 @@ public class BaseFinder extends WaveXinModule {
     private void renderNormalRoute(Render3DEvent event) {
         if (activeScanMethod != ScanMethod.NORMAL || originChunk == null || currentPath == null || mc.player == null) return;
 
-        ChunkPos playerChunk = mc.player.getChunkPos();
-        int renderRadius = Math.max(1, renderDistance.get());
-        double maxDistance = renderRadius * 16.0;
+        ensureNormalRenderCache();
+        double maxDistance = Math.max(1, renderDistance.get()) * 16.0;
         double maxDistanceSq = maxDistance * maxDistance;
 
-        for (int chunkX = playerChunk.x - renderRadius; chunkX <= playerChunk.x + renderRadius; chunkX++) {
-            for (int chunkZ = playerChunk.z - renderRadius; chunkZ <= playerChunk.z + renderRadius; chunkZ++) {
-                double deltaX = chunkX * 16.0 + 8.0 - mc.player.getX();
-                double deltaZ = chunkZ * 16.0 + 8.0 - mc.player.getZ();
-                if (deltaX * deltaX + deltaZ * deltaZ > maxDistanceSq) continue;
+        for (int index = 0; index < normalRenderChunks.size(); index++) {
+            long key = normalRenderChunks.getLong(index);
+            int chunkX = chunkX(key);
+            int chunkZ = chunkZ(key);
+            double deltaX = chunkX * 16.0 + 8.0 - mc.player.getX();
+            double deltaZ = chunkZ * 16.0 + 8.0 - mc.player.getZ();
+            if (deltaX * deltaX + deltaZ * deltaZ > maxDistanceSq) continue;
 
-                ChunkPos chunk = new ChunkPos(chunkX, chunkZ);
-                boolean resumeCheckpoint = resumeCheckpointChunk != null && resumeCheckpointChunk.equals(chunk);
-                boolean currentPathChunk = isChunkOnCurrentNormalPath(chunkX, chunkZ);
-                boolean targetPreviewChunk = isChunkOnPreparedNormalRing(chunkX, chunkZ);
-                if (!resumeCheckpoint && !currentPathChunk && !targetPreviewChunk) continue;
+            boolean resumeCheckpoint = resumeCheckpointChunk != null
+                && resumeCheckpointChunk.x == chunkX && resumeCheckpointChunk.z == chunkZ;
+            boolean currentPathChunk = isChunkOnCurrentNormalPath(chunkX, chunkZ);
 
-                SettingColor sideColor;
-                SettingColor lineColor;
-
-                if (resumeCheckpoint) {
+            SettingColor sideColor = targetChunksSideColor.get();
+            SettingColor lineColor = targetChunksLineColor.get();
+            BaseFinderStateLogic.NormalRenderState renderState = BaseFinderStateLogic.normalRenderState(
+                resumeCheckpoint,
+                visitedChunks.contains(key),
+                currentPathChunk
+            );
+            switch (renderState) {
+                case RESUME_CHECKPOINT -> {
                     sideColor = resumeCheckpointSideColor.get();
                     lineColor = resumeCheckpointLineColor.get();
-                } else if (currentPathChunk) {
-                    sideColor = currentPathSideColor.get();
-                    lineColor = currentPathLineColor.get();
-                } else if (visitedChunks.contains(chunk)) {
+                }
+                case VISITED -> {
                     sideColor = visitedChunksSideColor.get();
                     lineColor = visitedChunksLineColor.get();
-                } else {
+                }
+                case CURRENT_PATH -> {
+                    sideColor = currentPathSideColor.get();
+                    lineColor = currentPathLineColor.get();
+                }
+                case TARGET -> {
                     sideColor = targetChunksSideColor.get();
                     lineColor = targetChunksLineColor.get();
                 }
+            }
 
-                if (sideColor.a > 5 || lineColor.a > 5) {
-                    renderScanChunk(chunk, sideColor, lineColor, event);
-                }
+            if (sideColor.a > 5 || lineColor.a > 5) {
+                renderScanChunk(chunkX, chunkZ, sideColor, lineColor, event);
             }
         }
     }
+
+    private void ensureNormalRenderCache() {
+        ChunkPos playerChunk = mc.player.getChunkPos();
+        long playerKey = chunkKey(playerChunk.x, playerChunk.z);
+        long signature = normalRenderSignature();
+        if (playerKey == normalRenderCachePlayerChunk && signature == normalRenderCacheSignature) return;
+
+        normalRenderCachePlayerChunk = playerKey;
+        normalRenderCacheSignature = signature;
+        normalRenderChunks.clear();
+        LongOpenHashSet unique = new LongOpenHashSet();
+        int renderRadius = Math.max(1, renderDistance.get()) + 1;
+
+        if (resumeCheckpointChunk != null) {
+            addNormalRenderCandidate(unique, playerChunk, renderRadius, resumeCheckpointChunk.x, resumeCheckpointChunk.z);
+        }
+        addCurrentPathCandidates(unique, playerChunk, renderRadius);
+
+        int minCircle = Math.max(0, currentCircle);
+        int maxCircle = getNormalRenderMaxCircle();
+        for (int circle = minCircle; circle <= maxCircle; circle++) {
+            addNormalRingCandidates(unique, playerChunk, renderRadius, circle);
+        }
+
+        normalRenderChunks.addAll(unique);
+    }
+
+    private long normalRenderSignature() {
+        long signature = 17;
+        signature = signature * 31 + originChunk.x;
+        signature = signature * 31 + originChunk.z;
+        signature = signature * 31 + currentCircle;
+        signature = signature * 31 + currentPath.ordinal();
+        signature = signature * 31 + chunkLoadRadius.get();
+        signature = signature * 31 + preloadCircles.get();
+        signature = signature * 31 + circleLimit.get();
+        signature = signature * 31 + renderDistance.get();
+        signature = signature * 31 + (resumeCheckpointChunk == null ? 0 : resumeCheckpointChunk.x);
+        signature = signature * 31 + (resumeCheckpointChunk == null ? 0 : resumeCheckpointChunk.z);
+        return signature;
+    }
+
+    private void addCurrentPathCandidates(LongOpenHashSet target, ChunkPos playerChunk, int renderRadius) {
+        if (currentPath == SweepRoute.NEXT_CIRCLE) return;
+        int radius = Math.max(0, chunkLoadRadius.get() * currentCircle * 2);
+        switch (currentPath) {
+            case CENTER_TO_LEFT -> addNormalSegment(target, playerChunk, renderRadius, originChunk.x, originChunk.z, originChunk.x - radius, originChunk.z);
+            case CENTER_LEFT_TO_UP_LEFT -> addNormalSegment(target, playerChunk, renderRadius, originChunk.x - radius, originChunk.z, originChunk.x - radius, originChunk.z - radius);
+            case UP_LEFT_TO_UP_RIGHT -> addNormalSegment(target, playerChunk, renderRadius, originChunk.x - radius, originChunk.z - radius, originChunk.x + radius, originChunk.z - radius);
+            case UP_RIGHT_TO_DOWN_RIGHT -> addNormalSegment(target, playerChunk, renderRadius, originChunk.x + radius, originChunk.z - radius, originChunk.x + radius, originChunk.z + radius);
+            case DOWN_RIGHT_TO_DOWN_LEFT -> addNormalSegment(target, playerChunk, renderRadius, originChunk.x + radius, originChunk.z + radius, originChunk.x - radius, originChunk.z + radius);
+            case DOWN_LEFT_TO_LEFT -> addNormalSegment(target, playerChunk, renderRadius, originChunk.x - radius, originChunk.z + radius, originChunk.x - radius, originChunk.z);
+            case NEXT_CIRCLE -> { }
+        }
+    }
+
+    private void addNormalRingCandidates(LongOpenHashSet target, ChunkPos playerChunk, int renderRadius, int circle) {
+        long radiusLong = (long) Math.max(1, chunkLoadRadius.get()) * Math.max(0, circle) * 2L;
+        if (radiusLong > Integer.MAX_VALUE / 2L) return;
+        int radius = (int) radiusLong;
+        if (radius == 0) {
+            addNormalRenderCandidate(target, playerChunk, renderRadius, originChunk.x, originChunk.z);
+            return;
+        }
+
+        int minX = originChunk.x - radius;
+        int maxX = originChunk.x + radius;
+        int minZ = originChunk.z - radius;
+        int maxZ = originChunk.z + radius;
+        for (int x = minX; x <= maxX; x++) {
+            addNormalRenderCandidate(target, playerChunk, renderRadius, x, minZ);
+            addNormalRenderCandidate(target, playerChunk, renderRadius, x, maxZ);
+            if (x == Integer.MAX_VALUE) break;
+        }
+        for (int z = minZ + 1; z < maxZ; z++) {
+            addNormalRenderCandidate(target, playerChunk, renderRadius, minX, z);
+            addNormalRenderCandidate(target, playerChunk, renderRadius, maxX, z);
+        }
+    }
+
+    private void addNormalSegment(LongOpenHashSet target, ChunkPos playerChunk, int renderRadius,
+                                  int fromX, int fromZ, int toX, int toZ) {
+        if (fromX == toX) {
+            int min = Math.max(Math.min(fromZ, toZ), playerChunk.z - renderRadius);
+            int max = Math.min(Math.max(fromZ, toZ), playerChunk.z + renderRadius);
+            for (int z = min; z <= max; z++) addNormalRenderCandidate(target, playerChunk, renderRadius, fromX, z);
+        } else if (fromZ == toZ) {
+            int min = Math.max(Math.min(fromX, toX), playerChunk.x - renderRadius);
+            int max = Math.min(Math.max(fromX, toX), playerChunk.x + renderRadius);
+            for (int x = min; x <= max; x++) addNormalRenderCandidate(target, playerChunk, renderRadius, x, fromZ);
+        }
+    }
+
+    private void addNormalRenderCandidate(LongOpenHashSet target, ChunkPos playerChunk, int renderRadius, int chunkX, int chunkZ) {
+        long dx = (long) chunkX - playerChunk.x;
+        long dz = (long) chunkZ - playerChunk.z;
+        long radiusSq = (long) renderRadius * renderRadius;
+        if (dx * dx + dz * dz <= radiusSq) target.add(chunkKey(chunkX, chunkZ));
+    }
+
+    private static long chunkKey(int chunkX, int chunkZ) {
+        return (chunkX & 0xFFFFFFFFL) | ((long) chunkZ << 32);
+    }
+
+    private static int chunkX(long key) {
+        return (int) key;
+    }
+
+    private static int chunkZ(long key) {
+        return (int) (key >> 32);
+    }
+
     private void renderSpiralRoute(Render3DEvent event) {
         if (!spiralRenderRoute.get() || mc.world == null || spiralStartChunk == null || spiralTargetChunk == null) return;
 
@@ -2035,14 +2150,17 @@ public class BaseFinder extends WaveXinModule {
     }
 
     private void renderScanChunk(ChunkPos chunk, SettingColor sideColor, SettingColor lineColor, Render3DEvent event) {
-        Box box = new Box(
-                new Vec3d(chunk.getStartX(), renderHeight.get(), chunk.getStartZ()),
-                new Vec3d(chunk.getEndX() + 1, renderHeight.get() + 1, chunk.getEndZ() + 1));
+        renderScanChunk(chunk.x, chunk.z, sideColor, lineColor, event);
+    }
 
+    private void renderScanChunk(int chunkX, int chunkZ, SettingColor sideColor, SettingColor lineColor, Render3DEvent event) {
+        double minX = chunkX * 16.0;
+        double minZ = chunkZ * 16.0;
+        double minY = renderHeight.get();
         event.renderer.box(
-                box.minX, box.minY, box.minZ,
-                box.maxX, box.maxY, box.maxZ,
-                sideColor, lineColor, shapeMode.get(), 0);
+            minX, minY, minZ,
+            minX + 16.0, minY + 1.0, minZ + 16.0,
+            sideColor, lineColor, shapeMode.get(), 0);
     }
 
     private void advanceSweepRoute() {

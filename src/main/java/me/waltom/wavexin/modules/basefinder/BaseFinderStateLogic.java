@@ -32,6 +32,20 @@ final class BaseFinderStateLogic {
         return "P" + Math.max(1, number);
     }
 
+    static NormalRenderState normalRenderState(boolean resumeCheckpoint, boolean visited, boolean currentPath) {
+        if (resumeCheckpoint) return NormalRenderState.RESUME_CHECKPOINT;
+        if (visited) return NormalRenderState.VISITED;
+        if (currentPath) return NormalRenderState.CURRENT_PATH;
+        return NormalRenderState.TARGET;
+    }
+
+    enum NormalRenderState {
+        RESUME_CHECKPOINT,
+        VISITED,
+        CURRENT_PATH,
+        TARGET
+    }
+
     static NormalRouteCheckpoint normalRouteTarget(int originX, int originZ, int ring, int chunkLoadRadius, BaseFinder.SweepRoute route) {
         if (route == null || route == BaseFinder.SweepRoute.NEXT_CIRCLE || ring <= 0) return null;
 
