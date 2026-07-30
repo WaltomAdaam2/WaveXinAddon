@@ -4,6 +4,7 @@ on:
     branches:
       - main
       - SNAPSHOT
+      - mc-1.21.1
 
 permissions:
   contents: read

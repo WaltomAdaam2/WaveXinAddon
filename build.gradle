@@ -4,7 +4,7 @@ plugins {
 
 base {
     archivesName.set(project.archives_base_name)
-    version = project.mod_version
+    version = "${project.mod_version}+mc${project.minecraft_version}"
     group = project.maven_group
 }
 
