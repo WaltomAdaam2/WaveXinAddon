@@ -23,6 +23,7 @@ import net.minecraft.entity.effect.StatusEffects;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.Items;
 import net.minecraft.network.packet.c2s.play.ClientCommandC2SPacket;
+import net.minecraft.util.math.ChunkPos;
 import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec3d;
 
@@ -45,11 +46,11 @@ public class BetterElytraFly extends WaveXinModule {
     public final Setting<Double> speed = sgGeneral.add(new DoubleSetting.Builder()
         .name("Flight Speed")
         .description("Horizontal flight speed")
-        .defaultValue(1.5)
+        .defaultValue(2)
         .min(0.1)
         .sliderMin(0.1)
-        .max(3)
-        .sliderMax(3)
+        .max(20)
+        .sliderMax(20)
         .build()
     );
 
@@ -354,11 +355,10 @@ public class BetterElytraFly extends WaveXinModule {
         if (!mc.player.getEquippedStack(EquipmentSlot.CHEST).isOf(Items.ELYTRA)) return;
 
         if (mc.player.isGliding()) {
-            int chunkX = (int) (mc.player.getX() / 16);
-            int chunkZ = (int) (mc.player.getZ() / 16);
+            ChunkPos playerChunk = mc.player.getChunkPos();
 
             if (autoStop.get()) {
-                if (!mc.world.getChunkManager().isChunkLoaded(chunkX, chunkZ)) {
+                if (!mc.world.getChunkManager().isChunkLoaded(playerChunk.x, playerChunk.z)) {
                     event.setX(0);
                     event.setY(0);
                     event.setZ(0);

@@ -3,37 +3,61 @@ package me.waltom.wavexin.modules.chatfilter;
 import me.waltom.wavexin.WaveXinAddon;
 import me.waltom.wavexin.core.WaveXinModule;
 import meteordevelopment.meteorclient.events.game.ReceiveMessageEvent;
+import meteordevelopment.meteorclient.gui.GuiTheme;
+import meteordevelopment.meteorclient.gui.utils.CharFilter;
+import meteordevelopment.meteorclient.gui.utils.SettingsWidgetFactory;
+import meteordevelopment.meteorclient.gui.widgets.containers.WHorizontalList;
+import meteordevelopment.meteorclient.gui.widgets.containers.WTable;
+import meteordevelopment.meteorclient.gui.widgets.input.WTextBox;
+import meteordevelopment.meteorclient.gui.widgets.pressable.WMinus;
+import meteordevelopment.meteorclient.gui.widgets.pressable.WPlus;
 import meteordevelopment.meteorclient.settings.BoolSetting;
+import meteordevelopment.meteorclient.settings.IVisible;
 import meteordevelopment.meteorclient.settings.Setting;
 import meteordevelopment.meteorclient.settings.SettingGroup;
+import meteordevelopment.meteorclient.settings.StringListSetting;
 import meteordevelopment.meteorclient.systems.modules.Modules;
 import meteordevelopment.orbit.EventHandler;
 import net.minecraft.text.Text;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 public class ChatFilter extends WaveXinModule {
     private static final Pattern LEGACY_FORMATTING_PATTERN = Pattern.compile("(?i)\\xA7[0-9A-FK-OR]");
+    private static final Pattern DISPLAY_NAME_PREFIX_PATTERN = Pattern.compile("^(?:[\\[\\(\\u3010\\uFF08][^\\]\\)\\u3011\\uFF09]{1,32}[\\]\\)\\u3011\\uFF09]\\s*)+");
     private static final String PLAYER_NAME = "[^\\s:\\[\\]<>\\uFF08\\uFF09()]{1,64}";
+    private static final String DEATH_DETAIL = "[^\\r\\n]+?";
     private static final String DEATH_COUNT = "(?:\\s*[\\(\\uFF08]\\d+[\\)\\uFF09])?";
     private static final Pattern CHINESE_DEATH_MESSAGE_PATTERN = Pattern.compile(
         "^" + PLAYER_NAME + "\\s+(?:"
-            + "\\u81EA\\u6740"
-            + "|\\u88AB\\s+.+?\\s+(?:\\u51FB\\u6740|\\u6740\\u6B7B|\\u5C04\\u6740|\\u5C04\\u6B7B|\\u70B8\\u6B7B|\\u6454\\u6B7B|\\u6EBA\\u6B7B|\\u70E7\\u6B7B|\\u7A92\\u606F|\\u51BB\\u6B7B|\\u997F\\u6B7B)"
-            + "|\\u88AB\\s+.+?(?:\\u800C\\u6B7B\\u4EA1|\\u6B7B\\u4EA1)"
-            + "|(?:\\u56E0|\\u4ECE)\\s+.+?(?:\\u6B7B\\u4EA1|\\u6454\\u6B7B|\\u6EBA\\u6B7B|\\u70E7\\u6B7B|\\u7A92\\u606F|\\u51BB\\u6B7B|\\u997F\\u6B7B)"
+            + "(?:自杀|在\\S{1,16}中自杀|撞墙自杀|跳入\\S{1,16}自杀|跳出世界边界而自杀|使用重生锚炸死自己|使用床炸死自己|用TNT炸死了自己|用烟花炸死了自己|炸死了自己|毒死了自己|饿死了自己|被自己的弓箭射死|被自己的三叉戟射死|被自己扔出的鸡蛋打死|被\\s*坠落的物品砸死|在扔末影珍珠时死亡)"
+            + "|被\\s+" + DEATH_DETAIL + "\\s+(?:击杀|杀死|射杀|射死|炸死|砸死|刺死|火球击杀|用火球击杀|窒息而死|推下悬崖而死亡|推到了虚空|用岩浆烧死)"
+            + "|被\\s+" + DEATH_DETAIL + "\\s+的荆棘反杀"
+            + "|(?:着火烧死|被烧死|窒息而亡|冻死|饿死|从高处摔死|摔死|摔得过猛|被魔法杀死)"
             + ")" + DEATH_COUNT + "$"
     );
     private static final Pattern ENGLISH_DEATH_MESSAGE_PATTERN = Pattern.compile(
         "^" + PLAYER_NAME + "\\s+(?:"
-            + "was (?:slain|shot|blown up|killed|doomed to fall|squashed|impaled|fireballed|stung|pummeled)"
+            + "was (?:impaled|shot|slain|bogged by) .+"
+            + "|was (?:slain|shot|blown up|killed|doomed to fall|squashed|impaled|fireballed|stung|pummeled)"
             + "|was (?:killed|blown up|shot|slain) by .+"
             + "|drowned|fell from a high place|hit the ground too hard|went up in flames|burned to death|starved to death|froze to death"
             + ")" + DEATH_COUNT + "$",
         Pattern.CASE_INSENSITIVE
     );
-    private static final Pattern PRIVATE_MESSAGE_HEADER_PATTERN = Pattern.compile("(?im)(?:^|\\R)\\s*(?:(?:from|to)\\s+[^\\r\\n:：]{1,64}\\s*[:：]|来自\\s*[^\\r\\n:：]{1,64}\\s*[:：]|[^\\r\\n:：]{1,64}\\s+(?:whispers|tells you)\\b)");
+    private static final Pattern PRIVATE_MESSAGE_PLAYER_PATTERN = Pattern.compile("(?im)(?:^|\\R)\\s*(?:(?:from|to)\\s+([^\\r\\n:：]{1,64})\\s*[:：]|来自\\s*([^\\r\\n:：]{1,64})\\s*[:：]|([^\\r\\n:：]{1,64})\\s+(?:whispers|tells you)\\b)");
     private static final Pattern PRIVATE_MESSAGE_TAG_PATTERN = Pattern.compile("(?i)\\[[^\\]]*(?:private\\s+message|私聊信息|私信|密语|悄悄话)[^\\]]*\\]");
-    private static final Pattern PUBLIC_MESSAGE_PATTERN = Pattern.compile("(?:^\\s*<[^>]+>\\s+.+|^\\s*[^\\s:]{1,32}:\\s+.+)");
+    private static final Pattern PUBLIC_MESSAGE_PLAYER_PATTERN = Pattern.compile("^\\s*<(" + PLAYER_NAME + ")>\\s+[^\\r\\n]+$");
+    private static final CharFilter PLAYER_NAME_FILTER = (text, c) -> c != ' ' && c != ':' && c != '：' && c != '\n' && c != '\r';
+
+    static {
+        SettingsWidgetFactory.registerCustomFactory(PlayerNameListSetting.class, theme -> (table, setting) -> {
+            WTable playerTable = table.add(theme.table()).expandX().widget();
+            fillPlayerNameTable(theme, playerTable, (PlayerNameListSetting) setting);
+        });
+    }
 
     private final SettingGroup sgGeneral = settings.getDefaultGroup();
 
@@ -44,6 +68,12 @@ public class ChatFilter extends WaveXinModule {
         .build()
     );
 
+    private final Setting<List<String>> privateMessageAllowlist = sgGeneral.add(new PlayerNameListSetting(
+        "MSG Allowlist",
+        "Shows MSG private messages involving these players even when MSG filtering is enabled.",
+        hidePrivateMessages::get
+    ));
+
     private final Setting<Boolean> hidePublicMessages = sgGeneral.add(new BoolSetting.Builder()
         .name("Hide Public Messages")
         .description("Hides normal public chat messages")
@@ -51,10 +81,24 @@ public class ChatFilter extends WaveXinModule {
         .build()
     );
 
+    private final Setting<List<String>> publicMessageAllowlist = sgGeneral.add(new PlayerNameListSetting(
+        "Public Message Allowlist",
+        "Shows public messages from these players even when public chat filtering is enabled.",
+        hidePublicMessages::get
+    ));
+
     private final Setting<Boolean> hideDeathMessages = sgGeneral.add(new BoolSetting.Builder()
         .name("Hide Death Messages")
         .description("Hides structured server death announcements")
         .defaultValue(false)
+        .build()
+    );
+
+    private final Setting<Boolean> showOwnPublicMessages = sgGeneral.add(new BoolSetting.Builder()
+        .name("Show Own Public Messages")
+        .description("Shows your own public messages even when public chat filtering is enabled.")
+        .defaultValue(true)
+        .visible(hidePublicMessages::get)
         .build()
     );
 
@@ -84,22 +128,134 @@ public class ChatFilter extends WaveXinModule {
         String normalized = normalize(message);
         if (normalized.isEmpty()) return false;
 
-        if (hidePrivateMessages.get() && isPrivateMessage(normalized)) return true;
-        return hidePublicMessages.get() && PUBLIC_MESSAGE_PATTERN.matcher(normalized).find();
+        if (hidePrivateMessages.get() && isPrivateMessage(normalized)) {
+            String player = privateMessagePlayer(normalized);
+            return !playerListContains(privateMessageAllowlist.get(), player);
+        }
+        if (hidePublicMessages.get()) {
+            return shouldHidePublicMessage(
+                normalized,
+                publicMessageAllowlist.get(),
+                showOwnPublicMessages.get(),
+                ownAccountName(),
+                ownDisplayName()
+            );
+        }
+        return false;
     }
 
-    private static String normalize(String message) {
+    static String normalize(String message) {
         return LEGACY_FORMATTING_PATTERN.matcher(message).replaceAll("").trim();
     }
 
-    private static boolean isDeathMessage(String message) {
+    static boolean isDeathMessage(String message) {
         if (message.isEmpty() || message.contains("\n") || message.contains("\r")) return false;
         return CHINESE_DEATH_MESSAGE_PATTERN.matcher(message).matches()
             || ENGLISH_DEATH_MESSAGE_PATTERN.matcher(message).matches();
     }
 
+    static String privateMessagePlayer(String message) {
+        Matcher matcher = PRIVATE_MESSAGE_PLAYER_PATTERN.matcher(message);
+        if (!matcher.find()) return null;
+
+        for (int i = 1; i <= matcher.groupCount(); i++) {
+            String group = matcher.group(i);
+            if (group != null && !group.isBlank()) return group.trim();
+        }
+        return null;
+    }
+
+    static String publicMessagePlayer(String message) {
+        Matcher matcher = PUBLIC_MESSAGE_PLAYER_PATTERN.matcher(message);
+        if (!matcher.matches()) return null;
+
+        for (int i = 1; i <= matcher.groupCount(); i++) {
+            String group = matcher.group(i);
+            if (group != null && !group.isBlank()) return group.trim();
+        }
+        return null;
+    }
+
+    static boolean shouldHidePublicMessage(String message, List<String> allowlist, boolean showOwn, String ownAccountName, String ownDisplayName) {
+        String player = publicMessagePlayer(normalize(message));
+        if (player == null) return false;
+        if (showOwn && (samePlayerName(ownAccountName, player) || samePlayerName(ownDisplayName, player))) return false;
+        return !playerListContains(allowlist, player);
+    }
+
+    private String ownAccountName() {
+        return mc.player == null ? null : mc.player.getName().getString();
+    }
+
+    private String ownDisplayName() {
+        if (mc.player == null) return null;
+        Text displayName = mc.player.getDisplayName();
+        return displayName == null ? null : displayName.getString();
+    }
+
+    static boolean samePlayerName(String expected, String actual) {
+        String left = normalizePlayerName(expected);
+        String right = normalizePlayerName(actual);
+        return !left.isBlank() && !right.isBlank() && left.equalsIgnoreCase(right);
+    }
+
+    static String normalizePlayerName(String player) {
+        if (player == null) return "";
+        return DISPLAY_NAME_PREFIX_PATTERN.matcher(normalize(player)).replaceFirst("").trim();
+    }
+
+    static boolean playerListContains(List<String> players, String player) {
+        if (players == null || player == null || player.isBlank()) return false;
+        for (String candidate : players) {
+            if (candidate != null && candidate.trim().equalsIgnoreCase(player.trim())) return true;
+        }
+        return false;
+    }
+
     private boolean isPrivateMessage(String message) {
-        return PRIVATE_MESSAGE_HEADER_PATTERN.matcher(message).find()
+        return privateMessagePlayer(message) != null
             || PRIVATE_MESSAGE_TAG_PATTERN.matcher(message).find();
+    }
+
+    private static void fillPlayerNameTable(GuiTheme theme, WTable table, PlayerNameListSetting setting) {
+        table.clear();
+        ArrayList<String> players = new ArrayList<>(setting.get());
+
+        for (String player : setting.get()) {
+            if (player == null || player.isBlank()) continue;
+
+            table.add(theme.label(player)).expandX();
+            WMinus remove = table.add(theme.minus()).expandCellX().right().widget();
+            remove.action = () -> {
+                players.removeIf(candidate -> candidate != null && candidate.equalsIgnoreCase(player));
+                setting.set(players);
+                fillPlayerNameTable(theme, table, setting);
+            };
+            table.row();
+        }
+
+        WHorizontalList inputRow = table.add(theme.horizontalList()).expandX().widget();
+        WTextBox nameInput = inputRow.add(theme.textBox("", PLAYER_NAME_FILTER)).expandX().widget();
+        WPlus add = inputRow.add(theme.plus()).widget();
+        add.action = () -> {
+            if (addPlayerName(players, nameInput.get())) {
+                setting.set(players);
+                fillPlayerNameTable(theme, table, setting);
+            }
+        };
+    }
+
+    static boolean addPlayerName(List<String> players, String rawName) {
+        if (players == null) return false;
+        String name = rawName == null ? "" : rawName.trim();
+        if (name.isEmpty() || playerListContains(players, name)) return false;
+        players.add(name);
+        return true;
+    }
+
+    private static class PlayerNameListSetting extends StringListSetting {
+        private PlayerNameListSetting(String name, String description, IVisible visible) {
+            super(name, description, new ArrayList<>(), null, null, visible, null, PLAYER_NAME_FILTER);
+        }
     }
 }

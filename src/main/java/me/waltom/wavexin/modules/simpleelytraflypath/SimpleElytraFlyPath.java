@@ -170,7 +170,7 @@ public class SimpleElytraFlyPath extends WaveXinModule {
 
         
         if (!isSafeFlightHeight()) {
-            errorKey("error.wavexin.safe_flight_height", "Recommended to use above each dimension height limit: Nether (Y > 128), Overworld (Y > 320), End (Y > 256)");
+            warningKey("error.wavexin.safe_flight_height", "Recommended to use above each dimension height limit: Nether (Y > 128), Overworld (Y > 320), End (Y > 256)");
         }
 
 

@@ -2,7 +2,7 @@
 
 **语言 / Language:** 中文 | [English](README_EN.md)
 
-WaveXinAddon 是一个为 **2b2t.xin** 服务器设计的 Meteor Client Addon (彗星段扩展)，主要提供鞘翅飞行、鞘翅自动更换、路径飞行、自动登录、自动答题、自动每日小红花（月卡）、基地扫描、聊天过滤和实体名牌显示等辅助功能。
+WaveXinAddon 是一个为 **2b2t.xin** 服务器设计的 Meteor Client Addon (彗星段扩展)，主要提供鞘翅飞行、鞘翅自动更换、路径飞行、自动登录、自动答题、自动每日小红花（月卡）、基地扫描、聊天过滤、神龟药水快捷投掷和实体名牌显示等辅助功能。
 
 <p align="center">
   <img src="assets/wavexin_readme_preview.png" alt="WaveXinAddon Preview" width="850">
@@ -15,8 +15,9 @@ WaveXinAddon 是一个为 **2b2t.xin** 服务器设计的 Meteor Client Addon (�
 * ChickenNametags：鸡实体名牌显示
 * SnifferNametags：嗅探兽实体名牌显示
 * Auto Login：2b2t.xin 自动登录、自动加入和每日小红花签到
-* Chat Filter：私信、公共聊天和死亡消息过滤
-* Base Finder：普通扫描 / 螺旋扫描、容器记录和可选 Xaero 路径点
+* Chat Filter：私信、公共聊天和死亡消息过滤，支持 MSG / Public 独立白名单；Public 仅识别 `<玩家名> 消息` 格式，默认显示自己发送的公共聊天
+* Base Finder：普通扫描 / 螺旋扫描、容器记录、被扔出的末影珍珠检测、目标区块中心锁定、螺旋自动走路视角锁定/临时转向和可选 Xaero 路径点；创建提示会用实际 Xaero 颜色加粗显示路径点名称
+* Turtle Potion Thrower：绑定快捷键后一键投掷喷溅型神龟药水，支持副手、原槽位恢复、Quick Swap 和 Notify
 
 更多实现逻辑与注意事项请参阅 [功能逻辑说明](docs/README_LOGIC.md)。
 
@@ -27,6 +28,14 @@ WaveXinAddon 是一个为 **2b2t.xin** 服务器设计的 Meteor Client Addon (�
 * Fabric Loader
 * Fabric API
 * Meteor Client
+
+### 可选组件
+
+Base Finder 的 Xaero 路径点功能可能会使用以下组件：
+
+* Xaero's Minimap
+* Xaero's World Map
+* XaeroPlus
 
 ## 构建方法
 

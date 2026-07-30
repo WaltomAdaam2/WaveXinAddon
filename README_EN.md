@@ -2,7 +2,7 @@
 
 **Language / 语言:** [中文](README.md) | English
 
-WaveXinAddon is a Meteor Client addon designed for the **2b2t.xin** server. It provides elytra flight, automatic elytra replacement, path flight, auto login, auto answer, automatic Daily Flower (monthly pass) check-ins, base scanning, chat filtering, entity nametags, and other utility modules.
+WaveXinAddon is a Meteor Client addon designed for the **2b2t.xin** server. It provides elytra flight, automatic elytra replacement, path flight, auto login, auto answer, automatic Daily Flower (monthly pass) check-ins, base scanning, chat filtering, turtle-potion throwing, entity nametags, and other utility modules.
 
 <p align="center">
   <img src="assets/wavexin_readme_preview.png" alt="WaveXinAddon Preview" width="850">
@@ -15,8 +15,9 @@ WaveXinAddon is a Meteor Client addon designed for the **2b2t.xin** server. It p
 * ChickenNametags: Chicken entity nametags
 * SnifferNametags: Sniffer entity nametags
 * Auto Login: 2b2t.xin auto login, auto join, and daily flower check-in
-* Chat Filter: Private message, public chat, and death message filtering
-* Base Finder: Normal / spiral scanning, container recording, and optional Xaero waypoints
+* Chat Filter: Private message, public chat, and death message filtering, with separate MSG / public allowlists; public chat is recognized only as `<player> message`, with a default bypass for your own public messages
+* Base Finder: Normal / spiral scanning, container recording, thrown ender pearl detection, target-chunk center locking, spiral auto-walk view locking or temporary steering, and optional Xaero waypoints; created-waypoint chat names are bolded with the actual Xaero waypoint color
+* Turtle Potion Thrower: Throws a splash turtle potion from a bind, with offhand support, original-slot restore, Quick Swap, and Notify
 
 For implementation details and feature-specific notes, see the [Feature Logic Guide](docs/README_LOGIC_EN.md).
 
@@ -27,6 +28,14 @@ For implementation details and feature-specific notes, see the [Feature Logic Gu
 * Fabric Loader
 * Fabric API
 * Meteor Client
+
+### Optional
+
+Base Finder's Xaero waypoint features may use the following components:
+
+* Xaero's Minimap
+* Xaero's World Map
+* XaeroPlus
 
 ## Build
 

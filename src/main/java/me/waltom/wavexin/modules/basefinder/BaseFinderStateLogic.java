@@ -1,0 +1,180 @@
+package me.waltom.wavexin.modules.basefinder;
+
+final class BaseFinderStateLogic {
+    private BaseFinderStateLogic() {
+    }
+
+    static int blockToChunk(double coordinate) {
+        return Math.floorDiv((int) Math.floor(coordinate), 16);
+    }
+
+    static boolean shouldLogNormalDebugSnapshot(String event, String state) {
+        return "WAITING_PLAYER_OR_WORLD".equals(state);
+    }
+
+    static int clearTurnDelayOutsideTarget(boolean atTarget, int turnDelayTimer) {
+        return !atTarget && turnDelayTimer > 0 ? 0 : turnDelayTimer;
+    }
+
+    static long coordinateDistance(int first, int second) {
+        return Math.abs((long) first - second);
+    }
+
+    static boolean shouldCancelSpiralRotation(boolean lockView, boolean rotating, boolean needsInitialRotation) {
+        return !lockView && (rotating || needsInitialRotation);
+    }
+
+    static String pearlWaypointName(int number) {
+        return "Pearl " + Math.max(1, number);
+    }
+
+    static String pearlWaypointAlias(int number) {
+        return "P" + Math.max(1, number);
+    }
+
+    static NormalRouteCheckpoint normalRouteTarget(int originX, int originZ, int ring, int chunkLoadRadius, BaseFinder.SweepRoute route) {
+        if (route == null || route == BaseFinder.SweepRoute.NEXT_CIRCLE || ring <= 0) return null;
+
+        int radius = Math.max(0, chunkLoadRadius * ring * 2);
+        return switch (route) {
+            case CENTER_TO_LEFT, DOWN_LEFT_TO_LEFT -> new NormalRouteCheckpoint(originX - radius, originZ);
+            case CENTER_LEFT_TO_UP_LEFT -> new NormalRouteCheckpoint(originX - radius, originZ - radius);
+            case UP_LEFT_TO_UP_RIGHT -> new NormalRouteCheckpoint(originX + radius, originZ - radius);
+            case UP_RIGHT_TO_DOWN_RIGHT -> new NormalRouteCheckpoint(originX + radius, originZ + radius);
+            case DOWN_RIGHT_TO_DOWN_LEFT -> new NormalRouteCheckpoint(originX - radius, originZ + radius);
+            case NEXT_CIRCLE -> null;
+        };
+    }
+
+    static boolean isNormalRouteCheckpoint(int originX, int originZ, int checkpointX, int checkpointZ, int ring, int chunkLoadRadius, BaseFinder.SweepRoute route) {
+        NormalRouteCheckpoint target = normalRouteTarget(originX, originZ, ring, chunkLoadRadius, route);
+        return target != null && target.x() == checkpointX && target.z() == checkpointZ;
+    }
+
+    record NormalRouteCheckpoint(int x, int z) {
+    }
+
+    static final class ViewRotationState {
+        private Object player;
+        private Object world;
+        private float yaw;
+        private float pitch;
+        private float headYaw;
+        private float bodyYaw;
+        private boolean pending;
+        private boolean restoreAfterTick;
+
+        void captureIfNeeded(Object currentPlayer, Object currentWorld, float currentYaw, float currentPitch, float currentHeadYaw, float currentBodyYaw, boolean temporary) {
+            if (currentPlayer == null || currentWorld == null) {
+                clear();
+                return;
+            }
+
+            if (pending && (player != currentPlayer || world != currentWorld)) clear();
+
+            if (!pending) {
+                player = currentPlayer;
+                world = currentWorld;
+                yaw = currentYaw;
+                pitch = currentPitch;
+                headYaw = currentHeadYaw;
+                bodyYaw = currentBodyYaw;
+                pending = true;
+            }
+
+            restoreAfterTick |= temporary;
+        }
+
+        boolean shouldRestoreAfterTick() {
+            return pending && restoreAfterTick;
+        }
+
+        Snapshot consumeRestore(Object currentPlayer, Object currentWorld) {
+            if (!pending) return null;
+            if (player != currentPlayer || world != currentWorld) {
+                clear();
+                return null;
+            }
+
+            Snapshot snapshot = new Snapshot(yaw, pitch, headYaw, bodyYaw);
+            clear();
+            return snapshot;
+        }
+
+        boolean pending() {
+            return pending;
+        }
+
+        void clear() {
+            player = null;
+            world = null;
+            pending = false;
+            restoreAfterTick = false;
+        }
+    }
+
+    record Snapshot(float yaw, float pitch, float headYaw, float bodyYaw) {
+    }
+
+    static final class SprintState {
+        private Object player;
+        private Object world;
+        private boolean previousSprinting;
+        private boolean pending;
+
+        void captureIfNeeded(Object currentPlayer, Object currentWorld, boolean sprinting) {
+            if (currentPlayer == null || currentWorld == null) {
+                clear();
+                return;
+            }
+
+            if (pending && (player != currentPlayer || world != currentWorld)) clear();
+
+            if (!pending) {
+                player = currentPlayer;
+                world = currentWorld;
+                previousSprinting = sprinting;
+                pending = true;
+            }
+        }
+
+        Boolean consumeRestore(Object currentPlayer, Object currentWorld) {
+            if (!pending) return null;
+            if (player != currentPlayer || world != currentWorld) {
+                clear();
+                return null;
+            }
+
+            boolean value = previousSprinting;
+            clear();
+            return value;
+        }
+
+        boolean pending() {
+            return pending;
+        }
+
+        void clear() {
+            player = null;
+            world = null;
+            previousSprinting = false;
+            pending = false;
+        }
+    }
+
+    static final class PerTargetDebugGate {
+        private String lastKey;
+
+        boolean shouldEmit(boolean enabled, int targetX, int targetZ, int segment) {
+            if (!enabled) return false;
+            String key = targetX + ":" + targetZ + ":" + segment;
+            if (key.equals(lastKey)) return false;
+            lastKey = key;
+            return true;
+        }
+
+        void clear() {
+            lastKey = null;
+        }
+    }
+}

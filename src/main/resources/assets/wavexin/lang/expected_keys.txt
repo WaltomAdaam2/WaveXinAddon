@@ -1,5 +1,7 @@
 button.wavexin.auto_login.add_update_account.label
 button.wavexin.auto_login.add_update_account.tooltip
+button.wavexin.base_finder.reset_restart_data.label
+button.wavexin.base_finder.reset_restart_data.tooltip
 debug.wavexin.auto_login.server_detection
 debug.wavexin.auto_login.state
 debug.wavexin.auto_login.supported_server
@@ -76,6 +78,7 @@ group.wavexin.base_finder.spiral_scan
 group.wavexin.better_elytra_fly.elytra_replace
 group.wavexin.better_elytra_fly.general
 group.wavexin.chat_filter.general
+group.wavexin.turtle_potion_thrower.general
 group.wavexin.chicken_nametags.general
 group.wavexin.chicken_nametags.render
 group.wavexin.simple_elytra_fly_path.flight_settings
@@ -101,6 +104,7 @@ message.wavexin.base_finder.normal_ring_completed
 message.wavexin.base_finder.normal_started
 message.wavexin.base_finder.normal_stopped
 message.wavexin.base_finder.normal_stopped_checkpoint
+message.wavexin.base_finder.normal_stopped_checkpoint_preserved
 message.wavexin.base_finder.normal_stopped_returning
 message.wavexin.base_finder.scan_complete
 message.wavexin.base_finder.spiral_calculated
@@ -137,6 +141,8 @@ module.wavexin.simple_elytra_fly_path.description
 module.wavexin.simple_elytra_fly_path.title
 module.wavexin.sniffer_nametags.description
 module.wavexin.sniffer_nametags.title
+module.wavexin.turtle_potion_thrower.description
+module.wavexin.turtle_potion_thrower.title
 placeholder.wavexin.auto_login.password
 setting.wavexin.auto_login.account.account_name.description
 setting.wavexin.auto_login.account.account_name.title
@@ -176,6 +182,10 @@ setting.wavexin.base_finder.container_recording.container_blocks.description
 setting.wavexin.base_finder.container_recording.container_blocks.title
 setting.wavexin.base_finder.container_recording.container_threshold.description
 setting.wavexin.base_finder.container_recording.container_threshold.title
+setting.wavexin.base_finder.container_recording.detect_thrown_pearls.description
+setting.wavexin.base_finder.container_recording.detect_thrown_pearls.title
+setting.wavexin.base_finder.container_recording.record_thrown_pearl.description
+setting.wavexin.base_finder.container_recording.record_thrown_pearl.title
 setting.wavexin.base_finder.container_recording.waypoint_color.description
 setting.wavexin.base_finder.container_recording.waypoint_color.title
 setting.wavexin.base_finder.container_recording.waypoint_prefix.description
@@ -210,6 +220,10 @@ setting.wavexin.base_finder.render.render_distance.description
 setting.wavexin.base_finder.render.render_distance.title
 setting.wavexin.base_finder.render.render_height.description
 setting.wavexin.base_finder.render.render_height.title
+setting.wavexin.base_finder.render.resume_checkpoint_line_color.description
+setting.wavexin.base_finder.render.resume_checkpoint_line_color.title
+setting.wavexin.base_finder.render.resume_checkpoint_side_color.description
+setting.wavexin.base_finder.render.resume_checkpoint_side_color.title
 setting.wavexin.base_finder.render.shape_mode.description
 setting.wavexin.base_finder.render.shape_mode.title
 setting.wavexin.base_finder.render.target_chunk_line_color.description
@@ -224,6 +238,8 @@ setting.wavexin.base_finder.restart.origin_chunk_x.description
 setting.wavexin.base_finder.restart.origin_chunk_x.title
 setting.wavexin.base_finder.restart.origin_chunk_z.description
 setting.wavexin.base_finder.restart.origin_chunk_z.title
+setting.wavexin.base_finder.restart.reset_restart_data.description
+setting.wavexin.base_finder.restart.reset_restart_data.title
 setting.wavexin.base_finder.restart.previous_chunk_x.description
 setting.wavexin.base_finder.restart.previous_chunk_x.title
 setting.wavexin.base_finder.restart.previous_chunk_z.description
@@ -284,10 +300,20 @@ setting.wavexin.better_elytra_fly.general.stop_in_unloaded_chunks.description
 setting.wavexin.better_elytra_fly.general.stop_in_unloaded_chunks.title
 setting.wavexin.chat_filter.general.hide_death_messages.description
 setting.wavexin.chat_filter.general.hide_death_messages.title
+setting.wavexin.chat_filter.general.show_own_public_messages.description
+setting.wavexin.chat_filter.general.show_own_public_messages.title
+setting.wavexin.turtle_potion_thrower.general.quick_swap.description
+setting.wavexin.turtle_potion_thrower.general.quick_swap.title
+setting.wavexin.turtle_potion_thrower.general.notify.description
+setting.wavexin.turtle_potion_thrower.general.notify.title
 setting.wavexin.chat_filter.general.hide_msg_private_messages.description
 setting.wavexin.chat_filter.general.hide_msg_private_messages.title
+setting.wavexin.chat_filter.general.msg_allowlist.description
+setting.wavexin.chat_filter.general.msg_allowlist.title
 setting.wavexin.chat_filter.general.hide_public_messages.description
 setting.wavexin.chat_filter.general.hide_public_messages.title
+setting.wavexin.chat_filter.general.public_message_allowlist.description
+setting.wavexin.chat_filter.general.public_message_allowlist.title
 setting.wavexin.chicken_nametags.general.render_range.description
 setting.wavexin.chicken_nametags.general.render_range.title
 setting.wavexin.chicken_nametags.general.scale.description
@@ -345,6 +371,9 @@ tooltip.wavexin.common.reset
 warning.wavexin.auto_login.questions_load_failed
 warning.wavexin.auto_login.questions_missing
 warning.wavexin.base_finder.base_found
+warning.wavexin.base_finder.normal_progress_invalid
+warning.wavexin.base_finder.normal_progress_missing
+warning.wavexin.base_finder.pearl_found
 warning.wavexin.base_finder.spiral_too_far
 warning.wavexin.base_finder.xaero_create_failed
 warning.wavexin.base_finder.xaero_missing
@@ -352,3 +381,9 @@ warning.wavexin.base_finder.xaero_session_not_ready
 warning.wavexin.base_finder.xaero_set_not_ready
 warning.wavexin.base_finder.xaero_world_not_ready
 warning.wavexin.better_elytra_fly.no_replacement_elytra
+warning.wavexin.turtle_potion_thrower.unavailable
+warning.wavexin.turtle_potion_thrower.no_potion
+warning.wavexin.turtle_potion_thrower.hotbar_required
+warning.wavexin.turtle_potion_thrower.swap_failed
+warning.wavexin.turtle_potion_thrower.restore_failed
+warning.wavexin.turtle_potion_thrower.throw_failed
