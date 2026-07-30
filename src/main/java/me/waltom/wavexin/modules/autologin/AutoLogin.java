@@ -165,7 +165,7 @@ public class AutoLogin extends WaveXinModule {
         .build()
     );
 
-    public final SavedAccountsSetting savedAccounts = sgSavedAccounts.add(new SavedAccountsSetting.Builder()
+    public final SavedAccountsSetting savedAccounts = (SavedAccountsSetting) sgSavedAccounts.add(new SavedAccountsSetting.Builder()
         .name("")
         .description("Select an account to edit or remove")
         .accounts(this::getSavedAccounts)
@@ -470,7 +470,7 @@ public class AutoLogin extends WaveXinModule {
             return;
         }
 
-        mc.player.getInventory().setSelectedSlot(2);
+        mc.player.getInventory().selectedSlot = 2;
         setState(LoginState.WAITING_AFTER_SLOT_SELECT);
     }
 
@@ -499,7 +499,7 @@ public class AutoLogin extends WaveXinModule {
             return;
         }
 
-        mc.player.getInventory().setSelectedSlot(hotbarSlot);
+        mc.player.getInventory().selectedSlot = hotbarSlot;
         mc.interactionManager.interactItem(mc.player, Hand.MAIN_HAND);
         setState(LoginState.WAITING_FOR_JOIN_GUI);
     }
@@ -799,7 +799,7 @@ public class AutoLogin extends WaveXinModule {
     }
 
     private void refreshAccountEditor() {
-        settings.invalidate();
+        savedAccounts.refresh();
     }
 
     private List<SavedAccountEntry> getSavedAccounts() {

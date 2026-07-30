@@ -2291,7 +2291,7 @@ public class BaseFinder extends WaveXinModule {
 
         @Override
         protected Integer load(NbtCompound tag) {
-            set(tag.getInt("value", 0));
+            set(tag.getInt("value"));
             return get();
         }
 
@@ -2386,7 +2386,7 @@ public class BaseFinder extends WaveXinModule {
 
         @Override
         protected SweepRoute load(NbtCompound tag) {
-            parse(tag.getString("value", SweepRoute.NEXT_CIRCLE.name()));
+            parse(tag.contains("value") ? tag.getString("value") : SweepRoute.NEXT_CIRCLE.name());
             return get();
         }
 

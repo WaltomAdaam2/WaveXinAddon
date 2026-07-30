@@ -186,7 +186,7 @@ public class BetterElytraFly extends WaveXinModule {
 
         ItemStack equipped = mc.player.getEquippedStack(EquipmentSlot.CHEST);
         if (!equipped.isOf(Items.ELYTRA)) return;
-        if (onlyWhileFlying.get() && !mc.player.isGliding()) return;
+        if (onlyWhileFlying.get() && !mc.player.isFallFlying()) return;
 
         int remainingDurability = remainingDurability(equipped);
         if (remainingDurability > durabilityThreshold.get()) return;
@@ -320,7 +320,7 @@ public class BetterElytraFly extends WaveXinModule {
         if (!player.isTouchingWater() && !player.hasStatusEffect(StatusEffects.LEVITATION)) {
             ItemStack itemStack = player.getEquippedStack(EquipmentSlot.CHEST);
             if (isUsableElytra(itemStack)) {
-                player.startGliding();
+                player.startFallFlying();
                 return true;
             }
         }
@@ -354,7 +354,7 @@ public class BetterElytraFly extends WaveXinModule {
         if (mc.player == null || mc.world == null) return;
         if (!mc.player.getEquippedStack(EquipmentSlot.CHEST).isOf(Items.ELYTRA)) return;
 
-        if (mc.player.isGliding()) {
+        if (mc.player.isFallFlying()) {
             ChunkPos playerChunk = mc.player.getChunkPos();
 
             if (autoStop.get()) {
@@ -369,7 +369,7 @@ public class BetterElytraFly extends WaveXinModule {
 
     @EventHandler
     public void onMove(TravelEvent event) {
-        if (mc.player == null || mc.world == null || !hasElytra || !mc.player.isGliding() || event.isPost()) return;
+        if (mc.player == null || mc.world == null || !hasElytra || !mc.player.isFallFlying() || event.isPost()) return;
 
         Vec3d lookVec = getRotationVec(1.0f);
         double lookDist = Math.sqrt(lookVec.x * lookVec.x + lookVec.z * lookVec.z);

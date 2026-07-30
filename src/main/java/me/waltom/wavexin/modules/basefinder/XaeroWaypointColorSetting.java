@@ -110,7 +110,7 @@ public class XaeroWaypointColorSetting extends Setting<BaseFinder.XaeroWaypointC
 
     @Override
     protected BaseFinder.XaeroWaypointColor load(NbtCompound tag) {
-        parse(tag.getString("value", ""));
+        parse(tag.getString("value"));
         return get();
     }
 

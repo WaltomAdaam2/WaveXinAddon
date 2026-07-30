@@ -18,6 +18,7 @@ import meteordevelopment.orbit.EventHandler;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.EntityType;
 import net.minecraft.entity.passive.ChickenEntity;
+import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.util.math.Vec3d;
 import org.joml.Vector3d;
 import java.util.*;
@@ -136,7 +137,7 @@ public class ChickenNametags extends WaveXinModule {
             pos.add(0, getHeight(chicken), 0);
 
             if (NametagUtils.to2D(pos, scale.get())) {
-                renderChickenNameplate(chicken, shadow);
+                renderChickenNameplate(chicken, shadow, event.drawContext.getMatrices());
             }
         }
     }
@@ -145,7 +146,7 @@ public class ChickenNametags extends WaveXinModule {
         return entity.getEyeHeight(entity.getPose()) + 0.5;
     }
 
-    private void renderChickenNameplate(ChickenEntity chicken, boolean shadow) {
+    private void renderChickenNameplate(ChickenEntity chicken, boolean shadow, MatrixStack matrices) {
         TextRenderer text = TextRenderer.get();
         NametagUtils.begin(pos);
 
@@ -187,7 +188,7 @@ public class ChickenNametags extends WaveXinModule {
         double widthHalf = width / 2;
 
         
-        drawNametagBackdrop(-widthHalf, -heightDown, width, heightDown);
+        drawNametagBackdrop(-widthHalf, -heightDown, width, heightDown, matrices);
 
         
         text.beginBig();
@@ -211,10 +212,10 @@ public class ChickenNametags extends WaveXinModule {
         NametagUtils.end();
     }
 
-    private void drawNametagBackdrop(double x, double y, double width, double height) {
+    private void drawNametagBackdrop(double x, double y, double width, double height, MatrixStack matrices) {
         Renderer2D.COLOR.begin();
         Renderer2D.COLOR.quad(x - 1, y - 1, width + 2, height + 2, background.get());
-        Renderer2D.COLOR.render();
+        Renderer2D.COLOR.render(matrices);
     }
 
     @Override

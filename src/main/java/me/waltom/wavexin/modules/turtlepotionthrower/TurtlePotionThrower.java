@@ -77,7 +77,7 @@ public class TurtlePotionThrower extends WaveXinModule {
             false,
             false,
             result.isHotbar(),
-            mc.player.getInventory().getSelectedSlot(),
+            mc.player.getInventory().selectedSlot,
             result.slot(),
             quickSwap.get()
         );
@@ -152,7 +152,7 @@ public class TurtlePotionThrower extends WaveXinModule {
             usePotion(Hand.MAIN_HAND);
         } finally {
             boolean selectedSlotChanged = samePlayerWorld(player, world)
-                && mc.player.getInventory().getSelectedSlot() != selectedSlot;
+                && mc.player.getInventory().selectedSlot != selectedSlot;
             if (TurtlePotionThrowerPlan.shouldAttemptHotbarRestore(swapCompleted, selectedSlotChanged)) {
                 restoreSelectedSlot(selectedSlot, player, world);
             }

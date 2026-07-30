@@ -177,7 +177,7 @@ public class SimpleElytraFlyPath extends WaveXinModule {
         if (!mc.player.isCreative()) mc.player.getAbilities().allowFlying = false;
         mc.player.getAbilities().flying = false;
 
-        if (autoTakeoff.get() && !mc.player.isGliding()) {
+        if (autoTakeoff.get() && !mc.player.isFallFlying()) {
             requestElytraGlide(mc.player);
         }
 
@@ -210,7 +210,7 @@ public class SimpleElytraFlyPath extends WaveXinModule {
         if (mc.player == null || mc.world == null) return;
 
         
-        if (mc.player.isGliding()) {
+        if (mc.player.isFallFlying()) {
             
             
             ChunkPos chunkPos = mc.player.getChunkPos();
@@ -241,7 +241,7 @@ public class SimpleElytraFlyPath extends WaveXinModule {
         }
 
         
-        if (autoTakeoff.get() && !mc.player.isGliding()) {
+        if (autoTakeoff.get() && !mc.player.isFallFlying()) {
             requestElytraGlide(mc.player);
         }
     }
@@ -254,7 +254,7 @@ public class SimpleElytraFlyPath extends WaveXinModule {
     @EventHandler(priority = EventPriority.HIGHEST)
     public void onMove(TravelEvent event) {
         
-        if (mc.player == null || mc.world == null || !mc.player.isGliding() || !hasWorkingElytra() || event.isPost()) {
+        if (mc.player == null || mc.world == null || !mc.player.isFallFlying() || !hasWorkingElytra() || event.isPost()) {
             return;
         }
 
@@ -405,7 +405,7 @@ public class SimpleElytraFlyPath extends WaveXinModule {
         if (!player.isTouchingWater() && !player.hasStatusEffect(StatusEffects.LEVITATION)) {
             ItemStack itemStack = player.getEquippedStack(EquipmentSlot.CHEST);
             if (isUsableElytra(itemStack)) {
-                player.startGliding(); 
+                player.startFallFlying();
                 return true;
             }
         }
@@ -507,7 +507,7 @@ public class SimpleElytraFlyPath extends WaveXinModule {
 
         @Override
         protected Integer load(NbtCompound tag) {
-            set(tag.getInt("value", 0));
+            set(tag.getInt("value"));
             return get();
         }
 

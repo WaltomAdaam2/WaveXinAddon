@@ -49,13 +49,13 @@ public class ScanProgressManager {
 
         static ScanProgress fromNbt(NbtCompound nbt) {
             return new ScanProgress(
-                nbt.getInt("StartX").orElse(0),
-                nbt.getInt("StartZ").orElse(0),
-                nbt.getInt("TotalSegments").orElse(0),
-                nbt.getInt("CurrentDir").orElse(0),
-                nbt.getInt("StepsInCurrentLength").orElse(0),
-                nbt.getInt("CurrentStepLength").orElse(1),
-                nbt.contains("ChunkStep") ? nbt.getInt("ChunkStep").orElse(6) : 6
+                nbt.getInt("StartX"),
+                nbt.getInt("StartZ"),
+                nbt.getInt("TotalSegments"),
+                nbt.getInt("CurrentDir"),
+                nbt.getInt("StepsInCurrentLength"),
+                nbt.contains("CurrentStepLength") ? nbt.getInt("CurrentStepLength") : 1,
+                nbt.contains("ChunkStep") ? nbt.getInt("ChunkStep") : 6
             );
         }
     }
@@ -160,7 +160,7 @@ public class ScanProgressManager {
         try {
             NbtCompound nbt = NbtIo.read(legacyPath);
             if (nbt != null && nbt.contains("ScanProgress")) {
-                return nbt.getCompound("ScanProgress").map(ScanProgress::fromNbt).orElse(null);
+                return ScanProgress.fromNbt(nbt.getCompound("ScanProgress"));
             }
         } catch (IOException e) {
             WaveXinAddon.LOG.error("Could not read legacy Spiral Scan progress from {}.", legacyPath, e);

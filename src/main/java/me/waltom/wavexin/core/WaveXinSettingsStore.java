@@ -31,7 +31,7 @@ public final class WaveXinSettingsStore {
             for (Module module : modules) {
                 String serialized = document.modules.get(module.name);
                 if (serialized == null) continue;
-                module.fromTag(StringNbtReader.readCompound(serialized));
+                module.fromTag(StringNbtReader.parse(serialized));
             }
 
             return true;
