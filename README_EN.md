@@ -10,16 +10,16 @@ WaveXinAddon is a Meteor Client addon designed for the **2b2t.xin** server. It p
 
 ## Features
 
-* Better Elytra Fly: Elytra flight helper with optional automatic replacement for nearly broken elytra
-* Simple Elytra Fly Path: Simple coordinate-based elytra path flight
-* ChickenNametags: Chicken entity nametags
-* SnifferNametags: Sniffer entity nametags
-* Auto Login: 2b2t.xin auto login, auto join, and daily flower check-in
-* Chat Filter: Private message, public chat, and death message filtering, with separate MSG / public allowlists; public chat is recognized only as `<player> message`, with a default bypass for your own public messages
-* Base Finder: Normal / spiral scanning, container recording, thrown ender pearl detection, target-chunk center locking, spiral auto-walk view locking or temporary steering, and optional Xaero waypoints; created-waypoint chat names are bolded with the actual Xaero waypoint color
-* Turtle Potion Thrower: Throws a splash turtle potion from a bind, with offhand support, original-slot restore, Quick Swap, and Notify
+* Better Elytra Fly: Configurable horizontal and vertical flight control with auto start/stop, speed limiting, no-drag mode, and low-durability elytra replacement.
+* Elytra Fly Path: Flies toward a target X/Z coordinate with Nether conversion, automatic takeoff, arrival stopping, and optional disconnect.
+* Chicken Nametags: Renders configurable name, health, and distance labels for nearby chickens.
+* Sniffer Nametags: Renders configurable name, health, and distance labels for nearby sniffers.
+* Auto Login: Automates supported 2b2t.xin login, quiz, Daily Flower check-in, and join flows while encrypting offline-account passwords.
+* Chat Filter: Separately filters MSG, public chat, and death messages with independent allowlists and an own-message bypass enabled by default.
+* Turtle Potion Thrower: One-shot bind for normal, long, or strong splash Turtle Master potions with offhand, hotbar, Quick Swap, slot restore, and notification support.
+* Base Finder: Normal/spiral scanning, checkpoint resume, immediate visited-chunk rendering, container and pearl recording, and optional Xaero waypoints with area limits and exact creation-message colors.
 
-For implementation details and feature-specific notes, see the [Feature Logic Guide](docs/README_LOGIC_EN.md).
+For implementation details and feature-specific notes, see the [Feature Logic Guide](docs/README_LOGIC_EN.md). The staged Minecraft 1.21.1 port and acceptance criteria are documented in the [1.21.1 Compatibility Plan](docs/MC_1_21_1_PORT_PLAN.md).
 
 ## Requirements
 
@@ -104,7 +104,7 @@ This project is mainly designed for the 2b2t.xin use case. Please check server r
 
 WaveXinAddon was originally inspired by [EasyAddon](https://github.com/IDhammaI/easyaddon) by [IDhammaI](https://github.com/IDhammaI).
 
-Spiral Scan is inspired by [WTmbp](https://github.com/2698269088/WTmbp) by 2698269088.
+Spiral Scan is inspired by [WTmbp](https://github.com/2698269088/WTmbp) by [2698269088](https://github.com/2698269088).
 
 WaveXinAddon is now **independently** modified and maintained by [WaltomAdaam](https://github.com/WaltomAdaam2).
 

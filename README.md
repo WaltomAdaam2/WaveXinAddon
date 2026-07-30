@@ -10,16 +10,16 @@ WaveXinAddon 是一个为 **2b2t.xin** 服务器设计的 Meteor Client Addon (�
 
 ## 功能
 
-* Better Elytra Fly：鞘翅飞行辅助，包含耐久过低时自动更换备用鞘翅
-* Simple Elytra Fly Path：简单坐标路径飞行
-* ChickenNametags：鸡实体名牌显示
-* SnifferNametags：嗅探兽实体名牌显示
-* Auto Login：2b2t.xin 自动登录、自动加入和每日小红花签到
-* Chat Filter：私信、公共聊天和死亡消息过滤，支持 MSG / Public 独立白名单；Public 仅识别 `<玩家名> 消息` 格式，默认显示自己发送的公共聊天
-* Base Finder：普通扫描 / 螺旋扫描、容器记录、被扔出的末影珍珠检测、目标区块中心锁定、螺旋自动走路视角锁定/临时转向和可选 Xaero 路径点；创建提示会用实际 Xaero 颜色加粗显示路径点名称
-* Turtle Potion Thrower：绑定快捷键后一键投掷喷溅型神龟药水，支持副手、原槽位恢复、Quick Swap 和 Notify
+* 鞘翅飞行 (Better Elytra Fly)：提供可调水平/垂直飞行控制、自动开始与停止、速度限制、无阻力，以及低耐久时自动更换备用鞘翅。
+* 鞘翅路径飞行 (Elytra Fly Path)：自动飞向目标 X/Z 坐标，支持下界坐标换算、自动起飞、到达停止和自动断开。
+* 鸡标签名显示 (Chicken Nametags)：为范围内的鸡显示可调名称、生命值和距离标签。
+* 嗅探兽标签名显示 (Sniffer Nametags)：为范围内的嗅探兽显示可调名称、生命值和距离标签。
+* 自动登录 (Auto Login)：自动处理 2b2t.xin 支持的登录、答题、每日小红花签到和加入流程，并加密保存离线账号密码。
+* 聊天过滤 (Chat Filter)：分别过滤 MSG 私聊、公共聊天和死亡消息，使用独立白名单，并默认保留自己发送的公共聊天。
+* 神龟药水投掷 (Turtle Potion Thrower)：通过快捷键一次性投掷普通、长效或增强喷溅型神龟药水，支持副手、快捷栏、Quick Swap、槽位恢复和通知。
+* 基地狩猎扫图 (Base Finder)：提供普通/螺旋扫描、断点恢复、即时已访问区块渲染、容器与末影珍珠记录，以及带区域限额和真实颜色提示的可选 Xaero 路径点。
 
-更多实现逻辑与注意事项请参阅 [功能逻辑说明](docs/README_LOGIC.md)。
+更多实现逻辑与注意事项请参阅 [功能逻辑说明](docs/README_LOGIC.md)。Minecraft 1.21.1 的双版本移植步骤与验收标准参阅 [1.21.1 兼容实施计划](docs/MC_1_21_1_PORT_PLAN.md)。
 
 ## 环境要求
 
@@ -104,7 +104,7 @@ Simulation Distance 建议 7
 
 WaveXinAddon was originally inspired by [EasyAddon](https://github.com/IDhammaI/easyaddon) by [IDhammaI](https://github.com/IDhammaI).
 
-Spiral Scan is inspired by [WTmbp](https://github.com/2698269088/WTmbp) by 2698269088.
+Spiral Scan is inspired by [WTmbp](https://github.com/2698269088/WTmbp) by [2698269088](https://github.com/2698269088).
 
 WaveXinAddon is now **independently** modified and maintained by [WaltomAdaam](https://github.com/WaltomAdaam2).
 
