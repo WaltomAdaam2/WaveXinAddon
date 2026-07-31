@@ -1,10 +1,10 @@
-name: Build Main and Snapshot
+name: Build Version Branches
 on:
   push:
     branches:
-      - main
+      - 1.21.11
       - SNAPSHOT
-      - mc-1.21.1
+      - 1.21.1
 
 permissions:
   contents: read
