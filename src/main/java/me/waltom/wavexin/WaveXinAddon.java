@@ -27,7 +27,7 @@ import org.slf4j.Logger;
 public class WaveXinAddon extends MeteorAddon {
     public static final Logger LOG = LogUtils.getLogger();
     public static final Category CATEGORY = new Category("WaveXinAddon");
-    private static final Identifier CHAT_AVATAR = MeteorClient.identifier("textures/icons/chat/wavexin.png");
+    private static final Identifier CHAT_AVATAR = Identifier.of("wavexin", "textures/icons/chat/wavexin.png");
 
     @Override
     public void onInitialize() {
