@@ -13,6 +13,7 @@ import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.Collection;
 import java.util.Map;
+import java.util.OptionalLong;
 
 final class LitematicaProjection {
     private static final String DATA_MANAGER = "fi.dy.masa.litematica.data.DataManager";
@@ -86,7 +87,8 @@ final class LitematicaProjection {
                 max(pos1, pos2),
                 schematicWorld,
                 countEntries(placement, "getEntityListForRegion"),
-                countEntries(placement, "getBlockEntityMapForRegion")
+                countEntries(placement, "getBlockEntityMapForRegion"),
+                placementSignature(placement)
             );
         } catch (ProjectionException e) {
             throw e;
@@ -155,6 +157,24 @@ final class LitematicaProjection {
         return count;
     }
 
+    private static String placementSignature(Object placement) throws ReflectiveOperationException {
+        StringBuilder result = new StringBuilder();
+        Object box = enclosingBox(placement);
+        if (box != null) {
+            result.append(box.getClass().getMethod("getPos1").invoke(box)).append('|');
+            result.append(box.getClass().getMethod("getPos2").invoke(box)).append('|');
+        }
+        for (String methodName : new String[]{"getOrigin", "getRotation", "getMirror"}) {
+            try {
+                result.append(placement.getClass().getMethod(methodName).invoke(placement));
+            } catch (NoSuchMethodException ignored) {
+                result.append("unavailable");
+            }
+            result.append('|');
+        }
+        return result.toString();
+    }
+
     private static BlockPos min(BlockPos first, BlockPos second) {
         return new BlockPos(
             Math.min(first.getX(), second.getX()),
@@ -190,7 +210,8 @@ final class LitematicaProjection {
         BlockPos max,
         World schematicWorld,
         int entityCount,
-        int blockEntityCount
+        int blockEntityCount,
+        String placementSignature
     ) {
         BlockState targetState(BlockPos pos) {
             return schematicWorld.getBlockState(pos);
@@ -198,10 +219,58 @@ final class LitematicaProjection {
 
         boolean isStillSelected() {
             try {
-                return selectedPlacementMethod.invoke(manager) == placement;
+                return selectedPlacementMethod.invoke(manager) == placement
+                    && placementSignature.equals(LitematicaProjection.placementSignature(placement));
             } catch (ReflectiveOperationException e) {
                 return false;
             }
+        }
+
+        OptionalLong remainingBlockCount() {
+            try {
+                Object materialList = placement.getClass().getMethod("getMaterialList").invoke(placement);
+                if (materialList == null) return OptionalLong.empty();
+                invokeIfPresent(materialList, "reCreateMaterialList");
+
+                for (String methodName : new String[]{"getCountMissing", "getMissingCount", "getMaterialCountMissing"}) {
+                    Object value = invokeIfPresent(materialList, methodName);
+                    if (value instanceof Number number) return OptionalLong.of(Math.max(0L, number.longValue()));
+                }
+                for (String methodName : new String[]{"getMaterialsMissing", "getMaterialsAll", "getMaterialListAll"}) {
+                    Object value = invokeIfPresent(materialList, methodName);
+                    if (value instanceof Iterable<?> entries) return OptionalLong.of(sumMissing(entries));
+                }
+            } catch (ReflectiveOperationException | RuntimeException ignored) {
+            }
+            return OptionalLong.empty();
+        }
+
+        private static Object invokeIfPresent(Object owner, String methodName) throws ReflectiveOperationException {
+            try {
+                return owner.getClass().getMethod(methodName).invoke(owner);
+            } catch (NoSuchMethodException ignored) {
+                return null;
+            }
+        }
+
+        private static long sumMissing(Iterable<?> entries) throws ReflectiveOperationException {
+            long total = 0L;
+            for (Object entry : entries) {
+                if (entry == null) continue;
+                Number missing = number(entry, "getCountMissing", "getMissingCount");
+                Number mismatched = number(entry, "getCountMismatch", "getCountMismatched");
+                if (missing != null) total += Math.max(0L, missing.longValue());
+                if (mismatched != null) total += Math.max(0L, mismatched.longValue());
+            }
+            return total;
+        }
+
+        private static Number number(Object owner, String... methodNames) throws ReflectiveOperationException {
+            for (String methodName : methodNames) {
+                Object value = invokeIfPresent(owner, methodName);
+                if (value instanceof Number number) return number;
+            }
+            return null;
         }
     }
 

@@ -24,26 +24,20 @@ public final class PrinterSelectionCommand extends Command {
 
     @Override
     public void build(LiteralArgumentBuilder<CommandSource> builder) {
-        builder.executes(context -> showStandingBlock())
+        builder.executes(context -> setStandingCorner(1))
             .then(cornerBranch("1", 1))
             .then(cornerBranch("2", 2));
     }
 
     private LiteralArgumentBuilder<CommandSource> cornerBranch(String name, int corner) {
-        return literal(name).then(
+        return literal(name).executes(context -> setStandingCorner(corner)).then(
             coordinate("x", 0).then(
                 coordinate("y", 1).then(
                     coordinate("z", 2).executes(context -> {
                         int x = IntegerArgumentType.getInteger(context, "x");
                         int y = IntegerArgumentType.getInteger(context, "y");
                         int z = IntegerArgumentType.getInteger(context, "z");
-                        printer.setSupplyCorner(corner, new BlockPos(x, y, z));
-                        info(WaveXinI18n.tr(
-                            "message.wavexin.litematica_printer.selection_set",
-                            "Restock region point %d set to %d %d %d.",
-                            corner, x, y, z
-                        ));
-                        return SINGLE_SUCCESS;
+                        return setCorner(corner, new BlockPos(x, y, z));
                     })
                 )
             )
@@ -64,7 +58,7 @@ public final class PrinterSelectionCommand extends Command {
         return builder.buildFuture();
     }
 
-    private int showStandingBlock() {
+    private int setStandingCorner(int corner) {
         BlockPos pos = standingBlock();
         if (pos == null) {
             error(WaveXinI18n.tr(
@@ -74,17 +68,28 @@ public final class PrinterSelectionCommand extends Command {
             return 0;
         }
 
+        return setCorner(corner, pos);
+    }
+
+    private int setCorner(int corner, BlockPos pos) {
+        try {
+            printer.setSupplyCorner(corner, pos);
+        } catch (IllegalArgumentException e) {
+            error(WaveXinI18n.tr(
+                "error.wavexin.litematica_printer.supply_region_too_small",
+                "The supply region must contain at least 2 blocks (1x1x2 minimum)."
+            ));
+            return 0;
+        }
         info(WaveXinI18n.tr(
-            "message.wavexin.litematica_printer.selection_usage",
-            "Standing block: %d %d %d. Use %s 1 %d %d %d or %s 2 %d %d %d.",
-            pos.getX(), pos.getY(), pos.getZ(),
-            toString(), pos.getX(), pos.getY(), pos.getZ(),
-            toString(), pos.getX(), pos.getY(), pos.getZ()
+            "message.wavexin.litematica_printer.selection_set",
+            "Restock region point %d set to %d %d %d.",
+            corner, pos.getX(), pos.getY(), pos.getZ()
         ));
         return SINGLE_SUCCESS;
     }
 
     private BlockPos standingBlock() {
-        return mc.player == null ? null : mc.player.getBlockPos().down();
+        return mc.player == null ? null : mc.player.getBlockPos();
     }
 }
