@@ -96,13 +96,11 @@ final class LitematicaProjection {
     }
 
     private static boolean supportsMinecraft(ModMetadata metadata, Version minecraftVersion) {
-        boolean declared = false;
         for (ModDependency dependency : metadata.getDependencies()) {
             if (!"minecraft".equals(dependency.getModId()) || dependency.getKind() != ModDependency.Kind.DEPENDS) continue;
-            declared = true;
             if (dependency.matches(minecraftVersion)) return true;
         }
-        return !declared;
+        return false;
     }
 
     private static Object enclosingBox(Object placement) throws ReflectiveOperationException {

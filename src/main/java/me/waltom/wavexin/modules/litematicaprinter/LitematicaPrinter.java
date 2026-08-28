@@ -135,6 +135,7 @@ public final class LitematicaPrinter extends WaveXinModule {
     private final List<DeferredIssue> deferred = new ArrayList<>();
     private final Set<BlockPos> deferredPositions = new HashSet<>();
     private final Map<BlockPos, AwaitingPlacement> awaiting = new HashMap<>();
+    private final Map<BlockPos, Integer> placementAttempts = new HashMap<>();
     private final Map<Item, Integer> missing = new LinkedHashMap<>();
     private final Map<Item, Integer> supplyGoals = new LinkedHashMap<>();
     private final Deque<BlockPos> supplyContainers = new ArrayDeque<>();
@@ -282,6 +283,7 @@ public final class LitematicaPrinter extends WaveXinModule {
             BlockState actual = mc.world.getBlockState(target.pos());
             if (PrinterState.compatibleDuringBuild(target.state(), actual)) {
                 awaiting.remove(target.pos());
+                placementAttempts.remove(target.pos());
                 roundProgress = true;
                 continue;
             }
@@ -320,7 +322,8 @@ public final class LitematicaPrinter extends WaveXinModule {
                 return;
             }
             if (placement.place(target.state(), reachable)) {
-                awaiting.put(target.pos(), new AwaitingPlacement(target, totalTicks, wait == null ? 1 : wait.attempts() + 1));
+                int attempts = placementAttempts.merge(target.pos(), 1, Integer::sum);
+                awaiting.put(target.pos(), new AwaitingPlacement(target, totalTicks, attempts));
                 placed++;
                 if (placed >= placementsPerTick.get()) return;
             }
@@ -352,15 +355,22 @@ public final class LitematicaPrinter extends WaveXinModule {
     }
 
     private void expirePlacements() {
+        List<ProjectionScan.Target> rejected = new ArrayList<>();
         Iterator<Map.Entry<BlockPos, AwaitingPlacement>> iterator = awaiting.entrySet().iterator();
         while (iterator.hasNext()) {
             Map.Entry<BlockPos, AwaitingPlacement> entry = iterator.next();
             if (PrinterState.compatibleDuringBuild(entry.getValue().target().state(), mc.world.getBlockState(entry.getKey()))) {
                 iterator.remove();
+                placementAttempts.remove(entry.getKey());
                 roundProgress = true;
             } else if (totalTicks - entry.getValue().sentAt() > actionTimeout.get()) {
                 iterator.remove();
+                if (entry.getValue().attempts() >= 3) rejected.add(entry.getValue().target());
             }
+        }
+        for (ProjectionScan.Target target : rejected) {
+            skipTarget(target, "PLACEMENT_REJECTED");
+            roundProgress = true;
         }
     }
 
@@ -613,6 +623,7 @@ public final class LitematicaPrinter extends WaveXinModule {
         if (target == null) return;
         pending.remove(target);
         awaiting.remove(target.pos());
+        placementAttempts.remove(target.pos());
         defer(target.pos(), reason);
         roundRemaining = Math.min(roundRemaining, pending.size());
     }
@@ -649,8 +660,8 @@ public final class LitematicaPrinter extends WaveXinModule {
     }
 
     private void pauseError(String key, String fallback, Object... args) {
-        if (navigator != null) navigator.cancel();
-        inventory.releasePersistent();
+        if (navigator != null) navigator.restore();
+        inventory.close();
         containerSession.close();
         setStage(Stage.PAUSED);
         errorKey(key, fallback, args);
@@ -682,6 +693,7 @@ public final class LitematicaPrinter extends WaveXinModule {
         deferred.clear();
         deferredPositions.clear();
         awaiting.clear();
+        placementAttempts.clear();
         missing.clear();
         supplyGoals.clear();
         supplyContainers.clear();

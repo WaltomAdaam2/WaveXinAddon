@@ -21,8 +21,8 @@ final class PrinterStandPlanner {
             for (int x = target.getX() - 4; x <= target.getX() + 4; x++) {
                 for (int z = target.getZ() - 4; z <= target.getZ() + 4; z++) {
                     BlockPos feet = new BlockPos(x, y, z);
-                    if (!mc.world.getBlockState(feet).isReplaceable()) continue;
-                    if (!mc.world.getBlockState(feet.up()).isReplaceable()) continue;
+                    if (!mc.world.getBlockState(feet).isReplaceable() || !mc.world.getFluidState(feet).isEmpty()) continue;
+                    if (!mc.world.getBlockState(feet.up()).isReplaceable() || !mc.world.getFluidState(feet.up()).isEmpty()) continue;
                     if (mc.world.getBlockState(feet.down()).isReplaceable()) continue;
                     Vec3d eyes = Vec3d.ofBottomCenter(feet).add(0, mc.player.getStandingEyeHeight(), 0);
                     if (eyes.squaredDistanceTo(target.toCenterPos()) > reach * reach) continue;
