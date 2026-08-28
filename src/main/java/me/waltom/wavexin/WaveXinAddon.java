@@ -1,5 +1,6 @@
 package me.waltom.wavexin;
 
+import me.waltom.wavexin.commands.PrinterSelectionCommand;
 import me.waltom.wavexin.modules.sniffernametags.SnifferNametags;
 import me.waltom.wavexin.modules.elytraflypath.ElytraFlyPath;
 import me.waltom.wavexin.modules.chickennametags.ChickenNametags;
@@ -8,11 +9,13 @@ import me.waltom.wavexin.modules.turtlepotionthrower.TurtlePotionThrower;
 import me.waltom.wavexin.modules.betterelytrafly.BetterElytraFly;
 import me.waltom.wavexin.modules.basefinder.BaseFinder;
 import me.waltom.wavexin.modules.litematicaprinter.LitematicaPrinter;
+import me.waltom.wavexin.modules.litematicaprinter.PrinterSupplySelectionRenderer;
 import me.waltom.wavexin.modules.autologin.AutoLogin;
 import me.waltom.wavexin.core.WaveXinSettingsAutoSaver;
 import me.waltom.wavexin.i18n.WaveXinI18n;
 import com.mojang.logging.LogUtils;
 import meteordevelopment.meteorclient.MeteorClient;
+import meteordevelopment.meteorclient.commands.Commands;
 import meteordevelopment.meteorclient.utils.player.ChatUtils;
 import meteordevelopment.meteorclient.systems.modules.misc.BetterChat;
 import net.minecraft.text.Style;
@@ -44,7 +47,10 @@ public class WaveXinAddon extends MeteorAddon {
         Modules.get().add(new ChatFilter());
         Modules.get().add(new TurtlePotionThrower());
         Modules.get().add(new BaseFinder());
-        Modules.get().add(new LitematicaPrinter());
+        LitematicaPrinter printer = new LitematicaPrinter();
+        Modules.get().add(printer);
+        Commands.add(new PrinterSelectionCommand(printer));
+        MeteorClient.EVENT_BUS.subscribe(new PrinterSupplySelectionRenderer(printer));
         WaveXinI18n.validateResources(Modules.get().getAll());
     }
 

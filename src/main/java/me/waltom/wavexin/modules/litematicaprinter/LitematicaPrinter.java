@@ -2,12 +2,17 @@ package me.waltom.wavexin.modules.litematicaprinter;
 
 import me.waltom.wavexin.WaveXinAddon;
 import me.waltom.wavexin.core.WaveXinModule;
+import meteordevelopment.meteorclient.events.render.Render3DEvent;
 import meteordevelopment.meteorclient.events.world.TickEvent;
 import meteordevelopment.meteorclient.settings.BoolSetting;
+import meteordevelopment.meteorclient.settings.ColorSetting;
 import meteordevelopment.meteorclient.settings.DoubleSetting;
+import meteordevelopment.meteorclient.settings.EnumSetting;
 import meteordevelopment.meteorclient.settings.IntSetting;
 import meteordevelopment.meteorclient.settings.Setting;
 import meteordevelopment.meteorclient.settings.SettingGroup;
+import meteordevelopment.meteorclient.renderer.ShapeMode;
+import meteordevelopment.meteorclient.utils.render.color.SettingColor;
 import meteordevelopment.meteorclient.utils.world.BlockUtils;
 import meteordevelopment.orbit.EventHandler;
 import meteordevelopment.orbit.EventPriority;
@@ -34,6 +39,7 @@ public final class LitematicaPrinter extends WaveXinModule {
 
     private final SettingGroup sgGeneral = settings.createGroup("General");
     private final SettingGroup sgRestock = settings.createGroup("Restock Region");
+    private final SettingGroup sgSupplyRender = settings.createGroup("Supply Region Render");
 
     private final Setting<Integer> scanPositionsPerTick = sgGeneral.add(new IntSetting.Builder()
         .name("Scan Positions Per Tick")
@@ -127,6 +133,36 @@ public final class LitematicaPrinter extends WaveXinModule {
         .build()
     );
 
+    private final Setting<Boolean> renderSupplyRegion = sgSupplyRender.add(new BoolSetting.Builder()
+        .name("Render Region")
+        .description("Renders the selected restock cuboid even while the printer is disabled.")
+        .defaultValue(true)
+        .build()
+    );
+
+    private final Setting<ShapeMode> supplyRegionShapeMode = sgSupplyRender.add(new EnumSetting.Builder<ShapeMode>()
+        .name("Shape Mode")
+        .description("Rendering style for the selected restock cuboid.")
+        .defaultValue(ShapeMode.Both)
+        .build()
+    );
+
+    private final Setting<SettingColor> supplyRegionSideColor = sgSupplyRender.add(new ColorSetting.Builder()
+        .name("Side Color")
+        .description("Fill color for the selected restock cuboid.")
+        .defaultValue(new SettingColor(0, 170, 255, 35))
+        .visible(() -> supplyRegionShapeMode.get() == ShapeMode.Sides || supplyRegionShapeMode.get() == ShapeMode.Both)
+        .build()
+    );
+
+    private final Setting<SettingColor> supplyRegionLineColor = sgSupplyRender.add(new ColorSetting.Builder()
+        .name("Line Color")
+        .description("Outline color for the selected restock cuboid.")
+        .defaultValue(new SettingColor(0, 220, 255, 190))
+        .visible(() -> supplyRegionShapeMode.get() == ShapeMode.Lines || supplyRegionShapeMode.get() == ShapeMode.Both)
+        .build()
+    );
+
     private final PrinterInventory inventory = new PrinterInventory();
     private final PrinterPlacement placement = new PrinterPlacement(inventory);
     private final SupplyContainerSession containerSession = new SupplyContainerSession();
@@ -166,6 +202,35 @@ public final class LitematicaPrinter extends WaveXinModule {
 
     public LitematicaPrinter() {
         super(WaveXinAddon.CATEGORY, "litematica-printer", "Builds the selected Litematica projection with packet placement and Baritone navigation.");
+    }
+
+    public void setSupplyCorner(int corner, BlockPos pos) {
+        if (corner == 1) {
+            restockX1.set(pos.getX());
+            restockY1.set(pos.getY());
+            restockZ1.set(pos.getZ());
+        } else if (corner == 2) {
+            restockX2.set(pos.getX());
+            restockY2.set(pos.getY());
+            restockZ2.set(pos.getZ());
+        } else {
+            throw new IllegalArgumentException("Supply corner must be 1 or 2");
+        }
+    }
+
+    void renderSupplySelection(Render3DEvent event) {
+        if (!renderSupplyRegion.get() || mc.world == null) return;
+        int minX = Math.min(restockX1.get(), restockX2.get());
+        int minY = Math.min(restockY1.get(), restockY2.get());
+        int minZ = Math.min(restockZ1.get(), restockZ2.get());
+        int maxX = Math.max(restockX1.get(), restockX2.get());
+        int maxY = Math.max(restockY1.get(), restockY2.get());
+        int maxZ = Math.max(restockZ1.get(), restockZ2.get());
+        event.renderer.box(
+            minX, minY, minZ,
+            maxX + 1.0, maxY + 1.0, maxZ + 1.0,
+            supplyRegionSideColor.get(), supplyRegionLineColor.get(), supplyRegionShapeMode.get(), 0
+        );
     }
 
     @Override
