@@ -41,6 +41,7 @@ dependencies {
 
     // Meteor Client
     modImplementation "meteordevelopment:meteor-client:${project.meteor_version}"
+    modCompileOnly "meteordevelopment:baritone:${project.baritone_version}"
 }
 
 tasks {
@@ -353,11 +354,18 @@ tasks.register("testWaveXinTurtlePotionThrowerBehavior", JavaExec) {
     mainClass = "me.waltom.wavexin.modules.turtlepotionthrower.TurtlePotionThrowerBehaviorTest"
 }
 
+tasks.register("testWaveXinLitematicaPrinterBehavior", JavaExec) {
+    dependsOn(tasks.named("testClasses"))
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = "me.waltom.wavexin.modules.litematicaprinter.CuboidCursorBehaviorTest"
+}
+
 tasks.named("test") {
     dependsOn(tasks.named("testWaveXinI18nBehavior"))
     dependsOn(tasks.named("testWaveXinChatFilterBehavior"))
     dependsOn(tasks.named("testWaveXinBaseFinderBehavior"))
     dependsOn(tasks.named("testWaveXinTurtlePotionThrowerBehavior"))
+    dependsOn(tasks.named("testWaveXinLitematicaPrinterBehavior"))
 }
 
 tasks.named("check") {
