@@ -296,6 +296,11 @@ public final class LitematicaPrinter extends WaveXinModule {
                 return;
             }
 
+            if (!actual.isReplaceable()) {
+                startMining(target);
+                return;
+            }
+
             if (target.state().isAir()) {
                 startMining(target);
                 return;
@@ -308,13 +313,7 @@ public final class LitematicaPrinter extends WaveXinModule {
             }
 
             PrinterPlacement.Candidate anywhere = placement.findCandidate(target.pos(), target.state(), interactionRange.get(), false);
-            if (anywhere == null) {
-                if (!actual.isReplaceable() && !PrinterState.compatibleDuringBuild(target.state(), actual)) {
-                    startMining(target);
-                    return;
-                }
-                continue;
-            }
+            if (anywhere == null) continue;
 
             PrinterPlacement.Candidate reachable = placement.findCandidate(target.pos(), target.state(), interactionRange.get(), true);
             if (reachable == null) {
@@ -390,7 +389,7 @@ public final class LitematicaPrinter extends WaveXinModule {
             return;
         }
         BlockState actual = mc.world.getBlockState(miningTarget.pos());
-        if (actual.isAir() || actual.isReplaceable()) {
+        if (actual.isAir()) {
             inventory.releasePersistent();
             miningTarget = null;
             roundProgress = true;
