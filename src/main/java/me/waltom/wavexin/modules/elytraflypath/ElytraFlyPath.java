@@ -1,4 +1,4 @@
-package me.waltom.wavexin.modules.simpleelytraflypath;
+package me.waltom.wavexin.modules.elytraflypath;
 
 import me.waltom.wavexin.events.TravelEvent;
 import me.waltom.wavexin.events.MoveEvent;
@@ -28,7 +28,7 @@ import net.minecraft.util.math.ChunkPos;
 import net.minecraft.util.math.Vec3d;
 import java.util.function.Consumer;
 
-public class SimpleElytraFlyPath extends WaveXinModule {
+public class ElytraFlyPath extends WaveXinModule {
     private static final MinecraftClient mc = MinecraftClient.getInstance();
     private static final int MAX_TARGET_COORDINATE = 30000000;
 
@@ -101,7 +101,7 @@ public class SimpleElytraFlyPath extends WaveXinModule {
     public final Setting<Double> speed = sgFlight.add(new DoubleSetting.Builder()
         .name("Flight Speed")
         .description("Horizontal flight speed")
-        .defaultValue(2.5)
+        .defaultValue(1.8)
         .min(0.1)
         .sliderMin(0.1)
         .max(20)
@@ -119,7 +119,7 @@ public class SimpleElytraFlyPath extends WaveXinModule {
 
     public final Setting<Boolean> autoStopOnArrival = sgFlight.add(new BoolSetting.Builder()
         .name("Stop on Arrival")
-        .description("Disables Simple Elytra Fly Path after arriving at the target")
+        .description("Disables Elytra Fly Path after arriving at the target")
         .defaultValue(true)
         .build()
     );
@@ -152,8 +152,8 @@ public class SimpleElytraFlyPath extends WaveXinModule {
     
 
 
-    public SimpleElytraFlyPath() {
-        super(WaveXinAddon.CATEGORY, "simple-elytra-fly-path", "Automatic elytra path flight");
+    public ElytraFlyPath() {
+        super(WaveXinAddon.CATEGORY, "elytra-fly-path", "Automatic elytra path flight");
     }
 
     
@@ -182,7 +182,7 @@ public class SimpleElytraFlyPath extends WaveXinModule {
         }
 
         
-        infoKey("message.wavexin.simple_elytra_fly_path.started", "Started pathing to X=%d, Z=%d", getTargetX(), getTargetZ());
+        infoKey("message.wavexin.elytra_fly_path.started", "Started pathing to X=%d, Z=%d", getTargetX(), getTargetZ());
     }
 
     
@@ -321,7 +321,7 @@ public class SimpleElytraFlyPath extends WaveXinModule {
         }
 
         if (shouldDisconnect && mc.getNetworkHandler() != null) {
-            mc.getNetworkHandler().getConnection().disconnect(WaveXinI18n.text("disconnect.wavexin.simple_elytra_fly_path.arrived", "Auto quit after arriving at target"));
+            mc.getNetworkHandler().getConnection().disconnect(WaveXinI18n.text("disconnect.wavexin.elytra_fly_path.arrived", "Auto quit after arriving at target"));
         }
     }
 

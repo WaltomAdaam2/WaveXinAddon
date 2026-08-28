@@ -1,7 +1,7 @@
 package me.waltom.wavexin;
 
 import me.waltom.wavexin.modules.sniffernametags.SnifferNametags;
-import me.waltom.wavexin.modules.simpleelytraflypath.SimpleElytraFlyPath;
+import me.waltom.wavexin.modules.elytraflypath.ElytraFlyPath;
 import me.waltom.wavexin.modules.chickennametags.ChickenNametags;
 import me.waltom.wavexin.modules.chatfilter.ChatFilter;
 import me.waltom.wavexin.modules.turtlepotionthrower.TurtlePotionThrower;
@@ -36,7 +36,7 @@ public class WaveXinAddon extends MeteorAddon {
         BetterChat.registerCustomHead("[WaveXin]", CHAT_AVATAR);
         MeteorClient.EVENT_BUS.subscribe(new WaveXinSettingsAutoSaver());
         Modules.get().add(new BetterElytraFly());
-        Modules.get().add(new SimpleElytraFlyPath());
+        Modules.get().add(new ElytraFlyPath());
         Modules.get().add(new ChickenNametags());
         Modules.get().add(new SnifferNametags());
         Modules.get().add(new AutoLogin());
