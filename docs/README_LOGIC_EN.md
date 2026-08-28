@@ -11,14 +11,14 @@ This page describes implementation details and notable behavior for the public C
 - Replacement can be limited to active gliding. Missing-spare warnings are rate-limited to prevent chat spam.
 - The Inventory Tweaks compatibility option temporarily disables that module during replacement and restores it after the configured delay.
 
-### Simple Elytra Fly Path
+### Elytra Fly Path
 
 - Uses Target X and Target Z to calculate a two-dimensional direction, then adjusts view and movement while gliding toward the target.
 - With `Nether Pos Calculation` enabled, the entered X and Z are each divided by 8 before they become the actual target coordinates.
 - Arrival uses `Arrival Distance`. When both automatic stopping and automatic disconnect are enabled, the module stops before disconnecting.
 - The module can take off automatically and warns when started outside its recommended altitude. Its own settings determine the final flight speed.
 
-### ChickenNametags And SnifferNametags
+### Chicken Nametags and Sniffer Nametags
 
 - Render projected custom nametags for chickens or sniffers during the 2D render stage.
 - Nametags can show entity name, health, and distance, with configurable range, scale, background, and text colors.
@@ -50,9 +50,9 @@ This page describes implementation details and notable behavior for the public C
 
 - `Normal Scan` scans outward in rings from its starting chunk, moves between targets, and can wait for chunk loading. It prints one concise message after each completed ring. The Restart fields remain editable Meteor settings. With `Resume Previous Scan` enabled, the entered ring, route, origin, and checkpoint values are used directly; Base Finder saves the current checkpoint once when the module is disabled and synchronizes these fields without per-tick refresh; disabling it while returning to a saved checkpoint preserves that checkpoint instead of writing the intermediate position. Disabling it from the settings screen or a keybind uses the same flow. The Restart reset button clears saved Normal Scan restart data.
 - `Spiral Scan` has an independent spiral route, step size, segment count, and rendering settings. Auto-walk continuously aims at the current target chunk center, so edge drift is corrected before advancing to the next segment. With `Lock View` enabled, the visible view locks toward the current target; with it disabled, auto-navigation still uses temporary steering and restores the player's view each tick. Optional sprint and screen pause are available. It does not reuse the Normal Scan checkpoint flow.
-- Normal render defaults to 128 chunks, allows up to 256 chunks, and preloads 10 rings by default up to a limit of 20. While returning to a saved checkpoint, that chunk uses a separate configurable highlight color that defaults to `#E0B0FF`; normal route colors resume immediately after arrival.
+- A traversed chunk is marked visited on the same game tick, and visited color takes priority over current-path color, so it turns green without waiting for the next turn. Normal render defaults to 128 chunks, allows up to 256 chunks, and preloads 10 rings by default up to a limit of 20. While returning to a saved checkpoint, that chunk uses a separate configurable highlight color that defaults to `#E0B0FF`; normal route colors resume immediately after arrival.
 - Both scan modes share container recording: a chunk is recorded when its selected-container count reaches the threshold. `Detect Thrown Pearls` announces newly seen thrown ender pearl entities with the same warning-chat style as base detection. Ordinary target-center correction is normal movement and does not write warn logs; `BaseFinderDebug` warn logs are reserved for missing player/world state, current-chunk waits, and other diagnostic states.
-- Xaero waypoints are optional. Xaero Minimap is checked only when the option is enabled; if it is unavailable, the option turns off with a chat warning while normal container recording remains available. Base waypoint names support a number, prefix, and suffix, with area-radius and per-area limits used for deduplication. `Record Thrown Pearl` creates unlimited `Pearl 1`, `Pearl 2` waypoints with `P1`, `P2` aliases, uses the same waypoint color setting, and does not count against the base waypoints-per-area limit. Successful creation messages keep the WaveXin prefix and render the waypoint name in bold using the actual color written to Xaero.
+- Xaero waypoints are optional. Xaero Minimap is checked only when the option is enabled; if it is unavailable, the option turns off with a chat warning while normal container recording remains available. Base waypoint names support a number, prefix, and suffix, with area-radius and per-area limits used for deduplication. `Area Radius` defaults to 5 and `Waypoints per Area` defaults to 3. `Record Thrown Pearl` creates unlimited `Pearl 1`, `Pearl 2` waypoints with `P1`, `P2` aliases, uses the same waypoint color setting, and does not count against the base waypoints-per-area limit. Successful creation messages keep the WaveXin prefix and render the waypoint name in bold using Xaero's actual 0–15 color mapping. A random color ID is generated once and reused for both the waypoint and its chat message.
 
 ### Bilingual Implementation
 

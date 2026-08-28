@@ -47,6 +47,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 import java.util.regex.Matcher;
@@ -77,6 +78,18 @@ public class AutoLogin extends WaveXinModule {
     private static final int COMPASS_HOTBAR_SLOT_FALLBACK = 2;
     private static final int JOIN_GUI_SLOT_FALLBACK = 4;
     private static final int AUTO_ANSWER_DELAY_TICKS = 5;
+    private static final long DIAGNOSTIC_LOG_INTERVAL_MS = 30_000L;
+    private static final Map<String, Long> LAST_DIAGNOSTIC_LOGS = new ConcurrentHashMap<>();
+
+    private static void warnRateLimited(String stage, Throwable error) {
+        long now = System.currentTimeMillis();
+        Long previous = LAST_DIAGNOSTIC_LOGS.get(stage);
+        if (previous != null && now - previous < DIAGNOSTIC_LOG_INTERVAL_MS) return;
+        LAST_DIAGNOSTIC_LOGS.put(stage, now);
+
+        String exceptionType = error == null ? "none" : error.getClass().getName();
+        WaveXinAddon.LOG.warn("[WaveXinDebug] module=AutoLogin diagnostic={} exception={}", stage, exceptionType);
+    }
 
     static {
         SettingsWidgetFactory.registerCustomFactory(ActionButtonSetting.class, theme -> (table, setting) -> {
@@ -602,8 +615,9 @@ public class AutoLogin extends WaveXinModule {
         serverChecked = true;
         try {
             targetServer = isXinServer(mc.getNetworkHandler().getConnection().getAddress());
-        } catch (Exception ignored) {
+        } catch (Exception e) {
             targetServer = false;
+            warnRateLimited("server-detection", e);
         }
         debugKey("debug.wavexin.auto_login.server_detection", "Server detection: %s", targetServer ? WaveXinI18n.tr("debug.wavexin.auto_login.supported_server", "supported server") : WaveXinI18n.tr("debug.wavexin.auto_login.unsupported_server", "unsupported server"));
         return targetServer;
@@ -674,7 +688,8 @@ public class AutoLogin extends WaveXinModule {
             for (Text line : stack.getTooltip(net.minecraft.item.Item.TooltipContext.DEFAULT, mc.player, net.minecraft.item.tooltip.TooltipType.BASIC)) {
                 text.append(' ').append(line.getString());
             }
-        } catch (Exception ignored) {
+        } catch (Exception e) {
+            warnRateLimited("item-tooltip", e);
         }
         return matchesAny(text.toString(), keywords);
     }
@@ -747,7 +762,8 @@ public class AutoLogin extends WaveXinModule {
             for (Map.Entry<String, JsonElement> entry : json.entrySet()) {
                 try {
                     questions.put(entry.getKey(), Pattern.compile(entry.getValue().getAsString()));
-                } catch (PatternSyntaxException ignored) {
+                } catch (PatternSyntaxException e) {
+                    warnRateLimited("question-pattern", e);
                 }
             }
 
@@ -1116,7 +1132,8 @@ public class AutoLogin extends WaveXinModule {
                 if (config.passwords == null) config.passwords = new HashMap<>();
                 if (config.migratePasswords()) config.save();
                 return config;
-            } catch (Exception ignored) {
+            } catch (Exception e) {
+                warnRateLimited("config-load", e);
                 return new AutoLoginConfig();
             }
         }
@@ -1196,7 +1213,8 @@ public class AutoLogin extends WaveXinModule {
                 cipher.init(Cipher.ENCRYPT_MODE, getKey(), new GCMParameterSpec(128, iv));
                 byte[] encrypted = cipher.doFinal(plainText.getBytes(StandardCharsets.UTF_8));
                 return Base64.getEncoder().encodeToString(iv) + ":" + Base64.getEncoder().encodeToString(encrypted);
-            } catch (IOException | GeneralSecurityException ignored) {
+            } catch (IOException | GeneralSecurityException e) {
+                warnRateLimited("password-encrypt", e);
                 return "";
             }
         }
@@ -1209,7 +1227,8 @@ public class AutoLogin extends WaveXinModule {
                 Cipher cipher = Cipher.getInstance(TRANSFORMATION);
                 cipher.init(Cipher.DECRYPT_MODE, getKey(), new GCMParameterSpec(128, Base64.getDecoder().decode(parts[0])));
                 return new String(cipher.doFinal(Base64.getDecoder().decode(parts[1])), StandardCharsets.UTF_8);
-            } catch (IOException | GeneralSecurityException | IllegalArgumentException ignored) {
+            } catch (IOException | GeneralSecurityException | IllegalArgumentException e) {
+                warnRateLimited("password-decrypt", e);
                 return "";
             }
         }

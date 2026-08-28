@@ -19,6 +19,8 @@ public final class BaseFinderBehaviorTest {
         testNormalRouteCheckpointValidation();
         testPerTargetDebugGate();
         testPearlWaypointLabels();
+        testNormalRenderPriority();
+        testXaeroWaypointColorIds();
     }
 
     private static void testBlockToChunk() {
@@ -211,6 +213,30 @@ public final class BaseFinderBehaviorTest {
         assertEquals("P2", BaseFinderStateLogic.pearlWaypointAlias(2), "second pearl waypoint alias");
         assertEquals("Pearl 1", BaseFinderStateLogic.pearlWaypointName(0), "pearl waypoint name clamps low values");
         assertEquals("P1", BaseFinderStateLogic.pearlWaypointAlias(0), "pearl waypoint alias clamps low values");
+    }
+
+    private static void testNormalRenderPriority() {
+        assertEquals(BaseFinderStateLogic.NormalRenderState.RESUME_CHECKPOINT,
+            BaseFinderStateLogic.normalRenderState(true, true, true),
+            "resume checkpoint overrides every normal route color");
+        assertEquals(BaseFinderStateLogic.NormalRenderState.VISITED,
+            BaseFinderStateLogic.normalRenderState(false, true, true),
+            "visited chunk immediately overrides current path color");
+        assertEquals(BaseFinderStateLogic.NormalRenderState.CURRENT_PATH,
+            BaseFinderStateLogic.normalRenderState(false, false, true),
+            "unvisited current path keeps current path color");
+        assertEquals(BaseFinderStateLogic.NormalRenderState.TARGET,
+            BaseFinderStateLogic.normalRenderState(false, false, false),
+            "other prepared chunks use target color");
+    }
+
+    private static void testXaeroWaypointColorIds() {
+        assertEquals(BaseFinder.XaeroWaypointColor.BLACK, BaseFinder.XaeroWaypointColor.fromColorId(0), "Xaero color 0");
+        assertEquals(BaseFinder.XaeroWaypointColor.GOLD, BaseFinder.XaeroWaypointColor.fromColorId(6), "Xaero color 6");
+        assertEquals(BaseFinder.XaeroWaypointColor.BLUE, BaseFinder.XaeroWaypointColor.fromColorId(9), "Xaero color 9");
+        assertEquals(BaseFinder.XaeroWaypointColor.RED, BaseFinder.XaeroWaypointColor.fromColorId(12), "Xaero color 12");
+        assertEquals(BaseFinder.XaeroWaypointColor.WHITE, BaseFinder.XaeroWaypointColor.fromColorId(15), "Xaero color 15");
+        assertEquals(BaseFinder.XaeroWaypointColor.RANDOM, BaseFinder.XaeroWaypointColor.fromColorId(-1), "unknown Xaero color fallback");
     }
 
     private static void assertSnapshot(BaseFinderStateLogic.Snapshot snapshot, float yaw, float pitch, float headYaw, float bodyYaw, String label) {
