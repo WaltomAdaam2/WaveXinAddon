@@ -446,5 +446,17 @@
   "error.wavexin.litematica_printer.projection_no_selected_placement": "(highlight)(bold)没有选中 Litematica 投影：%s(default)",
   "error.wavexin.litematica_printer.projection_disabled_placement": "(highlight)(bold)选中的 Litematica 投影已停用：%s(default)",
   "error.wavexin.litematica_printer.projection_empty_placement": "(highlight)(bold)选中的 Litematica 投影没有已启用区域：%s(default)",
-  "error.wavexin.litematica_printer.projection_api_unavailable": "(highlight)(bold)已安装的 Litematica API 不可用或不兼容：%s(default)"
+  "error.wavexin.litematica_printer.projection_api_unavailable": "(highlight)(bold)已安装的 Litematica API 不可用或不兼容：%s(default)",
+  "group.wavexin.litematica_printer.supply_region_render": "补货区域渲染",
+  "setting.wavexin.litematica_printer.supply_region_render.render_region.title": "渲染区域",
+  "setting.wavexin.litematica_printer.supply_region_render.render_region.description": "即使投影打印机未启用，也渲染已选择的补货长方体区域。",
+  "setting.wavexin.litematica_printer.supply_region_render.shape_mode.title": "形状模式",
+  "setting.wavexin.litematica_printer.supply_region_render.shape_mode.description": "已选择补货长方体区域的渲染样式。",
+  "setting.wavexin.litematica_printer.supply_region_render.side_color.title": "侧面颜色",
+  "setting.wavexin.litematica_printer.supply_region_render.side_color.description": "已选择补货长方体区域的填充颜色。",
+  "setting.wavexin.litematica_printer.supply_region_render.line_color.title": "边线颜色",
+  "setting.wavexin.litematica_printer.supply_region_render.line_color.description": "已选择补货长方体区域的轮廓颜色。",
+  "message.wavexin.litematica_printer.selection_set": "补货区域点 %d 已设置为 %d %d %d。",
+  "message.wavexin.litematica_printer.selection_usage": "当前脚下方块：%d %d %d。使用 %s 1 %d %d %d 或 %s 2 %d %d %d。",
+  "error.wavexin.litematica_printer.selection_world_unavailable": "请先进入世界再选择补货区域。"
 }
