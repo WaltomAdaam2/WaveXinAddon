@@ -5,6 +5,7 @@
   "client": [
     "MixinClientPlayNetworkHandler",
     "MixinClientPlayerEntity",
+    "MixinBlockItemAccessor",
     "MixinPlayerEntity",
     "MixinWIntEdit",
     "MixinWTextBoxAccessor"

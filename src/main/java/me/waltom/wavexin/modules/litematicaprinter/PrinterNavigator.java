@@ -4,11 +4,15 @@ import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.util.math.BlockPos;
 
 interface PrinterNavigator {
+    void configure();
+
     void goTo(BlockPos pos, int range);
 
     boolean isNavigating();
 
     void cancel();
+
+    void restore();
 
     static boolean isBaritoneInstalled() {
         FabricLoader loader = FabricLoader.getInstance();

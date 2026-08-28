@@ -57,16 +57,21 @@ final class LitematicaProjection {
                 throw new ProjectionException(Failure.DISABLED_PLACEMENT, "The selected Litematica placement is disabled");
             }
 
-            Object box = placement.getClass().getMethod("getEclosingBox").invoke(placement);
+            Object box = enclosingBox(placement);
+            if (box == null) box = mergedSubRegionBox(placement, classLoader);
             if (box == null) {
                 throw new ProjectionException(Failure.EMPTY_PLACEMENT, "The selected Litematica placement has no enabled regions");
             }
 
             BlockPos pos1 = (BlockPos) box.getClass().getMethod("getPos1").invoke(box);
             BlockPos pos2 = (BlockPos) box.getClass().getMethod("getPos2").invoke(box);
-            World schematicWorld = (World) Class.forName(WORLD_HANDLER, true, classLoader)
-                .getMethod("getSchematicWorld")
-                .invoke(null);
+            Class<?> worldHandler = Class.forName(WORLD_HANDLER, true, classLoader);
+            World schematicWorld = (World) worldHandler.getMethod("getSchematicWorld").invoke(null);
+            if (schematicWorld == null) {
+                Object instance = worldHandler.getField("INSTANCE").get(null);
+                worldHandler.getMethod("recreateSchematicWorld", boolean.class).invoke(instance, false);
+                schematicWorld = (World) worldHandler.getMethod("getSchematicWorld").invoke(null);
+            }
             if (schematicWorld == null) {
                 throw new ProjectionException(Failure.API_UNAVAILABLE, "Litematica schematic world is unavailable");
             }
@@ -98,6 +103,45 @@ final class LitematicaProjection {
             if (dependency.matches(minecraftVersion)) return true;
         }
         return !declared;
+    }
+
+    private static Object enclosingBox(Object placement) throws ReflectiveOperationException {
+        try {
+            return placement.getClass().getMethod("getEclosingBox").invoke(placement);
+        } catch (NoSuchMethodException ignored) {
+            return placement.getClass().getMethod("getEnclosingBox").invoke(placement);
+        }
+    }
+
+    @SuppressWarnings({"rawtypes", "unchecked"})
+    private static Object mergedSubRegionBox(Object placement, ClassLoader classLoader) throws ReflectiveOperationException {
+        Class<?> required = Class.forName(
+            "fi.dy.masa.litematica.schematic.placement.SubRegionPlacement$RequiredEnabled",
+            true,
+            classLoader
+        );
+        Object enabled = Enum.valueOf((Class<? extends Enum>) required, "PLACEMENT_ENABLED");
+        Object values = placement.getClass().getMethod("getSubRegionBoxes", required).invoke(placement, enabled);
+        if (!(values instanceof Map<?, ?> boxes) || boxes.isEmpty()) return null;
+
+        BlockPos min = null;
+        BlockPos max = null;
+        for (Object box : boxes.values()) {
+            if (box == null) continue;
+            BlockPos pos1 = (BlockPos) box.getClass().getMethod("getPos1").invoke(box);
+            BlockPos pos2 = (BlockPos) box.getClass().getMethod("getPos2").invoke(box);
+            if (pos1 == null || pos2 == null) continue;
+
+            BlockPos localMin = min(pos1, pos2);
+            BlockPos localMax = max(pos1, pos2);
+            min = min == null ? localMin : min(min, localMin);
+            max = max == null ? localMax : max(max, localMax);
+        }
+
+        if (min == null || max == null) return null;
+        Class<?> boxClass = Class.forName("fi.dy.masa.litematica.selection.Box", true, classLoader);
+        return boxClass.getConstructor(BlockPos.class, BlockPos.class, String.class)
+            .newInstance(min, max, "WaveXin Litematica Printer");
     }
 
     private static int countEntries(Object placement, String methodName) throws ReflectiveOperationException {
