@@ -81,7 +81,7 @@ final class SupplyContainerSession {
     }
 
     private boolean canAccept(ItemStack incoming) {
-        for (int slot = 0; slot < mc.player.getInventory().size(); slot++) {
+        for (int slot = 0; slot < 36; slot++) {
             ItemStack current = mc.player.getInventory().getStack(slot);
             if (current.isEmpty()) return true;
             if (ItemStack.areItemsAndComponentsEqual(current, incoming) && current.getCount() < current.getMaxCount()) return true;
