@@ -53,10 +53,14 @@ final class CuboidCursor {
     }
 
     long volume() {
-        return Math.multiplyExact(
-            Math.multiplyExact((long) maxX - minX + 1, (long) maxY - minY + 1),
-            (long) maxZ - minZ + 1
-        );
+        try {
+            return Math.multiplyExact(
+                Math.multiplyExact((long) maxX - minX + 1, (long) maxY - minY + 1),
+                (long) maxZ - minZ + 1
+            );
+        } catch (ArithmeticException ignored) {
+            return Long.MAX_VALUE;
+        }
     }
 
     record Position(int x, int y, int z) {
