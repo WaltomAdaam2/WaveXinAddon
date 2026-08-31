@@ -2,7 +2,7 @@
 
 **语言 / Language:** 中文 | [English](README_EN.md)
 
-WaveXinAddon 是一个为 **2b2t.xin** 服务器设计的 Meteor Client Addon (彗星段扩展)，主要提供鞘翅飞行、鞘翅自动更换、路径飞行、自动登录、自动答题、自动每日小红花（月卡）、基地扫描、聊天过滤、神龟药水快捷投掷和实体名牌显示等辅助功能。
+WaveXinAddon 是一个为 **2b2t.xin** 服务器设计的 Meteor Client Addon (彗星段扩展)，主要提供鞘翅飞行、鞘翅自动更换、路径飞行、Litematica 半自动投影打印、自动登录、自动答题、自动每日小红花（月卡）、基地扫描、聊天过滤、神龟药水快捷投掷和实体名牌显示等辅助功能。
 
 <p align="center">
   <img src="assets/wavexin_readme_preview.png" alt="WaveXinAddon Preview" width="850">
@@ -18,6 +18,7 @@ WaveXinAddon 是一个为 **2b2t.xin** 服务器设计的 Meteor Client Addon (�
 * 聊天过滤 (Chat Filter)：分别过滤 MSG 私聊、公共聊天和死亡消息，使用独立白名单，并默认保留自己发送的公共聊天。
 * 神龟药水投掷 (Turtle Potion Thrower)：通过快捷键一次性投掷普通、长效或增强喷溅型神龟药水，支持副手、快捷栏、Quick Swap、槽位恢复和通知。
 * 基地狩猎扫图 (Base Finder)：提供普通/螺旋扫描、断点恢复、即时已访问区块渲染、容器与末影珍珠记录，以及带区域限额和真实颜色提示的可选 Xaero 路径点。
+* 投影打印机 (Litematica Printer)：玩家手动移动时，按 Litematica 投影在可交互范围内批量放置带真实支撑的方块；支持方向状态、大箱子、快捷栏补料、选区整组补货、进度与容器缓存，以及独立调试日志。
 
 更多实现逻辑与注意事项请参阅 [功能逻辑说明](docs/README_LOGIC.md)。Minecraft 1.21.1 的双版本移植步骤与验收标准参阅 [1.21.1 兼容实施计划](docs/MC_1_21_1_PORT_PLAN.md)。
 
@@ -28,6 +29,8 @@ WaveXinAddon 是一个为 **2b2t.xin** 服务器设计的 Meteor Client Addon (�
 * Fabric Loader
 * Fabric API
 * Meteor Client
+
+使用投影打印机时还需要安装与当前 Minecraft 版本匹配的 Litematica。
 
 ### 可选组件
 
