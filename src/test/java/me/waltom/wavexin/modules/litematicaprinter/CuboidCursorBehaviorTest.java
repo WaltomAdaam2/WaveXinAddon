@@ -55,6 +55,14 @@ public final class CuboidCursorBehaviorTest {
         verifyCachedRestockKnowledge();
         verifyPlanReplacement();
         verifyDebugLog();
+        verifyReleaseDefaults();
+    }
+
+    private static void verifyReleaseDefaults() {
+        check(LitematicaPrinter.DEFAULT_MAXIMUM_PROJECTION_VOLUME == 10_000_000,
+            "default projection volume must remain ten million blocks");
+        check(LitematicaPrinter.MAXIMUM_PROJECTION_VOLUME == 500_000_000,
+            "maximum projection volume must remain five hundred million blocks");
     }
 
     private static void verifyChestProvisionalState() {
