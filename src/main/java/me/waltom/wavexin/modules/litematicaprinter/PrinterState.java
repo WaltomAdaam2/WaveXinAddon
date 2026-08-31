@@ -21,6 +21,45 @@ final class PrinterState {
         return expected.equals(actual);
     }
 
+    static boolean confirmed(BlockState expected, BlockState actual) {
+        if (!isDoubleChest(expected)) return compatibleDuringBuild(expected, actual);
+        return actual != null
+            && expected.getBlock() == actual.getBlock()
+            && actual.contains(Properties.CHEST_TYPE)
+            && actual.contains(Properties.HORIZONTAL_FACING)
+            && confirmedChestProperties(
+                expected.get(Properties.CHEST_TYPE),
+                actual.get(Properties.CHEST_TYPE),
+                expected.get(Properties.HORIZONTAL_FACING),
+                actual.get(Properties.HORIZONTAL_FACING)
+            )
+            && expected.equals(actual);
+    }
+
+    static boolean isDoubleChest(BlockState state) {
+        return state != null
+            && state.getBlock() instanceof ChestBlock
+            && state.contains(Properties.CHEST_TYPE)
+            && state.get(Properties.CHEST_TYPE) != ChestType.SINGLE;
+    }
+
+    static boolean requiresRealSupport(BlockState state) {
+        for (Property<?> property : state.getProperties()) {
+            String name = property.getName();
+            if (name.equals("facing")
+                || name.equals("axis")
+                || name.equals("half")
+                || name.equals("shape")
+                || name.equals("type")
+                || name.equals("face")
+                || name.equals("hinge")
+                || name.equals("rotation")
+                || name.equals("attachment")
+                || name.equals("vertical_direction")) return true;
+        }
+        return false;
+    }
+
     static boolean compatibleDuringBuild(BlockState expected, BlockState actual) {
         if (expected.equals(actual)) return true;
         if (expected.getBlock() != actual.getBlock()) return false;
@@ -57,6 +96,38 @@ final class PrinterState {
         return expectedType != ChestType.SINGLE
             && actualType == ChestType.SINGLE
             && expectedFacing == actualFacing;
+    }
+
+    static boolean confirmedChestProperties(
+        ChestType expectedType,
+        ChestType actualType,
+        Direction expectedFacing,
+        Direction actualFacing
+    ) {
+        return expectedType != ChestType.SINGLE
+            && expectedType == actualType
+            && expectedFacing == actualFacing;
+    }
+
+    static Direction chestConnection(Direction facing, ChestType type) {
+        return type == ChestType.LEFT ? facing.rotateYClockwise() : facing.rotateYCounterclockwise();
+    }
+
+    static Direction chestConnection(BlockState state) {
+        return chestConnection(state.get(Properties.HORIZONTAL_FACING), state.get(Properties.CHEST_TYPE));
+    }
+
+    static boolean chestPair(
+        ChestType firstType,
+        ChestType secondType,
+        Direction facing,
+        Direction connection
+    ) {
+        return firstType != ChestType.SINGLE
+            && secondType != ChestType.SINGLE
+            && firstType != secondType
+            && chestConnection(facing, firstType) == connection
+            && chestConnection(facing, secondType) == connection.getOpposite();
     }
 
     @SuppressWarnings({"rawtypes", "unchecked"})

@@ -10,6 +10,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -22,8 +23,12 @@ final class ProjectionScan {
     private final CuboidCursor projectionCursor;
     private final Map<BlockPos, Target> targets = new LinkedHashMap<>();
     private final Map<BlockPos, Skipped> skipped = new LinkedHashMap<>();
+    private final List<Target> discoveredTargets = new ArrayList<>();
+    private final List<Skipped> discoveredSkipped = new ArrayList<>();
+    private final List<Observation> discoveredObservations = new ArrayList<>();
     private final Set<Long> unknownChunks = new LinkedHashSet<>();
     private final Set<Long> verifiedChunks = new LinkedHashSet<>();
+    private final Set<Long> newlyVerifiedChunks = new LinkedHashSet<>();
     private final MessageDigest digest;
     private CuboidCursor chunkCursor;
     private long activeChunk;
@@ -56,7 +61,8 @@ final class ProjectionScan {
 
     void scan(int budget) {
         int remaining = budget;
-        while (remaining > 0 && projectionCursor.hasNext()) {
+        int projectionBudget = chunkCursor == null ? remaining : Math.max(1, remaining / 2);
+        while (projectionBudget-- > 0 && remaining > 0 && projectionCursor.hasNext()) {
             remaining--;
             CuboidCursor.Position next = projectionCursor.next();
             BlockPos pos = new BlockPos(next.x(), next.y(), next.z());
@@ -82,23 +88,32 @@ final class ProjectionScan {
         if (chunkCursor != null && !chunkCursor.hasNext()) {
             unknownChunks.remove(activeChunk);
             verifiedChunks.add(activeChunk);
+            newlyVerifiedChunks.add(activeChunk);
             chunkCursor = null;
         }
     }
 
     boolean prepareNextChunkRescan() {
-        if (projectionCursor.hasNext() || chunkCursor != null || unknownChunks.isEmpty()) return false;
-        long key = unknownChunks.iterator().next();
-        int chunkX = chunkX(key);
-        int chunkZ = chunkZ(key);
-        if (!actualWorld.isChunkLoaded(chunkX, chunkZ)) return false;
+        if (chunkCursor != null || unknownChunks.isEmpty()) return false;
+        for (long key : unknownChunks) {
+            int chunkX = chunkX(key);
+            int chunkZ = chunkZ(key);
+            if (!actualWorld.isChunkLoaded(chunkX, chunkZ)) continue;
 
-        activeChunk = key;
-        chunkCursor = new CuboidCursor(
-            Math.max(selection.min().getX(), chunkX << 4), selection.min().getY(), Math.max(selection.min().getZ(), chunkZ << 4),
-            Math.min(selection.max().getX(), (chunkX << 4) + 15), selection.max().getY(), Math.min(selection.max().getZ(), (chunkZ << 4) + 15)
-        );
-        return true;
+            activeChunk = key;
+            chunkCursor = new CuboidCursor(
+                Math.max(selection.min().getX(), chunkX << 4), selection.min().getY(), Math.max(selection.min().getZ(), chunkZ << 4),
+                Math.min(selection.max().getX(), (chunkX << 4) + 15), selection.max().getY(), Math.min(selection.max().getZ(), (chunkZ << 4) + 15)
+            );
+            return true;
+        }
+        return false;
+    }
+
+    void requestChunkRescan(int chunkX, int chunkZ) {
+        if (chunkX < (selection.min().getX() >> 4) || chunkX > (selection.max().getX() >> 4)
+            || chunkZ < (selection.min().getZ() >> 4) || chunkZ > (selection.max().getZ() >> 4)) return;
+        unknownChunks.add(chunkKey(chunkX, chunkZ));
     }
 
     BlockPos nextUnknownChunkTarget(int y) {
@@ -114,18 +129,60 @@ final class ProjectionScan {
     private void classify(BlockPos pos, BlockState state) {
         targets.remove(pos);
         skipped.remove(pos);
-        if (state == null || actualWorld.getBlockState(pos).equals(state)) return;
-        if (state.isAir()) {
-            targets.put(pos.toImmutable(), new Target(pos, state));
-        } else if (!state.getFluidState().isEmpty()) {
-            skipped.put(pos.toImmutable(), new Skipped(pos, state, SkipReason.FLUID));
-        } else if (state.contains(Properties.WATERLOGGED) && state.get(Properties.WATERLOGGED)) {
-            skipped.put(pos.toImmutable(), new Skipped(pos, state, SkipReason.WATERLOGGED));
-        } else if (state.getBlock().asItem() == Items.AIR) {
-            skipped.put(pos.toImmutable(), new Skipped(pos, state, SkipReason.NO_ITEM));
-        } else {
-            targets.put(pos.toImmutable(), new Target(pos, state));
+        BlockState actual = actualWorld.getBlockState(pos);
+        if (state != null && (!state.isAir() || !actual.isAir())) {
+            discoveredObservations.add(new Observation(pos, state, actual));
         }
+        if (state == null || actual.equals(state)) return;
+        if (state.isAir()) {
+            Target target = new Target(pos, state);
+            targets.put(pos.toImmutable(), target);
+            discoveredTargets.add(target);
+        } else if (!state.getFluidState().isEmpty()) {
+            Skipped value = new Skipped(pos, state, SkipReason.FLUID);
+            skipped.put(pos.toImmutable(), value);
+            discoveredSkipped.add(value);
+        } else if (state.contains(Properties.WATERLOGGED) && state.get(Properties.WATERLOGGED)) {
+            Skipped value = new Skipped(pos, state, SkipReason.WATERLOGGED);
+            skipped.put(pos.toImmutable(), value);
+            discoveredSkipped.add(value);
+        } else if (state.getBlock().asItem() == Items.AIR) {
+            Skipped value = new Skipped(pos, state, SkipReason.NO_ITEM);
+            skipped.put(pos.toImmutable(), value);
+            discoveredSkipped.add(value);
+        } else {
+            Target target = new Target(pos, state);
+            targets.put(pos.toImmutable(), target);
+            discoveredTargets.add(target);
+        }
+    }
+
+    boolean isFingerprintReady() {
+        return !projectionCursor.hasNext() && fingerprint != null;
+    }
+
+    List<Target> drainDiscoveredTargets() {
+        List<Target> result = List.copyOf(discoveredTargets);
+        discoveredTargets.clear();
+        return result;
+    }
+
+    List<Skipped> drainDiscoveredSkipped() {
+        List<Skipped> result = List.copyOf(discoveredSkipped);
+        discoveredSkipped.clear();
+        return result;
+    }
+
+    List<Observation> drainDiscoveredObservations() {
+        List<Observation> result = List.copyOf(discoveredObservations);
+        discoveredObservations.clear();
+        return result;
+    }
+
+    Set<Long> drainNewlyVerifiedChunks() {
+        Set<Long> result = Set.copyOf(newlyVerifiedChunks);
+        newlyVerifiedChunks.clear();
+        return result;
     }
 
     boolean isDone() {
@@ -200,6 +257,12 @@ final class ProjectionScan {
 
     record Skipped(BlockPos pos, BlockState state, SkipReason reason) {
         Skipped {
+            pos = pos.toImmutable();
+        }
+    }
+
+    record Observation(BlockPos pos, BlockState expected, BlockState actual) {
+        Observation {
             pos = pos.toImmutable();
         }
     }
