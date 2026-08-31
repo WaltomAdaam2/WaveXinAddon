@@ -54,6 +54,8 @@ public final class LitematicaPrinter extends WaveXinModule {
     private static final SettingColor MANUAL_SIDE_COLOR = new SettingColor(255, 45, 45, 35);
     private static final SettingColor MANUAL_LINE_COLOR = new SettingColor(255, 70, 70, 220);
     static final int DEFAULT_BLOCKS_PER_TICK = 3;
+    static final int DEFAULT_MAXIMUM_PROJECTION_VOLUME = 10_000_000;
+    static final int MAXIMUM_PROJECTION_VOLUME = 500_000_000;
 
     static {
         SettingsWidgetFactory.registerCustomFactory(CacheButtonSetting.class, theme -> (table, setting) -> {
@@ -94,10 +96,10 @@ public final class LitematicaPrinter extends WaveXinModule {
     private final Setting<Integer> maximumProjectionVolume = sgGeneral.add(new IntSetting.Builder()
         .name("Maximum Projection Volume")
         .description("Maximum number of positions allowed in the selected projection bounds.")
-        .defaultValue(5_000_000)
+        .defaultValue(DEFAULT_MAXIMUM_PROJECTION_VOLUME)
         .min(1_000)
-        .max(50_000_000)
-        .sliderRange(1_000, 10_000_000)
+        .max(MAXIMUM_PROJECTION_VOLUME)
+        .sliderRange(1_000, 50_000_000)
         .build()
     );
 
