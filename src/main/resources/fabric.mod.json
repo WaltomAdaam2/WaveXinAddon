@@ -32,5 +32,9 @@
     "fabricloader": ">=${loader_version}",
     "minecraft": ["${mc_version}"],
     "meteor-client": "*"
+  },
+  "suggests": {
+    "litematica": "*",
+    "baritone-meteor": "*"
   }
 }

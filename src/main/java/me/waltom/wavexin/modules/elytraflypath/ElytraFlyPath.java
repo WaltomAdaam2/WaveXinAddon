@@ -1,4 +1,4 @@
-package me.waltom.wavexin.modules.simpleelytraflypath;
+package me.waltom.wavexin.modules.elytraflypath;
 
 import me.waltom.wavexin.events.TravelEvent;
 import me.waltom.wavexin.events.MoveEvent;
@@ -16,6 +16,7 @@ import meteordevelopment.orbit.EventHandler;
 import meteordevelopment.orbit.EventPriority;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.network.ClientPlayerEntity;
+import net.minecraft.client.option.KeyBinding;
 import net.minecraft.entity.EquipmentSlot;
 import net.minecraft.entity.MovementType;
 import net.minecraft.entity.effect.StatusEffects;
@@ -28,7 +29,7 @@ import net.minecraft.util.math.ChunkPos;
 import net.minecraft.util.math.Vec3d;
 import java.util.function.Consumer;
 
-public class SimpleElytraFlyPath extends WaveXinModule {
+public class ElytraFlyPath extends WaveXinModule {
     private static final MinecraftClient mc = MinecraftClient.getInstance();
     private static final int MAX_TARGET_COORDINATE = 30000000;
 
@@ -101,7 +102,7 @@ public class SimpleElytraFlyPath extends WaveXinModule {
     public final Setting<Double> speed = sgFlight.add(new DoubleSetting.Builder()
         .name("Flight Speed")
         .description("Horizontal flight speed")
-        .defaultValue(2.5)
+        .defaultValue(1.8)
         .min(0.1)
         .sliderMin(0.1)
         .max(20)
@@ -119,7 +120,7 @@ public class SimpleElytraFlyPath extends WaveXinModule {
 
     public final Setting<Boolean> autoStopOnArrival = sgFlight.add(new BoolSetting.Builder()
         .name("Stop on Arrival")
-        .description("Disables Simple Elytra Fly Path after arriving at the target")
+        .description("Disables Elytra Fly Path after arriving at the target")
         .defaultValue(true)
         .build()
     );
@@ -137,7 +138,7 @@ public class SimpleElytraFlyPath extends WaveXinModule {
     public final Setting<Double> arrivalDistance2D = sgFlight.add(new DoubleSetting.Builder()
         .name("Arrival Distance")
         .description("Distance from the target required to count as arrived")
-        .defaultValue(1)
+        .defaultValue(2.0)
         .min(1)
         .sliderMin(0.1)
         .max(Integer.MAX_VALUE)
@@ -152,8 +153,8 @@ public class SimpleElytraFlyPath extends WaveXinModule {
     
 
 
-    public SimpleElytraFlyPath() {
-        super(WaveXinAddon.CATEGORY, "simple-elytra-fly-path", "Automatic elytra path flight");
+    public ElytraFlyPath() {
+        super(WaveXinAddon.CATEGORY, "elytra-fly-path", "Automatic elytra path flight");
     }
 
     
@@ -167,6 +168,8 @@ public class SimpleElytraFlyPath extends WaveXinModule {
             toggle();
             return;
         }
+
+        suppressMovementInput();
 
         
         if (!isSafeFlightHeight()) {
@@ -182,7 +185,7 @@ public class SimpleElytraFlyPath extends WaveXinModule {
         }
 
         
-        infoKey("message.wavexin.simple_elytra_fly_path.started", "Started pathing to X=%d, Z=%d", getTargetX(), getTargetZ());
+        infoKey("message.wavexin.elytra_fly_path.started", "Started pathing to X=%d, Z=%d", getTargetX(), getTargetZ());
     }
 
     
@@ -199,6 +202,7 @@ public class SimpleElytraFlyPath extends WaveXinModule {
             if (!mc.player.isCreative()) mc.player.getAbilities().allowFlying = false;
             mc.player.getAbilities().flying = false;
         }
+        restoreMovementInput();
     }
 
     
@@ -230,10 +234,12 @@ public class SimpleElytraFlyPath extends WaveXinModule {
     }
 
 
-    @EventHandler
+    @EventHandler(priority = EventPriority.HIGHEST)
     public void onTick(TickEvent.Pre event) {
         
         if (mc.player == null || mc.world == null || mc.getNetworkHandler() == null) return;
+
+        suppressMovementInput();
 
         if (isArrive) {
             finishArrival();
@@ -246,6 +252,23 @@ public class SimpleElytraFlyPath extends WaveXinModule {
         }
     }
 
+    private void suppressMovementInput() {
+        if (mc.options == null) return;
+        mc.options.forwardKey.setPressed(false);
+        mc.options.backKey.setPressed(false);
+        mc.options.leftKey.setPressed(false);
+        mc.options.rightKey.setPressed(false);
+        mc.options.sneakKey.setPressed(false);
+        mc.options.jumpKey.setPressed(false);
+        if (mc.player != null && mc.player.input != null) mc.player.input.tick();
+    }
+
+    private void restoreMovementInput() {
+        if (mc.options == null) return;
+        KeyBinding.updatePressedStates();
+        if (mc.player != null && mc.player.input != null) mc.player.input.tick();
+    }
+
 
     
 
@@ -254,9 +277,11 @@ public class SimpleElytraFlyPath extends WaveXinModule {
     @EventHandler(priority = EventPriority.HIGHEST)
     public void onMove(TravelEvent event) {
         
-        if (mc.player == null || mc.world == null || !mc.player.isGliding() || !hasWorkingElytra() || event.isPost()) {
+        if (mc.player == null || mc.world == null || event.isPost()) {
             return;
         }
+        suppressMovementInput();
+        if (!mc.player.isGliding() || !hasWorkingElytra()) return;
 
         
         int currentTargetX = getTargetX();
@@ -321,7 +346,7 @@ public class SimpleElytraFlyPath extends WaveXinModule {
         }
 
         if (shouldDisconnect && mc.getNetworkHandler() != null) {
-            mc.getNetworkHandler().getConnection().disconnect(WaveXinI18n.text("disconnect.wavexin.simple_elytra_fly_path.arrived", "Auto quit after arriving at target"));
+            mc.getNetworkHandler().getConnection().disconnect(WaveXinI18n.text("disconnect.wavexin.elytra_fly_path.arrived", "Auto quit after arriving at target"));
         }
     }
 

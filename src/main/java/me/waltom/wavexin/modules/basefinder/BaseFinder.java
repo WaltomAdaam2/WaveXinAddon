@@ -368,7 +368,7 @@ public class BaseFinder extends WaveXinModule {
     private final Setting<Double> moveSpeed = sgNormalScan.add(new DoubleSetting.Builder()
             .name("Move Speed")
             .description("Enables sprinting above 1.0; vanilla movement speed is otherwise unchanged.")
-            .defaultValue(3.0)
+            .defaultValue(1.8)
             .min(0.01)
             .max(3.0)
             .sliderMin(0.01)

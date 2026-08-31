@@ -2,7 +2,7 @@
 
 **Language / 语言:** [中文](README.md) | English
 
-WaveXinAddon is a Meteor Client addon designed for the **2b2t.xin** server. It provides elytra flight, automatic elytra replacement, path flight, auto login, auto answer, automatic Daily Flower (monthly pass) check-ins, base scanning, chat filtering, turtle-potion throwing, entity nametags, and other utility modules.
+WaveXinAddon is a Meteor Client addon designed for the **2b2t.xin** server. It provides elytra flight, automatic elytra replacement, path flight, semi-automatic Litematica printing, auto login, auto answer, automatic Daily Flower (monthly pass) check-ins, base scanning, chat filtering, turtle-potion throwing, entity nametags, and other utility modules.
 
 <p align="center">
   <img src="assets/wavexin_readme_preview.png" alt="WaveXinAddon Preview" width="850">
@@ -18,6 +18,7 @@ WaveXinAddon is a Meteor Client addon designed for the **2b2t.xin** server. It p
 * Chat Filter: Separately filters MSG, public chat, and death messages with independent allowlists and an own-message bypass enabled by default.
 * Turtle Potion Thrower: One-shot bind for normal, long, or strong splash Turtle Master potions with offhand, hotbar, Quick Swap, slot restore, and notification support.
 * Base Finder: Normal/spiral scanning, checkpoint resume, immediate visited-chunk rendering, container and pearl recording, and optional Xaero waypoints with area limits and exact creation-message colors.
+* Litematica Printer: While the player moves manually, places projection blocks with real support inside interaction range; handles directional states, double chests, hotbar refills, whole-stack restocking from a selected region, progress/container caches, and a dedicated debug log.
 
 For implementation details and feature-specific notes, see the [Feature Logic Guide](docs/README_LOGIC_EN.md). The staged Minecraft 1.21.1 port and acceptance criteria are documented in the [1.21.1 Compatibility Plan](docs/MC_1_21_1_PORT_PLAN.md).
 
@@ -28,6 +29,8 @@ For implementation details and feature-specific notes, see the [Feature Logic Gu
 * Fabric Loader
 * Fabric API
 * Meteor Client
+
+Litematica Printer also requires a Litematica build matching the active Minecraft version.
 
 ### Optional
 
