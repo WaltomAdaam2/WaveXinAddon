@@ -260,13 +260,13 @@ public class ElytraFlyPath extends WaveXinModule {
         mc.options.rightKey.setPressed(false);
         mc.options.sneakKey.setPressed(false);
         mc.options.jumpKey.setPressed(false);
-        if (mc.player != null && mc.player.input != null) mc.player.input.tick();
+        if (mc.player != null && mc.player.input != null) mc.player.input.tick(false, 1.0F);
     }
 
     private void restoreMovementInput() {
         if (mc.options == null) return;
         KeyBinding.updatePressedStates();
-        if (mc.player != null && mc.player.input != null) mc.player.input.tick();
+        if (mc.player != null && mc.player.input != null) mc.player.input.tick(false, 1.0F);
     }
 
 
