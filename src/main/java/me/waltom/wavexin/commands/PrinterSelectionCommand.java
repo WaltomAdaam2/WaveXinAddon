@@ -26,7 +26,8 @@ public final class PrinterSelectionCommand extends Command {
     public void build(LiteralArgumentBuilder<CommandSource> builder) {
         builder.executes(context -> setStandingCorner(1))
             .then(cornerBranch("1", 1))
-            .then(cornerBranch("2", 2));
+            .then(cornerBranch("2", 2))
+            .then(literal("c").executes(context -> clearSelection()));
     }
 
     private LiteralArgumentBuilder<CommandSource> cornerBranch(String name, int corner) {
@@ -85,6 +86,15 @@ public final class PrinterSelectionCommand extends Command {
             "message.wavexin.litematica_printer.selection_set",
             "Restock region point %d set to %d %d %d.",
             corner, pos.getX(), pos.getY(), pos.getZ()
+        ));
+        return SINGLE_SUCCESS;
+    }
+
+    private int clearSelection() {
+        printer.clearSupplySelection();
+        info(WaveXinI18n.tr(
+            "message.wavexin.litematica_printer.selection_cleared",
+            "Restock region selection cleared."
         ));
         return SINGLE_SUCCESS;
     }

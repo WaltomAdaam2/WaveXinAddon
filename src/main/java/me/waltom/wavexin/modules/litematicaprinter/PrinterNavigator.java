@@ -6,7 +6,7 @@ import net.minecraft.util.math.BlockPos;
 interface PrinterNavigator {
     void configure();
 
-    void goTo(BlockPos pos, int range);
+    void goTo(NavigationPlan plan);
 
     boolean isNavigating();
 
@@ -36,5 +36,31 @@ interface PrinterNavigator {
         } catch (ReflectiveOperationException | LinkageError e) {
             throw new IllegalStateException("Baritone API could not be initialized", e);
         }
+    }
+
+    record NavigationPlan(Kind kind, BlockPos target, BlockPos support, int range, boolean allowSameLevel) {
+        public NavigationPlan {
+            target = target.toImmutable();
+            support = support == null ? null : support.toImmutable();
+            range = Math.max(1, range);
+        }
+
+        static NavigationPlan near(BlockPos target, int range) {
+            return new NavigationPlan(Kind.NEAR, target, null, range, true);
+        }
+
+        static NavigationPlan build(BlockPos target, BlockPos support, boolean allowSameLevel) {
+            return new NavigationPlan(Kind.BUILD, target, support, 1, allowSameLevel);
+        }
+
+        static NavigationPlan mine(BlockPos target) {
+            return new NavigationPlan(Kind.MINE, target, null, 1, true);
+        }
+    }
+
+    enum Kind {
+        NEAR,
+        BUILD,
+        MINE
     }
 }

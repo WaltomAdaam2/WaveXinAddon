@@ -5,6 +5,8 @@ import net.minecraft.block.ChestBlock;
 import net.minecraft.block.enums.ChestType;
 import net.minecraft.client.world.ClientWorld;
 import net.minecraft.inventory.Inventory;
+import net.minecraft.item.Item;
+import net.minecraft.item.ItemStack;
 import net.minecraft.state.property.Properties;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Direction;
@@ -12,6 +14,8 @@ import net.minecraft.util.math.Direction;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.Set;
 
 final class SupplyRegionScanner {
@@ -19,11 +23,19 @@ final class SupplyRegionScanner {
     private final CuboidCursor cursor;
     private final List<BlockPos> containers = new ArrayList<>();
     private final Set<BlockPos> seen = new HashSet<>();
+    private final Map<BlockPos, Map<Item, Integer>> visibleContents = new LinkedHashMap<>();
+    private final boolean skipUnloaded;
     private BlockPos waitingForChunk;
     private long scanned;
+    private boolean completeCoverage = true;
 
     SupplyRegionScanner(ClientWorld world, BlockPos pos1, BlockPos pos2, long maximumVolume) {
+        this(world, pos1, pos2, maximumVolume, false);
+    }
+
+    SupplyRegionScanner(ClientWorld world, BlockPos pos1, BlockPos pos2, long maximumVolume, boolean skipUnloaded) {
         this.world = world;
+        this.skipUnloaded = skipUnloaded;
         cursor = new CuboidCursor(
             pos1.getX(), pos1.getY(), pos1.getZ(),
             pos2.getX(), pos2.getY(), pos2.getZ()
@@ -45,6 +57,10 @@ final class SupplyRegionScanner {
             CuboidCursor.Position next = cursor.next();
             BlockPos pos = new BlockPos(next.x(), next.y(), next.z());
             if (!isLoaded(pos)) {
+                if (skipUnloaded) {
+                    completeCoverage = false;
+                    continue;
+                }
                 waitingForChunk = pos;
                 return new ScanResult(false, pos);
             }
@@ -67,14 +83,32 @@ final class SupplyRegionScanner {
         return List.copyOf(containers);
     }
 
+    Map<BlockPos, Map<Item, Integer>> visibleContents() {
+        if (cursor.hasNext() || waitingForChunk != null) throw new IllegalStateException("Supply scan is incomplete");
+        return Map.copyOf(visibleContents);
+    }
+
+    boolean completeCoverage() {
+        return completeCoverage;
+    }
+
     private boolean isLoaded(BlockPos pos) {
         return world.isChunkLoaded(pos.getX() >> 4, pos.getZ() >> 4);
     }
 
     private void inspect(BlockPos pos) {
-        if (!(world.getBlockEntity(pos) instanceof Inventory)) return;
+        if (!(world.getBlockEntity(pos) instanceof Inventory inventory)) return;
         BlockPos logical = logicalPosition(pos);
         if (seen.add(logical)) containers.add(logical);
+        Map<Item, Integer> contents = new LinkedHashMap<>();
+        for (int slot = 0; slot < inventory.size(); slot++) {
+            ItemStack stack = inventory.getStack(slot);
+            if (!stack.isEmpty()) contents.merge(stack.getItem(), stack.getCount(), Integer::sum);
+        }
+        if (!contents.isEmpty()) {
+            Map<Item, Integer> existing = visibleContents.computeIfAbsent(logical, ignored -> new LinkedHashMap<>());
+            contents.forEach((item, count) -> existing.merge(item, count, Integer::sum));
+        }
     }
 
     private BlockPos logicalPosition(BlockPos pos) {
@@ -84,7 +118,7 @@ final class SupplyRegionScanner {
         if (type == ChestType.SINGLE || !state.contains(Properties.HORIZONTAL_FACING)) return pos.toImmutable();
 
         Direction facing = state.get(Properties.HORIZONTAL_FACING);
-        Direction offset = type == ChestType.LEFT ? facing.rotateYClockwise() : facing.rotateYCounterclockwise();
+        Direction offset = PrinterState.chestConnection(facing, type);
         BlockPos other = pos.offset(offset);
         return compare(pos, other) <= 0 ? pos.toImmutable() : other.toImmutable();
     }

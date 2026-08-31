@@ -8,11 +8,18 @@ import net.minecraft.client.MinecraftClient;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
 
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Set;
+
 final class PrinterInventory {
     private final MinecraftClient mc = MinecraftClient.getInstance();
     private AutoReplenish autoReplenish;
     private boolean restoreAutoReplenish;
     private Lease persistentLease;
+    private List<Item> workSet = List.of();
+    private final List<HotbarMove> hotbarMoves = new ArrayList<>();
 
     void begin() {
         autoReplenish = Modules.get().get(AutoReplenish.class);
@@ -26,33 +33,122 @@ final class PrinterInventory {
         if (autoReplenish != null && autoReplenish.isActive()) autoReplenish.toggle();
     }
 
-    int count(Item item) {
+    int count(Item item, boolean allowInventoryPull) {
         if (mc.player == null) return 0;
         int count = 0;
-        for (int slot = 0; slot < 36; slot++) {
+        for (int slot = 0; slot < usableSlotLimit(allowInventoryPull); slot++) {
             ItemStack stack = mc.player.getInventory().getStack(slot);
             if (stack.isOf(item)) count += stack.getCount();
         }
         return count;
     }
 
-    Lease acquire(Item item) {
-        int slot = findSlot(item);
+    int stackCount(Item item, boolean allowInventoryPull) {
+        if (mc.player == null) return 0;
+        int count = 0;
+        for (int slot = 0; slot < usableSlotLimit(allowInventoryPull); slot++) {
+            if (mc.player.getInventory().getStack(slot).isOf(item)) count++;
+        }
+        return count;
+    }
+
+    int emptySlots(boolean allowInventoryPull) {
+        if (mc.player == null) return 0;
+        int count = 0;
+        for (int slot = 0; slot < usableSlotLimit(allowInventoryPull); slot++) {
+            if (mc.player.getInventory().getStack(slot).isEmpty()) count++;
+        }
+        return count;
+    }
+
+    int occupiedSlotsOutside(Set<Item> required, boolean allowInventoryPull) {
+        if (mc.player == null) return 0;
+        int count = 0;
+        for (int slot = 0; slot < usableSlotLimit(allowInventoryPull); slot++) {
+            ItemStack stack = mc.player.getInventory().getStack(slot);
+            if (!stack.isEmpty() && !required.contains(stack.getItem())) count++;
+        }
+        return count;
+    }
+
+    Lease acquire(Item item, boolean allowInventoryPull) {
+        int slot = findSlot(item, allowInventoryPull);
+        if (slot >= 9) slot = moveToHotbar(slot, item);
         return slot >= 0 ? acquire(slot) : null;
     }
 
-    int findSlot(Item item) {
+    int findSlot(Item item, boolean allowInventoryPull) {
         if (mc.player == null) return -1;
-        int bestSlot = -1;
-        int bestCount = -1;
-        for (int slot = 0; slot < 36; slot++) {
+        for (int slot = 0; slot < 9; slot++) {
             ItemStack stack = mc.player.getInventory().getStack(slot);
-            if (stack.isOf(item) && stack.getCount() > bestCount) {
-                bestSlot = slot;
-                bestCount = stack.getCount();
-            }
+            if (stack.isOf(item)) return slot;
         }
-        return bestSlot;
+        if (!allowInventoryPull || findHotbarDestination() < 0) return -1;
+        for (int slot = 9; slot < 36; slot++) {
+            if (mc.player.getInventory().getStack(slot).isOf(item)) return slot;
+        }
+        return -1;
+    }
+
+    int availableForBuild(Item item, boolean allowInventoryPull) {
+        if (mc.player == null) return 0;
+        int hotbar = 0;
+        for (int slot = 0; slot < 9; slot++) {
+            ItemStack stack = mc.player.getInventory().getStack(slot);
+            if (stack.isOf(item)) hotbar += stack.getCount();
+        }
+        if (!allowInventoryPull) return hotbar;
+        if (hotbar == 0 && findHotbarDestination() < 0) return 0;
+        return count(item, true);
+    }
+
+    void setWorkSet(List<Item> orderedItems) {
+        Set<Item> unique = new LinkedHashSet<>(orderedItems);
+        workSet = List.copyOf(unique);
+    }
+
+    List<HotbarMove> drainHotbarMoves() {
+        List<HotbarMove> result = List.copyOf(hotbarMoves);
+        hotbarMoves.clear();
+        return result;
+    }
+
+    private int moveToHotbar(int sourceSlot, Item item) {
+        int destination = findHotbarDestination();
+        if (destination < 0) return -1;
+        Item replaced = mc.player.getInventory().getStack(destination).getItem();
+        InvUtils.quickSwap().fromId(destination).to(sourceSlot);
+        if (!mc.player.getInventory().getStack(destination).isOf(item)) return -1;
+        hotbarMoves.add(new HotbarMove(sourceSlot, destination, item, replaced));
+        return destination;
+    }
+
+    private int findHotbarDestination() {
+        if (mc.player == null) return -1;
+        List<Item> hotbar = new ArrayList<>(9);
+        for (int slot = 0; slot < 9; slot++) {
+            ItemStack stack = mc.player.getInventory().getStack(slot);
+            hotbar.add(stack.isEmpty() ? null : stack.getItem());
+        }
+        return chooseHotbarDestination(hotbar, Set.copyOf(workSet));
+    }
+
+    static <T> int chooseHotbarDestination(List<T> hotbar, Set<T> workSet) {
+        for (int slot = 0; slot < hotbar.size(); slot++) {
+            if (hotbar.get(slot) == null) return slot;
+        }
+        for (int slot = 0; slot < hotbar.size(); slot++) {
+            if (!workSet.contains(hotbar.get(slot))) return slot;
+        }
+        return -1;
+    }
+
+    static boolean isUsableBuildSlot(int slot, boolean allowInventoryPull) {
+        return slot >= 0 && slot < usableSlotLimit(allowInventoryPull);
+    }
+
+    private static int usableSlotLimit(boolean allowInventoryPull) {
+        return allowInventoryPull ? 36 : 9;
     }
 
     Lease acquireFastestTool(BlockState state) {
@@ -87,6 +183,8 @@ final class PrinterInventory {
         if (restoreAutoReplenish && autoReplenish != null && !autoReplenish.isActive()) autoReplenish.toggle();
         restoreAutoReplenish = false;
         autoReplenish = null;
+        workSet = List.of();
+        hotbarMoves.clear();
     }
 
     private Lease acquire(int itemSlot) {
@@ -128,5 +226,8 @@ final class PrinterInventory {
         NONE,
         HOTBAR,
         QUICK_SWAP
+    }
+
+    record HotbarMove(int sourceSlot, int hotbarSlot, Item moved, Item replaced) {
     }
 }

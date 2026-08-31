@@ -3,6 +3,9 @@ package me.waltom.wavexin.modules.litematicaprinter;
 import baritone.api.BaritoneAPI;
 import baritone.api.IBaritone;
 import baritone.api.Settings;
+import baritone.api.pathing.goals.Goal;
+import baritone.api.pathing.goals.GoalBlock;
+import baritone.api.pathing.goals.GoalGetToBlock;
 import baritone.api.pathing.goals.GoalNear;
 import net.minecraft.util.math.BlockPos;
 
@@ -31,8 +34,15 @@ public final class BaritoneNavigator implements PrinterNavigator {
     }
 
     @Override
-    public void goTo(BlockPos pos, int range) {
-        baritone.getCustomGoalProcess().setGoalAndPath(new GoalNear(pos, range));
+    public void goTo(NavigationPlan plan) {
+        Goal goal = switch (plan.kind()) {
+            case NEAR -> new GoalNear(plan.target(), plan.range());
+            case BUILD -> plan.support() == null
+                ? new GoalBlock(plan.target().up())
+                : new BuilderAdjacentGoal(plan.target(), plan.support(), plan.allowSameLevel());
+            case MINE -> new BreakGoal(plan.target());
+        };
+        baritone.getCustomGoalProcess().setGoalAndPath(goal);
     }
 
     @Override
@@ -62,5 +72,55 @@ public final class BaritoneNavigator implements PrinterNavigator {
     @SuppressWarnings({"rawtypes", "unchecked"})
     private static void restoreSetting(Settings.Setting setting, Object value) {
         setting.value = value;
+    }
+
+    private static final class BuilderAdjacentGoal implements Goal {
+        private final GoalGetToBlock adjacent;
+        private final BlockPos target;
+        private final BlockPos support;
+        private final boolean allowSameLevel;
+
+        private BuilderAdjacentGoal(BlockPos target, BlockPos support, boolean allowSameLevel) {
+            this.target = target.toImmutable();
+            this.support = support.toImmutable();
+            this.allowSameLevel = allowSameLevel;
+            adjacent = new GoalGetToBlock(target);
+        }
+
+        @Override
+        public boolean isInGoal(int x, int y, int z) {
+            if (matches(target, x, y, z) || matches(support, x, y, z)) return false;
+            if (y < target.getY() - 1 || !allowSameLevel && y == target.getY() - 1) return false;
+            return adjacent.isInGoal(x, y, z);
+        }
+
+        @Override
+        public double heuristic(int x, int y, int z) {
+            return adjacent.heuristic(x, y, z);
+        }
+    }
+
+    private static final class BreakGoal implements Goal {
+        private final GoalGetToBlock adjacent;
+        private final BlockPos target;
+
+        private BreakGoal(BlockPos target) {
+            this.target = target.toImmutable();
+            adjacent = new GoalGetToBlock(target);
+        }
+
+        @Override
+        public boolean isInGoal(int x, int y, int z) {
+            return y <= target.getY() && adjacent.isInGoal(x, y, z);
+        }
+
+        @Override
+        public double heuristic(int x, int y, int z) {
+            return adjacent.heuristic(x, y, z);
+        }
+    }
+
+    private static boolean matches(BlockPos pos, int x, int y, int z) {
+        return pos.getX() == x && pos.getY() == y && pos.getZ() == z;
     }
 }

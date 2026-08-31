@@ -14,6 +14,7 @@ import java.lang.reflect.Method;
 import java.util.Collection;
 import java.util.Map;
 import java.util.OptionalLong;
+import java.util.function.Predicate;
 
 final class LitematicaProjection {
     private static final String DATA_MANAGER = "fi.dy.masa.litematica.data.DataManager";
@@ -245,6 +246,34 @@ final class LitematicaProjection {
             return OptionalLong.empty();
         }
 
+        LayerFilter layerFilter() {
+            try {
+                Class<?> dataManager = Class.forName(DATA_MANAGER, true, LitematicaProjection.class.getClassLoader());
+                Object range = dataManager.getMethod("getRenderLayerRange").invoke(null);
+                if (range == null) return LayerFilter.all();
+
+                Object mode = range.getClass().getMethod("getLayerMode").invoke(range);
+                String modeName = mode instanceof Enum<?> value ? value.name() : String.valueOf(mode);
+                if (mode == null || "ALL".equals(modeName)) return LayerFilter.all();
+
+                Method contains = range.getClass().getMethod("isPositionWithinRange", BlockPos.class);
+                String signature = modeName + "|"
+                    + invokeIfPresent(range, "getAxis") + "|"
+                    + invokeIfPresent(range, "getLayerMin") + "|"
+                    + invokeIfPresent(range, "getLayerMax");
+                Predicate<BlockPos> predicate = pos -> {
+                    try {
+                        return Boolean.TRUE.equals(contains.invoke(range, pos));
+                    } catch (ReflectiveOperationException | RuntimeException ignored) {
+                        return true;
+                    }
+                };
+                return new LayerFilter(true, signature, predicate);
+            } catch (ReflectiveOperationException | LinkageError | RuntimeException ignored) {
+                return LayerFilter.all();
+            }
+        }
+
         private static Object invokeIfPresent(Object owner, String methodName) throws ReflectiveOperationException {
             try {
                 return owner.getClass().getMethod(methodName).invoke(owner);
@@ -271,6 +300,18 @@ final class LitematicaProjection {
                 if (value instanceof Number number) return number;
             }
             return null;
+        }
+    }
+
+    record LayerFilter(boolean enabled, String signature, Predicate<BlockPos> predicate) {
+        private static final LayerFilter ALL = new LayerFilter(false, "ALL", pos -> true);
+
+        static LayerFilter all() {
+            return ALL;
+        }
+
+        boolean includes(BlockPos pos) {
+            return predicate.test(pos);
         }
     }
 
