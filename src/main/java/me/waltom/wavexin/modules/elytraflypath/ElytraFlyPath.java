@@ -16,6 +16,7 @@ import meteordevelopment.orbit.EventHandler;
 import meteordevelopment.orbit.EventPriority;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.network.ClientPlayerEntity;
+import net.minecraft.client.option.KeyBinding;
 import net.minecraft.entity.EquipmentSlot;
 import net.minecraft.entity.MovementType;
 import net.minecraft.entity.effect.StatusEffects;
@@ -137,7 +138,7 @@ public class ElytraFlyPath extends WaveXinModule {
     public final Setting<Double> arrivalDistance2D = sgFlight.add(new DoubleSetting.Builder()
         .name("Arrival Distance")
         .description("Distance from the target required to count as arrived")
-        .defaultValue(1)
+        .defaultValue(2.0)
         .min(1)
         .sliderMin(0.1)
         .max(Integer.MAX_VALUE)
@@ -167,6 +168,8 @@ public class ElytraFlyPath extends WaveXinModule {
             toggle();
             return;
         }
+
+        suppressMovementInput();
 
         
         if (!isSafeFlightHeight()) {
@@ -199,6 +202,7 @@ public class ElytraFlyPath extends WaveXinModule {
             if (!mc.player.isCreative()) mc.player.getAbilities().allowFlying = false;
             mc.player.getAbilities().flying = false;
         }
+        restoreMovementInput();
     }
 
     
@@ -230,10 +234,12 @@ public class ElytraFlyPath extends WaveXinModule {
     }
 
 
-    @EventHandler
+    @EventHandler(priority = EventPriority.HIGHEST)
     public void onTick(TickEvent.Pre event) {
         
         if (mc.player == null || mc.world == null || mc.getNetworkHandler() == null) return;
+
+        suppressMovementInput();
 
         if (isArrive) {
             finishArrival();
@@ -246,6 +252,23 @@ public class ElytraFlyPath extends WaveXinModule {
         }
     }
 
+    private void suppressMovementInput() {
+        if (mc.options == null) return;
+        mc.options.forwardKey.setPressed(false);
+        mc.options.backKey.setPressed(false);
+        mc.options.leftKey.setPressed(false);
+        mc.options.rightKey.setPressed(false);
+        mc.options.sneakKey.setPressed(false);
+        mc.options.jumpKey.setPressed(false);
+        if (mc.player != null && mc.player.input != null) mc.player.input.tick();
+    }
+
+    private void restoreMovementInput() {
+        if (mc.options == null) return;
+        KeyBinding.updatePressedStates();
+        if (mc.player != null && mc.player.input != null) mc.player.input.tick();
+    }
+
 
     
 
@@ -254,9 +277,11 @@ public class ElytraFlyPath extends WaveXinModule {
     @EventHandler(priority = EventPriority.HIGHEST)
     public void onMove(TravelEvent event) {
         
-        if (mc.player == null || mc.world == null || !mc.player.isFallFlying() || !hasWorkingElytra() || event.isPost()) {
+        if (mc.player == null || mc.world == null || event.isPost()) {
             return;
         }
+        suppressMovementInput();
+        if (!mc.player.isFallFlying() || !hasWorkingElytra()) return;
 
         
         int currentTargetX = getTargetX();
