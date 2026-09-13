@@ -6,6 +6,12 @@ import me.waltom.wavexin.core.WaveXinModule;
 import me.waltom.wavexin.WaveXinAddon;
 import me.waltom.wavexin.gui.TargetCoordinateInput;
 import me.waltom.wavexin.i18n.WaveXinI18n;
+import me.waltom.wavexin.modules.basefinder.BaseFinder;
+import me.waltom.wavexin.modules.basefinder.XaeroWaypointBridge;
+import me.waltom.wavexin.modules.basefinder.XaeroWaypointColorSetting;
+import me.waltom.wavexin.modules.elytrafly.ElytraFlightLogic;
+import me.waltom.wavexin.modules.elytrafly.ElytraSpeedRamp;
+import meteordevelopment.meteorclient.events.packets.PacketEvent;
 import meteordevelopment.meteorclient.events.world.TickEvent;
 import meteordevelopment.meteorclient.gui.renderer.GuiRenderer;
 import meteordevelopment.meteorclient.gui.utils.SettingsWidgetFactory;
@@ -24,10 +30,12 @@ import net.minecraft.item.ItemStack;
 import net.minecraft.item.Items;
 import net.minecraft.nbt.NbtCompound;
 import net.minecraft.network.packet.c2s.play.ClientCommandC2SPacket;
+import net.minecraft.network.packet.s2c.play.PlayerPositionLookS2CPacket;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.ChunkPos;
 import net.minecraft.util.math.Vec3d;
 import java.util.function.Consumer;
+import java.util.concurrent.ThreadLocalRandom;
 
 public class ElytraFlyPath extends WaveXinModule {
     private static final MinecraftClient mc = MinecraftClient.getInstance();
@@ -55,7 +63,13 @@ public class ElytraFlyPath extends WaveXinModule {
     
     private final SettingGroup sgTarget = settings.createGroup("Target Coordinates");
     private final SettingGroup sgFlight = settings.createGroup("Flight Settings");
+    private final SettingGroup sgSpeedAcceleration = settings.createGroup("Speed Acceleration");
+    private final SettingGroup sgXaeroWaypoint = settings.createGroup("Xaero Waypoint");
     private boolean isArrive = false;
+    private final ElytraSpeedRamp speedRamp = new ElytraSpeedRamp();
+    private final XaeroWaypointBridge xaeroWaypointBridge = new XaeroWaypointBridge();
+    private XaeroWaypointBridge.WaypointHandle temporaryWaypoint;
+    private boolean normalizingMaxSpeed;
 
     
     
@@ -100,13 +114,70 @@ public class ElytraFlyPath extends WaveXinModule {
 
     
     public final Setting<Double> speed = sgFlight.add(new DoubleSetting.Builder()
-        .name("Flight Speed")
-        .description("Horizontal flight speed")
+        .name("Initial Speed")
+        .description("Horizontal flight speed before acceleration")
         .defaultValue(1.8)
         .min(0.1)
         .sliderMin(0.1)
         .max(20)
         .sliderMax(20)
+        .onChanged(this::onInitialSpeedChanged)
+        .build()
+    );
+
+    public final Setting<Boolean> speedAcceleration = sgSpeedAcceleration.add(new BoolSetting.Builder()
+        .name("Enable")
+        .description("Increases flight speed while gliding")
+        .defaultValue(false)
+        .onChanged(value -> speedRamp.reset())
+        .build()
+    );
+
+    public final Setting<Double> speedIncreasePerSecond = sgSpeedAcceleration.add(new DoubleSetting.Builder()
+        .name("Speed Increase Per Second")
+        .description("Speed added for each second of active gliding")
+        .defaultValue(0.1)
+        .min(0.0)
+        .sliderMin(0.0)
+        .max(20.0)
+        .sliderMax(2.0)
+        .visible(speedAcceleration::get)
+        .build()
+    );
+
+    public final Setting<Double> maxSpeed = sgSpeedAcceleration.add(new DoubleSetting.Builder()
+        .name("Max Speed")
+        .description("Maximum accelerated flight speed; never lower than Initial Speed")
+        .defaultValue(1.8)
+        .min(0.1)
+        .sliderMin(0.1)
+        .max(20.0)
+        .sliderMax(20.0)
+        .onChanged(this::onMaxSpeedChanged)
+        .visible(speedAcceleration::get)
+        .build()
+    );
+
+    public final Setting<Boolean> resetAfterLagback = sgSpeedAcceleration.add(new BoolSetting.Builder()
+        .name("Reset After Lagback")
+        .description("Resets to Initial Speed and holds it for five seconds after a server position correction")
+        .defaultValue(true)
+        .visible(speedAcceleration::get)
+        .build()
+    );
+
+    public final Setting<Boolean> createXaeroWaypoint = sgXaeroWaypoint.add(new BoolSetting.Builder()
+        .name("Create Xaero Waypoint")
+        .description("Creates a temporary Xaero waypoint at the active path target")
+        .defaultValue(false)
+        .build()
+    );
+
+    public final Setting<BaseFinder.XaeroWaypointColor> xaeroWaypointColor = sgXaeroWaypoint.add(new XaeroWaypointColorSetting.Builder()
+        .name("Waypoint Color")
+        .description("Xaero waypoint color, or a random supported color")
+        .defaultValue(BaseFinder.XaeroWaypointColor.RANDOM)
+        .visible(createXaeroWaypoint::get)
         .build()
     );
 
@@ -170,6 +241,7 @@ public class ElytraFlyPath extends WaveXinModule {
         }
 
         suppressMovementInput();
+        speedRamp.reset();
 
         
         if (!isSafeFlightHeight()) {
@@ -184,6 +256,8 @@ public class ElytraFlyPath extends WaveXinModule {
             requestElytraGlide(mc.player);
         }
 
+        createTemporaryWaypoint();
+
         
         infoKey("message.wavexin.elytra_fly_path.started", "Started pathing to X=%d, Z=%d", getTargetX(), getTargetZ());
     }
@@ -194,8 +268,10 @@ public class ElytraFlyPath extends WaveXinModule {
 
     @Override
     public void onDeactivate() {
+        removeTemporaryWaypoint();
         target = null;
         isArrive = false;
+        speedRamp.reset();
 
         
         if (mc.player != null) {
@@ -249,6 +325,15 @@ public class ElytraFlyPath extends WaveXinModule {
         
         if (autoTakeoff.get() && !mc.player.isGliding()) {
             requestElytraGlide(mc.player);
+        }
+
+        speedRamp.tick(mc.player.isGliding() && hasWorkingElytra());
+    }
+
+    @EventHandler
+    private void onPacketReceive(PacketEvent.Receive event) {
+        if (event.packet instanceof PlayerPositionLookS2CPacket) {
+            speedRamp.onLagback(resetAfterLagback.get());
         }
     }
 
@@ -306,7 +391,7 @@ public class ElytraFlyPath extends WaveXinModule {
 
         
         Vec3d direction = new Vec3d(deltaX, 0, deltaZ).normalize();
-        double flightSpeed = Math.min(speed.get(), distance2D - arrivalDistance2D.get());
+        double flightSpeed = Math.min(currentFlightSpeed(), distance2D - arrivalDistance2D.get());
         setX(direction.x * flightSpeed);
         setY(0);
         setZ(direction.z * flightSpeed);
@@ -361,11 +446,56 @@ public class ElytraFlyPath extends WaveXinModule {
     }
 
     private int getTargetX() {
-        return netherPosCalculation.get() ? Math.floorDiv(globalX.get(), 8) : globalX.get();
+        return ElytraFlightLogic.targetCoordinate(globalX.get(), netherPosCalculation.get());
     }
 
     private int getTargetZ() {
-        return netherPosCalculation.get() ? Math.floorDiv(globalZ.get(), 8) : globalZ.get();
+        return ElytraFlightLogic.targetCoordinate(globalZ.get(), netherPosCalculation.get());
+    }
+
+    private double currentFlightSpeed() {
+        return speedRamp.speed(speedAcceleration.get(), speed.get(), speedIncreasePerSecond.get(), maxSpeed.get());
+    }
+
+    private void onInitialSpeedChanged(double value) {
+        if (maxSpeed != null && maxSpeed.get() < value) maxSpeed.set(value);
+        speedRamp.reset();
+    }
+
+    private void onMaxSpeedChanged(double value) {
+        if (normalizingMaxSpeed || value >= speed.get()) return;
+        normalizingMaxSpeed = true;
+        maxSpeed.set(speed.get());
+        normalizingMaxSpeed = false;
+    }
+
+    private void createTemporaryWaypoint() {
+        if (!createXaeroWaypoint.get() || mc.player == null) return;
+        if (!ElytraFlightLogic.shouldCreateWaypoint(createXaeroWaypoint.get(), xaeroWaypointBridge.isAvailable())) {
+            warningKey("warning.wavexin.elytra_fly_path.xaero_unavailable", "Xaero waypoint was not created: %s", xaeroWaypointBridge.unavailableReason());
+            return;
+        }
+
+        int colorId = xaeroWaypointColor.get() == BaseFinder.XaeroWaypointColor.RANDOM
+            ? ThreadLocalRandom.current().nextInt(16)
+            : xaeroWaypointColor.get().colorId();
+        XaeroWaypointBridge.Result result = xaeroWaypointBridge.create(
+            new BlockPos(getTargetX(), mc.player.getBlockY(), getTargetZ()),
+            "Elytra Path",
+            "EP",
+            colorId
+        );
+        if (result.created()) {
+            temporaryWaypoint = result.handle();
+        } else {
+            warningKey("warning.wavexin.elytra_fly_path.xaero_unavailable", "Xaero waypoint was not created: %s", result.detail());
+        }
+    }
+
+    private void removeTemporaryWaypoint() {
+        XaeroWaypointBridge.WaypointHandle waypoint = temporaryWaypoint;
+        temporaryWaypoint = null;
+        if (waypoint != null) xaeroWaypointBridge.remove(waypoint);
     }
 
     
