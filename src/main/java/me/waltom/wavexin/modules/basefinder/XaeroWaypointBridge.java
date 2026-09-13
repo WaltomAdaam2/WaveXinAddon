@@ -16,6 +16,7 @@ import java.lang.reflect.Method;
 public final class XaeroWaypointBridge {
     public enum Status {
         CREATED,
+        REMOVED,
         MISSING,
         SESSION_NOT_READY,
         WORLD_NOT_READY,
@@ -23,14 +24,29 @@ public final class XaeroWaypointBridge {
         FAILED
     }
 
-    public record Result(Status status, String detail) {
+    public record Result(Status status, String detail, WaypointHandle handle) {
         public boolean created() {
             return status == Status.CREATED;
+        }
+
+        public boolean removed() {
+            return status == Status.REMOVED;
+        }
+    }
+
+    /** Opaque identity token for one waypoint created through this bridge. */
+    public static final class WaypointHandle {
+        private final Object waypoint;
+
+        private WaypointHandle(Object waypoint) {
+            this.waypoint = waypoint;
         }
     }
 
     private interface Access {
         Result create(BlockPos pos, String name, String initials, int colorId);
+
+        Result remove(WaypointHandle handle);
     }
 
     private volatile boolean resolved;
@@ -50,8 +66,23 @@ public final class XaeroWaypointBridge {
     public Result create(BlockPos pos, String name, String initials, int colorId) {
         resolve();
         Access local = access;
-        if (local == null) return new Result(Status.MISSING, unavailableReason);
+        if (local == null) return result(Status.MISSING, unavailableReason);
         return local.create(pos, name, initials, colorId);
+    }
+
+    /**
+     * Removes only the exact object created by this bridge. It never searches by name or position.
+     */
+    public Result remove(WaypointHandle handle) {
+        if (handle == null) return result(Status.FAILED, "waypoint handle is null");
+        resolve();
+        Access local = access;
+        if (local == null) return result(Status.MISSING, unavailableReason);
+        return local.remove(handle);
+    }
+
+    private static Result result(Status status, String detail) {
+        return new Result(status, detail, null);
     }
 
     private void resolve() {
@@ -96,7 +127,7 @@ public final class XaeroWaypointBridge {
         public Result create(BlockPos pos, String name, String initials, int colorId) {
             try {
                 Object currentSession = getCurrentSession.invoke(null);
-                if (currentSession == null) return new Result(Status.SESSION_NOT_READY, "current session is null");
+                if (currentSession == null) return result(Status.SESSION_NOT_READY, "current session is null");
 
                 RuntimeMethods methods = runtime;
                 if (methods == null || !methods.supports(currentSession)) {
@@ -106,14 +137,14 @@ public final class XaeroWaypointBridge {
 
                 Object processor = methods.getMinimapProcessor.invoke(currentSession);
                 Object minimapSession = methods.getSession.invoke(processor);
-                if (minimapSession == null) return new Result(Status.SESSION_NOT_READY, "minimap session is null");
+                if (minimapSession == null) return result(Status.SESSION_NOT_READY, "minimap session is null");
 
                 Object worldManager = methods.getWorldManager.invoke(minimapSession);
                 Object currentWorld = methods.getCurrentWorld.invoke(worldManager);
-                if (currentWorld == null) return new Result(Status.WORLD_NOT_READY, "current waypoint world is null");
+                if (currentWorld == null) return result(Status.WORLD_NOT_READY, "current waypoint world is null");
 
                 Object waypointSet = methods.getCurrentWaypointSet.invoke(currentWorld);
-                if (waypointSet == null) return new Result(Status.SET_NOT_READY, "current waypoint set is null");
+                if (waypointSet == null) return result(Status.SET_NOT_READY, "current waypoint set is null");
 
                 Object waypoint = waypointConstructor.newInstance(
                     pos.getX(), pos.getY(), pos.getZ(), name, initials, colorId
@@ -124,9 +155,40 @@ public final class XaeroWaypointBridge {
                 if (waypointSession != null) {
                     methods.setSetChangedTime.invoke(waypointSession, System.currentTimeMillis());
                 }
-                return new Result(Status.CREATED, "");
+                return new Result(Status.CREATED, "", new WaypointHandle(waypoint));
             } catch (ReflectiveOperationException | RuntimeException e) {
-                return new Result(Status.FAILED, messageOf(e));
+                return result(Status.FAILED, messageOf(e));
+            }
+        }
+
+        @Override
+        public Result remove(WaypointHandle handle) {
+            try {
+                Object currentSession = getCurrentSession.invoke(null);
+                if (currentSession == null) return result(Status.SESSION_NOT_READY, "current session is null");
+
+                RuntimeMethods methods = runtime;
+                if (methods == null || !methods.supports(currentSession)) {
+                    methods = new RuntimeMethods(currentSession, waypointClass);
+                    runtime = methods;
+                }
+
+                Object processor = methods.getMinimapProcessor.invoke(currentSession);
+                Object minimapSession = methods.getSession.invoke(processor);
+                if (minimapSession == null) return result(Status.SESSION_NOT_READY, "minimap session is null");
+                Object currentWorld = methods.getCurrentWorld.invoke(methods.getWorldManager.invoke(minimapSession));
+                if (currentWorld == null) return result(Status.WORLD_NOT_READY, "current waypoint world is null");
+                Object waypointSet = methods.getCurrentWaypointSet.invoke(currentWorld);
+                if (waypointSet == null) return result(Status.SET_NOT_READY, "current waypoint set is null");
+
+                if (methods.removeWaypoint == null) return result(Status.FAILED, "waypoint removal is unsupported");
+                Object removed = methods.removeWaypoint.invoke(waypointSet, handle.waypoint);
+                if (removed instanceof Boolean success && !success) return result(Status.FAILED, "waypoint was not in the current set");
+                Object waypointSession = methods.getWaypointSession.invoke(minimapSession);
+                if (waypointSession != null) methods.setSetChangedTime.invoke(waypointSession, System.currentTimeMillis());
+                return result(Status.REMOVED, "");
+            } catch (ReflectiveOperationException | RuntimeException e) {
+                return result(Status.FAILED, messageOf(e));
             }
         }
 
@@ -138,6 +200,7 @@ public final class XaeroWaypointBridge {
             private final Method getCurrentWorld;
             private final Method getCurrentWaypointSet;
             private final Method addWaypoint;
+            private final Method removeWaypoint;
             private final Method getWaypointSession;
             private final Method setSetChangedTime;
 
@@ -160,6 +223,7 @@ public final class XaeroWaypointBridge {
 
                 Class<?> setClass = getCurrentWaypointSet.getReturnType();
                 addWaypoint = setClass.getMethod("add", waypointClass);
+                removeWaypoint = findWaypointMethod(setClass, "remove", waypointClass);
 
                 Class<?> waypointSessionClass = getWaypointSession.getReturnType();
                 setSetChangedTime = waypointSessionClass.getMethod("setSetChangedTime", long.class);
@@ -204,7 +268,7 @@ public final class XaeroWaypointBridge {
         public Result create(BlockPos pos, String name, String initials, int colorId) {
             try {
                 Object session = getCurrentSession.invoke(minimapModule);
-                if (session == null) return new Result(Status.SESSION_NOT_READY, "current session is null");
+                if (session == null) return result(Status.SESSION_NOT_READY, "current session is null");
 
                 ModernRuntimeMethods methods = runtime;
                 if (methods == null || !methods.supports(session)) {
@@ -214,10 +278,10 @@ public final class XaeroWaypointBridge {
 
                 Object worldManager = methods.getWorldManager.invoke(session);
                 Object currentWorld = methods.getCurrentWorld.invoke(worldManager);
-                if (currentWorld == null) return new Result(Status.WORLD_NOT_READY, "current waypoint world is null");
+                if (currentWorld == null) return result(Status.WORLD_NOT_READY, "current waypoint world is null");
 
                 Object waypointSet = methods.getCurrentWaypointSet.invoke(currentWorld);
-                if (waypointSet == null) return new Result(Status.SET_NOT_READY, "current waypoint set is null");
+                if (waypointSet == null) return result(Status.SET_NOT_READY, "current waypoint set is null");
 
                 Object color = colorResolver.resolve(colorId);
                 Object waypoint = waypointConstructor.newInstance(
@@ -225,9 +289,36 @@ public final class XaeroWaypointBridge {
                 );
                 methods.addWaypoint.invoke(waypointSet, waypoint);
                 methods.saveIfSupported(session, currentWorld);
-                return new Result(Status.CREATED, "");
+                return new Result(Status.CREATED, "", new WaypointHandle(waypoint));
             } catch (ReflectiveOperationException | RuntimeException e) {
-                return new Result(Status.FAILED, messageOf(e));
+                return result(Status.FAILED, messageOf(e));
+            }
+        }
+
+        @Override
+        public Result remove(WaypointHandle handle) {
+            try {
+                Object session = getCurrentSession.invoke(minimapModule);
+                if (session == null) return result(Status.SESSION_NOT_READY, "current session is null");
+
+                ModernRuntimeMethods methods = runtime;
+                if (methods == null || !methods.supports(session)) {
+                    methods = new ModernRuntimeMethods(session, waypointClass);
+                    runtime = methods;
+                }
+
+                Object currentWorld = methods.getCurrentWorld.invoke(methods.getWorldManager.invoke(session));
+                if (currentWorld == null) return result(Status.WORLD_NOT_READY, "current waypoint world is null");
+                Object waypointSet = methods.getCurrentWaypointSet.invoke(currentWorld);
+                if (waypointSet == null) return result(Status.SET_NOT_READY, "current waypoint set is null");
+
+                if (methods.removeWaypoint == null) return result(Status.FAILED, "waypoint removal is unsupported");
+                Object removed = methods.removeWaypoint.invoke(waypointSet, handle.waypoint);
+                if (removed instanceof Boolean success && !success) return result(Status.FAILED, "waypoint was not in the current set");
+                methods.saveIfSupported(session, currentWorld);
+                return result(Status.REMOVED, "");
+            } catch (ReflectiveOperationException | RuntimeException e) {
+                return result(Status.FAILED, messageOf(e));
             }
         }
 
@@ -254,6 +345,7 @@ public final class XaeroWaypointBridge {
             private final Method getCurrentWorld;
             private final Method getCurrentWaypointSet;
             private final Method addWaypoint;
+            private final Method removeWaypoint;
             private final Method getWorldManagerIO;
             private final Method saveWorld;
 
@@ -266,6 +358,7 @@ public final class XaeroWaypointBridge {
                 getCurrentWaypointSet = worldClass.getMethod("getCurrentWaypointSet");
                 Class<?> setClass = getCurrentWaypointSet.getReturnType();
                 addWaypoint = setClass.getMethod("add", waypointClass);
+                removeWaypoint = findWaypointMethod(setClass, "remove", waypointClass);
 
                 Method io = null;
                 Method save = null;
@@ -287,6 +380,18 @@ public final class XaeroWaypointBridge {
                 if (getWorldManagerIO == null || saveWorld == null) return;
                 Object io = getWorldManagerIO.invoke(session);
                 if (io != null) saveWorld.invoke(io, world);
+            }
+        }
+    }
+
+    private static Method findWaypointMethod(Class<?> type, String name, Class<?> waypointClass) {
+        try {
+            return type.getMethod(name, waypointClass);
+        } catch (NoSuchMethodException ignored) {
+            try {
+                return type.getMethod(name, Object.class);
+            } catch (NoSuchMethodException unsupported) {
+                return null;
             }
         }
     }
