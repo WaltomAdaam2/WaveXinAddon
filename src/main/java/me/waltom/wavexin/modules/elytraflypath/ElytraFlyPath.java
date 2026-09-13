@@ -114,7 +114,7 @@ public class ElytraFlyPath extends WaveXinModule {
 
     
     public final Setting<Double> speed = sgFlight.add(new DoubleSetting.Builder()
-        .name("Initial Speed")
+        .name("Flight Speed")
         .description("Horizontal flight speed before acceleration")
         .defaultValue(1.8)
         .min(0.1)

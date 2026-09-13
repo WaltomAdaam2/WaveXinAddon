@@ -181,7 +181,9 @@ public final class XaeroWaypointBridge {
                 Object waypointSet = methods.getCurrentWaypointSet.invoke(currentWorld);
                 if (waypointSet == null) return result(Status.SET_NOT_READY, "current waypoint set is null");
 
-                methods.removeWaypoint.invoke(waypointSet, handle.waypoint);
+                if (methods.removeWaypoint == null) return result(Status.FAILED, "waypoint removal is unsupported");
+                Object removed = methods.removeWaypoint.invoke(waypointSet, handle.waypoint);
+                if (removed instanceof Boolean success && !success) return result(Status.FAILED, "waypoint was not in the current set");
                 Object waypointSession = methods.getWaypointSession.invoke(minimapSession);
                 if (waypointSession != null) methods.setSetChangedTime.invoke(waypointSession, System.currentTimeMillis());
                 return result(Status.REMOVED, "");
@@ -310,7 +312,9 @@ public final class XaeroWaypointBridge {
                 Object waypointSet = methods.getCurrentWaypointSet.invoke(currentWorld);
                 if (waypointSet == null) return result(Status.SET_NOT_READY, "current waypoint set is null");
 
-                methods.removeWaypoint.invoke(waypointSet, handle.waypoint);
+                if (methods.removeWaypoint == null) return result(Status.FAILED, "waypoint removal is unsupported");
+                Object removed = methods.removeWaypoint.invoke(waypointSet, handle.waypoint);
+                if (removed instanceof Boolean success && !success) return result(Status.FAILED, "waypoint was not in the current set");
                 methods.saveIfSupported(session, currentWorld);
                 return result(Status.REMOVED, "");
             } catch (ReflectiveOperationException | RuntimeException e) {
@@ -380,11 +384,15 @@ public final class XaeroWaypointBridge {
         }
     }
 
-    private static Method findWaypointMethod(Class<?> type, String name, Class<?> waypointClass) throws NoSuchMethodException {
+    private static Method findWaypointMethod(Class<?> type, String name, Class<?> waypointClass) {
         try {
             return type.getMethod(name, waypointClass);
         } catch (NoSuchMethodException ignored) {
-            return type.getMethod(name, Object.class);
+            try {
+                return type.getMethod(name, Object.class);
+            } catch (NoSuchMethodException unsupported) {
+                return null;
+            }
         }
     }
 
