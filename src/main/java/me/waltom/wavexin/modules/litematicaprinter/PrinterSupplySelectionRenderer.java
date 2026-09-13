@@ -18,6 +18,7 @@ public final class PrinterSupplySelectionRenderer {
     private void onRender(Render3DEvent event) {
         printer.renderSupplySelection(event);
         printer.renderNextBatch(event);
+        printer.renderRetryingBlocks(event);
         printer.renderManualCorrections(event);
     }
 

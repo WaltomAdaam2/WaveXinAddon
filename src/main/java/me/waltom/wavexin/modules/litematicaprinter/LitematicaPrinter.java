@@ -401,6 +401,29 @@ public final class LitematicaPrinter extends WaveXinModule {
         .build()
     );
 
+    private final Setting<Boolean> renderRetryingBlocks = sgBatchRender.add(new BoolSetting.Builder()
+        .name("Render Retrying Blocks")
+        .description("Highlights pending blocks that are waiting for another placement attempt.")
+        .defaultValue(true)
+        .build()
+    );
+
+    private final Setting<SettingColor> retryingBlockSideColor = sgBatchRender.add(new ColorSetting.Builder()
+        .name("Retry Side Color")
+        .description("Fill color for blocks waiting to retry placement.")
+        .defaultValue(new SettingColor(255, 210, 0, 35))
+        .visible(renderRetryingBlocks::get)
+        .build()
+    );
+
+    private final Setting<SettingColor> retryingBlockLineColor = sgBatchRender.add(new ColorSetting.Builder()
+        .name("Retry Line Color")
+        .description("Outline color for blocks waiting to retry placement.")
+        .defaultValue(new SettingColor(255, 235, 60, 210))
+        .visible(renderRetryingBlocks::get)
+        .build()
+    );
+
     private final PrinterInventory inventory = new PrinterInventory();
     private final PrinterPlacement placement = new PrinterPlacement(inventory);
     private final PrinterBatchPlanner<PrinterPlacement.Candidate> batchPlanner = new PrinterBatchPlanner<>();
@@ -571,6 +594,18 @@ public final class LitematicaPrinter extends WaveXinModule {
                 pos.getX(), pos.getY(), pos.getZ(),
                 pos.getX() + 1.0, pos.getY() + 1.0, pos.getZ() + 1.0,
                 nextBatchSideColor.get(), nextBatchLineColor.get(), nextBatchShapeMode.get(), 0
+            );
+        }
+    }
+
+    void renderRetryingBlocks(Render3DEvent event) {
+        if (!isActive() || !renderRetryingBlocks.get() || mc.world == null) return;
+        for (BlockPos pos : retryAfterTick.keySet()) {
+            if (!pending.containsKey(pos) || awaiting.containsKey(pos)) continue;
+            event.renderer.box(
+                pos.getX(), pos.getY(), pos.getZ(),
+                pos.getX() + 1.0, pos.getY() + 1.0, pos.getZ() + 1.0,
+                retryingBlockSideColor.get(), retryingBlockLineColor.get(), nextBatchShapeMode.get(), 0
             );
         }
     }
