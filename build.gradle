@@ -360,12 +360,19 @@ tasks.register("testWaveXinLitematicaPrinterBehavior", JavaExec) {
     mainClass = "me.waltom.wavexin.modules.litematicaprinter.CuboidCursorBehaviorTest"
 }
 
+tasks.register("testWaveXinElytraFlightBehavior", JavaExec) {
+    dependsOn(tasks.named("testClasses"))
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = "me.waltom.wavexin.modules.elytrafly.ElytraFlightBehaviorTest"
+}
+
 tasks.named("test") {
     dependsOn(tasks.named("testWaveXinI18nBehavior"))
     dependsOn(tasks.named("testWaveXinChatFilterBehavior"))
     dependsOn(tasks.named("testWaveXinBaseFinderBehavior"))
     dependsOn(tasks.named("testWaveXinTurtlePotionThrowerBehavior"))
     dependsOn(tasks.named("testWaveXinLitematicaPrinterBehavior"))
+    dependsOn(tasks.named("testWaveXinElytraFlightBehavior"))
 }
 
 tasks.named("check") {

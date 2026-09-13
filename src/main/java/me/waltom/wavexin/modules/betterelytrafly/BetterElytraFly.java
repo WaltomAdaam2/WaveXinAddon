@@ -4,6 +4,8 @@ import me.waltom.wavexin.events.TravelEvent;
 import me.waltom.wavexin.events.MoveEvent;
 import me.waltom.wavexin.core.WaveXinModule;
 import me.waltom.wavexin.WaveXinAddon;
+import me.waltom.wavexin.modules.elytrafly.ElytraSpeedRamp;
+import meteordevelopment.meteorclient.events.packets.PacketEvent;
 import meteordevelopment.meteorclient.events.world.TickEvent;
 import meteordevelopment.meteorclient.settings.BoolSetting;
 import meteordevelopment.meteorclient.settings.DoubleSetting;
@@ -23,6 +25,7 @@ import net.minecraft.entity.effect.StatusEffects;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.Items;
 import net.minecraft.network.packet.c2s.play.ClientCommandC2SPacket;
+import net.minecraft.network.packet.s2c.play.PlayerPositionLookS2CPacket;
 import net.minecraft.util.math.ChunkPos;
 import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec3d;
@@ -32,8 +35,10 @@ public class BetterElytraFly extends WaveXinModule {
     private static final int ELYTRA_MAX_DAMAGE = new ItemStack(Items.ELYTRA).getMaxDamage();
     private static final int REPLACE_RETRY_DELAY_TICKS = 5;
     private static final int NO_REPLACEMENT_WARNING_DELAY_TICKS = 100;
+    private final ElytraSpeedRamp speedRamp = new ElytraSpeedRamp();
 
     private final SettingGroup sgGeneral = settings.getDefaultGroup();
+    private final SettingGroup sgSpeedAcceleration = settings.createGroup("Speed Acceleration");
     private final SettingGroup sgElytraReplace = settings.createGroup("Elytra Replace");
 
     public final Setting<Boolean> autoStop = sgGeneral.add(new BoolSetting.Builder()
@@ -45,12 +50,54 @@ public class BetterElytraFly extends WaveXinModule {
 
     public final Setting<Double> speed = sgGeneral.add(new DoubleSetting.Builder()
         .name("Flight Speed")
-        .description("Horizontal flight speed")
+        .description("Horizontal flight speed before acceleration")
         .defaultValue(1.8)
         .min(0.1)
         .sliderMin(0.1)
         .max(20)
         .sliderMax(20)
+        .onChanged(this::onInitialSpeedChanged)
+        .build()
+    );
+
+    public final Setting<Boolean> speedAcceleration = sgSpeedAcceleration.add(new BoolSetting.Builder()
+        .name("Enable")
+        .description("Increases flight speed while gliding")
+        .defaultValue(false)
+        .onChanged(value -> speedRamp.reset())
+        .build()
+    );
+
+    public final Setting<Double> speedIncreasePerSecond = sgSpeedAcceleration.add(new DoubleSetting.Builder()
+        .name("Speed Increase Per Second")
+        .description("Speed added for each second of active gliding")
+        .defaultValue(0.1)
+        .min(0.0)
+        .sliderMin(0.0)
+        .max(20.0)
+        .sliderMax(2.0)
+        .visible(speedAcceleration::get)
+        .build()
+    );
+
+    public final Setting<Double> maxSpeed = sgSpeedAcceleration.add(new DoubleSetting.Builder()
+        .name("Max Speed")
+        .description("Maximum accelerated flight speed; never lower than Initial Speed")
+        .defaultValue(1.8)
+        .min(0.1)
+        .sliderMin(0.1)
+        .max(20.0)
+        .sliderMax(20.0)
+        .onChanged(this::onMaxSpeedChanged)
+        .visible(speedAcceleration::get)
+        .build()
+    );
+
+    public final Setting<Boolean> resetAfterLagback = sgSpeedAcceleration.add(new BoolSetting.Builder()
+        .name("Reset After Lagback")
+        .description("Resets to Initial Speed and holds it for five seconds after a server position correction")
+        .defaultValue(true)
+        .visible(speedAcceleration::get)
         .build()
     );
 
@@ -125,6 +172,7 @@ public class BetterElytraFly extends WaveXinModule {
     private int inventoryTweaksRestoreCountdown;
     private int replaceRetryCountdown;
     private int noReplacementWarningCountdown;
+    private boolean normalizingMaxSpeed;
 
     public BetterElytraFly() {
         super(
@@ -146,6 +194,7 @@ public class BetterElytraFly extends WaveXinModule {
         inventoryTweaksRestoreCountdown = 0;
         replaceRetryCountdown = 0;
         noReplacementWarningCountdown = 0;
+        speedRamp.reset();
     }
 
     @Override
@@ -155,6 +204,7 @@ public class BetterElytraFly extends WaveXinModule {
         inventoryTweaksRestoreCountdown = 0;
         replaceRetryCountdown = 0;
         noReplacementWarningCountdown = 0;
+        speedRamp.reset();
 
         if (mc.player != null) {
             if (!mc.player.isCreative()) mc.player.getAbilities().allowFlying = false;
@@ -166,11 +216,20 @@ public class BetterElytraFly extends WaveXinModule {
     public void onTick(TickEvent.Pre event) {
         if (mc.player == null || mc.world == null) {
             hasElytra = false;
+            speedRamp.reset();
             return;
         }
 
         ItemStack chestStack = mc.player.getEquippedStack(EquipmentSlot.CHEST);
         hasElytra = isUsableElytra(chestStack);
+        speedRamp.tick(hasElytra && mc.player.isFallFlying());
+    }
+
+    @EventHandler
+    private void onPacketReceive(PacketEvent.Receive event) {
+        if (event.packet instanceof PlayerPositionLookS2CPacket) {
+            speedRamp.onLagback(resetAfterLagback.get());
+        }
     }
 
     @EventHandler
@@ -388,7 +447,7 @@ public class BetterElytraFly extends WaveXinModule {
                 setX(getX() - lookVec.x * rawUpSpeed / lookDist);
                 setZ(getZ() - lookVec.z * rawUpSpeed / lookDist);
             } else {
-                double[] dir = directionSpeedKey(speed.get());
+                double[] dir = directionSpeedKey(currentFlightSpeed());
                 setX(dir[0]);
                 setZ(dir[1]);
             }
@@ -400,7 +459,7 @@ public class BetterElytraFly extends WaveXinModule {
         }
 
         if (!mc.options.jumpKey.isPressed()) {
-            double[] dir = directionSpeedKey(speed.get());
+            double[] dir = directionSpeedKey(currentFlightSpeed());
             setX(dir[0]);
             setZ(dir[1]);
         }
@@ -415,6 +474,22 @@ public class BetterElytraFly extends WaveXinModule {
 
     private double getX() {
         return mc.player.getVelocity().x;
+    }
+
+    private double currentFlightSpeed() {
+        return speedRamp.speed(speedAcceleration.get(), speed.get(), speedIncreasePerSecond.get(), maxSpeed.get());
+    }
+
+    private void onInitialSpeedChanged(double value) {
+        if (maxSpeed != null && maxSpeed.get() < value) maxSpeed.set(value);
+        speedRamp.reset();
+    }
+
+    private void onMaxSpeedChanged(double value) {
+        if (normalizingMaxSpeed || value >= speed.get()) return;
+        normalizingMaxSpeed = true;
+        maxSpeed.set(speed.get());
+        normalizingMaxSpeed = false;
     }
 
     private double getY() {

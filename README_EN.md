@@ -10,15 +10,15 @@ WaveXinAddon is a Meteor Client addon designed for the **2b2t.xin** server. It p
 
 ## Features
 
-* Better Elytra Fly: Configurable horizontal and vertical flight control with auto start/stop, speed limiting, no-drag mode, and low-durability elytra replacement.
-* Elytra Fly Path: Flies toward a target X/Z coordinate with Nether conversion, automatic takeoff, arrival stopping, and optional disconnect.
+* Better Elytra Fly: Configurable horizontal and vertical flight control with low-durability elytra replacement. Optional speed ramping increases from an initial speed to a cap and can reset after a server lagback cooldown.
+* Elytra Fly Path: Flies toward a target X/Z coordinate with Nether conversion, automatic takeoff, arrival stopping, optional disconnect, the same speed ramping, and an optional temporary Xaero target waypoint.
 * Chicken Nametags: Renders configurable name, health, and distance labels for nearby chickens.
 * Sniffer Nametags: Renders configurable name, health, and distance labels for nearby sniffers.
 * Auto Login: Automates supported 2b2t.xin login, quiz, Daily Flower check-in, and join flows while encrypting offline-account passwords.
 * Chat Filter: Separately filters MSG, public chat, and death messages with independent allowlists and an own-message bypass enabled by default.
 * Turtle Potion Thrower: One-shot bind for normal, long, or strong splash Turtle Master potions with offhand, hotbar, Quick Swap, slot restore, and notification support.
 * Base Finder: Normal/spiral scanning, checkpoint resume, immediate visited-chunk rendering, container and pearl recording, and optional Xaero waypoints with area limits and exact creation-message colors.
-* Litematica Printer: While the player moves manually, places projection blocks with real support inside interaction range; handles directional states, double chests, hotbar refills, whole-stack restocking from a selected region, progress/container caches, and a dedicated debug log.
+* Litematica Printer: While the player moves manually, places projection blocks with real support inside interaction range. Green marks the next batch, yellow marks retrying blocks, and red marks states requiring manual correction. It also handles directional states, double chests, hotbar refills, whole-stack restocking from a selected region, progress/container caches, and a dedicated debug log.
 
 For implementation details and feature-specific notes, see the [Feature Logic Guide](docs/README_LOGIC_EN.md). The staged Minecraft 1.21.1 port and acceptance criteria are documented in the [1.21.1 Compatibility Plan](docs/MC_1_21_1_PORT_PLAN.md).
 

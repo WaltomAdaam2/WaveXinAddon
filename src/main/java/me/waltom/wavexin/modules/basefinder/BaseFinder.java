@@ -142,6 +142,10 @@ public class BaseFinder extends WaveXinModule {
             return this == RANDOM ? RainbowColors.GLOBAL : displayColor;
         }
 
+        public int colorId() {
+            return colorId;
+        }
+
         public static XaeroWaypointColor fromColorId(int colorId) {
             for (XaeroWaypointColor color : values()) {
                 if (color.colorId == colorId) return color;

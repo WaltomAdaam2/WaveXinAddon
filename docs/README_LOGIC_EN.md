@@ -4,9 +4,9 @@ This page describes implementation details and notable behavior for the public C
 
 ### Better Elytra Fly
 
-- Adjusts horizontal and vertical movement while gliding according to movement keys, view direction, and speed settings. `Flight Speed` defaults to 2 and can be raised to 20; `Descent Speed` keeps its existing range.
-- `Auto Start` uses the normal client glide-start flow when its conditions are met; `Auto Stop` ends assisted flight under its configured conditions.
-- `Speed Limit` caps the final speed, while `No Drag` removes the drag simulated by this module.
+- Adjusts horizontal and vertical movement while gliding according to movement keys, view direction, and speed settings. `Flight Speed` retains its existing saved-setting key while displaying as Initial Speed, with a default of 1.8; `Descent Speed` keeps its existing range.
+- The standalone `Speed Acceleration` group is disabled by default, preserving fixed-speed behavior. When enabled, speed rises only during active gliding by the configured per-second amount, never exceeds its cap, and resets to Initial Speed when a new glide starts.
+- With `Reset After Lagback` enabled, a server position correction resets speed to Initial Speed for exactly five seconds before ramping resumes. With it disabled, corrections do not change speed.
 - The module's `Elytra Replace` setting group can independently enable automatic replacement. When the equipped elytra reaches the configured remaining-durability threshold, it finds a spare elytra above that threshold and equips it in the chest slot.
 - Replacement can be limited to active gliding. Missing-spare warnings are rate-limited to prevent chat spam.
 - The Inventory Tweaks compatibility option temporarily disables that module during replacement and restores it after the configured delay.
@@ -16,7 +16,8 @@ This page describes implementation details and notable behavior for the public C
 - Uses Target X and Target Z to calculate a two-dimensional direction, then adjusts view and movement while gliding toward the target.
 - With `Nether Pos Calculation` enabled, the entered X and Z are each divided by 8 before they become the actual target coordinates.
 - Arrival uses `Arrival Distance`. When both automatic stopping and automatic disconnect are enabled, the module stops before disconnecting.
-- The module can take off automatically and warns when started outside its recommended altitude. Its own settings determine the final flight speed.
+- The module can take off automatically and warns when started outside its recommended altitude. Its final speed uses the same optional ramping controls as Better Elytra Fly.
+- The optional Xaero waypoint creates `Elytra Path` with initials `EP` on activation. It uses converted X/Z when Nether conversion is enabled and the player's activation Y. Deactivation only attempts to remove the exact object created by that activation; missing or unsupported Xaero APIs issue one warning without stopping flight.
 
 ### Chicken Nametags and Sniffer Nametags
 
@@ -58,7 +59,7 @@ This page describes implementation details and notable behavior for the public C
 
 - Printer is a semi-automatic builder: it does not automatically path, mine, or scaffold terrain for the player. After the player moves into position, the planner selects only loaded projection targets that are within interaction range, have a real six-direction support neighbor, and can currently be interacted with correctly. The old Baritone and mining adapters remain in the source tree but are disconnected from the active runtime path.
 - The placement executor combines three established behavior models: Scaffold-style continuous support-face placement, Alien Client Surround-style packet multi-place and silent hotbar switching, and Mio Surround-style nearby support prioritization. These behaviors are independently implemented; WaveXinAddon does not load Alien or Mio at runtime and does not embed either client wholesale.
-- `PrinterBatchPlanner` is the single decision source for both highlighting and the next placement. A batch defaults to at most three targets and uses stable coordinates, player distance, material availability, and real support to determine order. The green highlight is the same batch the executor will attempt. Directional or shape-sensitive blocks cannot rely on an unconfirmed same-tick virtual support.
+- `PrinterBatchPlanner` is the single decision source for both highlighting and the next placement. A batch defaults to at most three targets and uses stable coordinates, player distance, material availability, and real support to determine order. Green is the exact batch the executor will attempt, yellow marks targets waiting for their retry interval, and red marks states requiring manual correction. Directional or shape-sensitive blocks cannot rely on an unconfirmed same-tick virtual support.
 - Placement compares the exact target `BlockState`. Hoppers derive their clicked face from the required output direction. Paired chests are placed as one logical unit using facing and `LEFT/RIGHT` state, and a provisional single chest is not marked complete. Incorrect orientations or malformed chest pairs that cannot be repaired safely are highlighted in red for manual correction instead of causing random block breaking.
 - When placing against containers or other interactive supports, Printer temporarily sneaks on the server and sends a temporary yaw/pitch only when the current view cannot produce the target state. Server rotation is restored immediately after interaction and the local camera is never changed. Container screens opened by Printer are closed only inside a short guard window; manual interaction and restock screens are unaffected.
 - Build materials are searched from left to right in the hotbar first. With `Allow Inventory Pull`, a full stack is moved from inventory only when the hotbar has none of the required material, following inventory order from left to right and top to bottom instead of performing a temporary swap for every placement.
