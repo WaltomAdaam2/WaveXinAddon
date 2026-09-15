@@ -21,7 +21,7 @@ public final class WaveRedeemCommand extends Command {
     }
 
     private int redeem(String code) {
-        if (!EndGatewayFeatureAccess.matches(code)) {
+        if (!matches(code)) {
             error(WaveXinI18n.tr("error.wavexin.waveredeem.invalid", "The redemption code is invalid."));
             return 0;
         }
@@ -29,5 +29,9 @@ public final class WaveRedeemCommand extends Command {
         onRedeemed.run();
         info(WaveXinI18n.tr("message.wavexin.waveredeem.success", "Redeemed successfully. The optional scan module is now available."));
         return SINGLE_SUCCESS;
+    }
+
+    static boolean matches(String code) {
+        return EndGatewayFeatureAccess.matches(code);
     }
 }

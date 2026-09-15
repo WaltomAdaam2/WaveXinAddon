@@ -2,6 +2,8 @@ package me.waltom.wavexin;
 
 import me.waltom.wavexin.commands.PrinterSelectionCommand;
 import me.waltom.wavexin.commands.WaveRedeemCommand;
+import me.waltom.wavexin.commands.WaveXinCommand;
+import me.waltom.wavexin.core.UpdateChecker;
 import me.waltom.wavexin.core.WaveXinSettingsStore;
 import me.waltom.wavexin.modules.sniffernametags.SnifferNametags;
 import me.waltom.wavexin.modules.elytraflypath.ElytraFlyPath;
@@ -10,6 +12,7 @@ import me.waltom.wavexin.modules.chatfilter.ChatFilter;
 import me.waltom.wavexin.modules.turtlepotionthrower.TurtlePotionThrower;
 import me.waltom.wavexin.modules.betterelytrafly.BetterElytraFly;
 import me.waltom.wavexin.modules.basefinder.BaseFinder;
+import me.waltom.wavexin.modules.containerrecorder.ContainerRecorderModule;
 import me.waltom.wavexin.modules.endgateway.EndGatewayFinder;
 import me.waltom.wavexin.modules.litematicaprinter.LitematicaPrinter;
 import me.waltom.wavexin.modules.litematicaprinter.PrinterSupplySelectionRenderer;
@@ -36,11 +39,12 @@ public class WaveXinAddon extends MeteorAddon {
     public static final Category CATEGORY = new Category("WaveXinAddon");
     private static final Identifier CHAT_AVATAR = Identifier.of("wavexin", "textures/icons/chat/wavexin.png");
     private EndGatewayFinder endGatewayFinder;
+    private ContainerRecorderModule containerRecorder;
 
     @Override
     public void onInitialize() {
         LOG.info("Initializing WaveXinAddon.");
-        WaveXinSettingsStore.loadEndGatewayFinderEnabled();
+        WaveXinSettingsStore.loadFeatureFlags();
         ChatUtils.registerCustomPrefix(getPackage(), WaveXinAddon::createChatPrefix);
         BetterChat.registerCustomHead("[WaveXin]", CHAT_AVATAR);
         MeteorClient.EVENT_BUS.subscribe(new WaveXinSettingsAutoSaver());
@@ -51,14 +55,18 @@ public class WaveXinAddon extends MeteorAddon {
         Modules.get().add(new AutoLogin());
         Modules.get().add(new ChatFilter());
         Modules.get().add(new TurtlePotionThrower());
-        Modules.get().add(new BaseFinder());
+        containerRecorder = new ContainerRecorderModule();
+        Modules.get().add(containerRecorder);
+        Modules.get().add(new BaseFinder(containerRecorder));
         LitematicaPrinter printer = new LitematicaPrinter();
         Modules.get().add(printer);
         Commands.add(new PrinterSelectionCommand(printer));
         Commands.add(new WaveRedeemCommand(this::unlockEndGatewayFinder));
+        Commands.add(new WaveXinCommand(this::unlockEndGatewayFinder, this::setUpdateCheckEnabled));
         registerEndGatewayFinderIfEnabled();
         MeteorClient.EVENT_BUS.subscribe(new PrinterSupplySelectionRenderer(printer));
         WaveXinI18n.validateResources(Modules.get().getAll());
+        UpdateChecker.checkOnStartup();
     }
 
     private void unlockEndGatewayFinder() {
@@ -68,9 +76,14 @@ public class WaveXinAddon extends MeteorAddon {
 
     private void registerEndGatewayFinderIfEnabled() {
         if (!WaveXinSettingsStore.isEndGatewayFinderEnabled() || endGatewayFinder != null) return;
-        endGatewayFinder = new EndGatewayFinder();
+        endGatewayFinder = new EndGatewayFinder(containerRecorder);
         Modules.get().add(endGatewayFinder);
         Modules.get().sortModules();
+    }
+
+    private void setUpdateCheckEnabled(boolean enabled) {
+        WaveXinSettingsStore.setUpdateCheckEnabled(enabled, Modules.get().getGroup(CATEGORY));
+        if (!enabled) UpdateChecker.cancel();
     }
 
     private static Text createChatPrefix() {

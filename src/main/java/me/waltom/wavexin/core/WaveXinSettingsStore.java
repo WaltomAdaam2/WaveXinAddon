@@ -6,6 +6,9 @@ import com.google.gson.GsonBuilder;
 import com.google.gson.JsonSyntaxException;
 import meteordevelopment.meteorclient.systems.modules.Module;
 import net.minecraft.nbt.StringNbtReader;
+import net.minecraft.nbt.NbtCompound;
+import java.util.ArrayList;
+import java.util.List;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.AtomicMoveNotSupportedException;
@@ -18,19 +21,22 @@ import java.util.Map;
 public final class WaveXinSettingsStore {
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
     private static boolean endGatewayFinderEnabled;
+    private static boolean updateCheckEnabled = true;
 
     private WaveXinSettingsStore() {
     }
 
-    public static boolean loadEndGatewayFinderEnabled() {
+    public static void loadFeatureFlags() {
         endGatewayFinderEnabled = false;
-        if (!Files.exists(WaveXinDataPaths.SETTINGS_PATH)) return false;
+        updateCheckEnabled = true;
+        if (!Files.exists(WaveXinDataPaths.SETTINGS_PATH)) return;
 
         try {
-            endGatewayFinderEnabled = endGatewayFeatureFromJson(Files.readString(WaveXinDataPaths.SETTINGS_PATH, StandardCharsets.UTF_8));
-            return endGatewayFinderEnabled;
+            FeatureFlags features = featureFlagsFromJson(Files.readString(WaveXinDataPaths.SETTINGS_PATH, StandardCharsets.UTF_8));
+            endGatewayFinderEnabled = features != null && features.endGatewayFinder;
+            updateCheckEnabled = features == null || features.updateCheck;
         } catch (IOException | JsonSyntaxException ignored) {
-            return false;
+            // Keep safe legacy defaults when settings cannot be read.
         }
     }
 
@@ -38,13 +44,32 @@ public final class WaveXinSettingsStore {
         return endGatewayFinderEnabled;
     }
 
+    public static boolean isUpdateCheckEnabled() {
+        return updateCheckEnabled;
+    }
+
     static boolean endGatewayFeatureFromJson(String json) {
+        FeatureFlags features = featureFlagsFromJson(json);
+        return features != null && features.endGatewayFinder;
+    }
+
+    static boolean updateCheckFeatureFromJson(String json) {
+        FeatureFlags features = featureFlagsFromJson(json);
+        return features == null || features.updateCheck;
+    }
+
+    private static FeatureFlags featureFlagsFromJson(String json) {
         SettingsDocument document = GSON.fromJson(json, SettingsDocument.class);
-        return document != null && document.features != null && document.features.endGatewayFinder;
+        return document == null ? null : document.features;
     }
 
     public static void enableEndGatewayFinder(Iterable<Module> modules) {
         endGatewayFinderEnabled = true;
+        save(modules);
+    }
+
+    public static void setUpdateCheckEnabled(boolean enabled, Iterable<Module> modules) {
+        updateCheckEnabled = enabled;
         save(modules);
     }
 
@@ -55,11 +80,24 @@ public final class WaveXinSettingsStore {
             SettingsDocument document = GSON.fromJson(Files.readString(WaveXinDataPaths.SETTINGS_PATH, StandardCharsets.UTF_8), SettingsDocument.class);
             if (document == null || document.modules == null) throw new JsonSyntaxException("Missing module settings");
             endGatewayFinderEnabled = document.features != null && document.features.endGatewayFinder;
+            updateCheckEnabled = document.features == null || document.features.updateCheck;
 
-            for (Module module : modules) {
+            List<Module> moduleList = new ArrayList<>();
+            for (Module module : modules) moduleList.add(module);
+            boolean migratedContainerRecorder = migrateContainerRecorder(document, moduleList);
+
+            for (Module module : moduleList) {
                 String serialized = document.modules.get(module.name);
                 if (serialized == null) continue;
                 module.fromTag(StringNbtReader.readCompound(serialized));
+            }
+
+            if (migratedContainerRecorder) {
+                try {
+                    writeAtomically(WaveXinDataPaths.SETTINGS_PATH, GSON.toJson(document));
+                } catch (IOException error) {
+                    WaveXinAddon.LOG.error("Could not persist migrated Container Recorder settings.", error);
+                }
             }
 
             return true;
@@ -73,6 +111,7 @@ public final class WaveXinSettingsStore {
     static void save(Iterable<Module> modules) {
         SettingsDocument document = new SettingsDocument();
         document.features.endGatewayFinder = endGatewayFinderEnabled;
+        document.features.updateCheck = updateCheckEnabled;
         for (Module module : modules) {
             var tag = module.toTag();
             if (tag != null) document.modules.put(module.name, tag.toString());
@@ -111,12 +150,42 @@ public final class WaveXinSettingsStore {
     }
 
     private static class SettingsDocument {
-        int version = 2;
+        int version = 3;
         Map<String, String> modules = new LinkedHashMap<>();
         FeatureFlags features = new FeatureFlags();
     }
 
+    private static boolean migrateContainerRecorder(SettingsDocument document, List<Module> modules) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
+        if (document.modules.containsKey("container-recorder")) return false;
+        String legacy = document.modules.get("base-finder");
+        if (legacy == null) return false;
+
+        Module recorder = null;
+        for (Module module : modules) if (module.name.equals("container-recorder")) { recorder = module; break; }
+        if (recorder == null) return false;
+
+        NbtCompound legacyTag = StringNbtReader.readCompound(legacy);
+        NbtCompound recorderTag = recorder.toTag();
+        if (recorderTag == null) return false;
+        String migrated = migratedContainerRecorderTag(legacyTag, recorderTag);
+        if (migrated == null) return false;
+        document.modules.put("container-recorder", migrated);
+        return true;
+    }
+
+    static String migratedContainerRecorderTag(NbtCompound legacyTag, NbtCompound recorderTag) {
+        if (!legacyTag.contains("settings")) return null;
+        NbtCompound legacySettings = legacyTag.getCompound("settings").orElseThrow();
+        NbtCompound recorderSettings = recorderTag.getCompound("settings").orElseThrow();
+        for (String key : recorderSettings.getKeys()) {
+            var value = legacySettings.get(key);
+            if (value != null) recorderSettings.put(key, value.copy());
+        }
+        return recorderTag.toString();
+    }
+
     private static class FeatureFlags {
         boolean endGatewayFinder;
+        boolean updateCheck = true;
     }
 }

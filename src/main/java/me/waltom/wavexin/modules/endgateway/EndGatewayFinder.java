@@ -3,7 +3,7 @@ package me.waltom.wavexin.modules.endgateway;
 import me.waltom.wavexin.WaveXinAddon;
 import me.waltom.wavexin.core.WaveXinDataPaths;
 import me.waltom.wavexin.core.WaveXinModule;
-import me.waltom.wavexin.modules.basefinder.ContainerRecorder;
+import me.waltom.wavexin.modules.containerrecorder.ContainerRecorderModule;
 import meteordevelopment.meteorclient.events.render.Render3DEvent;
 import meteordevelopment.meteorclient.events.world.TickEvent;
 import meteordevelopment.meteorclient.renderer.ShapeMode;
@@ -49,7 +49,6 @@ import java.util.function.Consumer;
 public final class EndGatewayFinder extends WaveXinModule {
     private final SettingGroup sgGeneral = settings.getDefaultGroup();
     private final SettingGroup sgRender = settings.createGroup("Render");
-    private final SettingGroup sgContainerRecording = settings.createGroup("Container Recording");
     private final Setting<String> worldSeed = sgGeneral.add(new StringSetting.Builder().name("World Seed")
         .description("World seed used to predict End return gateways locally.").defaultValue("3763250021837776656").build());
     private final Setting<GenerationVersion> generationVersion = sgGeneral.add(new EnumSetting.Builder<GenerationVersion>().name("Generation Version")
@@ -69,6 +68,8 @@ public final class EndGatewayFinder extends WaveXinModule {
         .description("Stay at each gateway after arrival.").defaultValue(false).build());
     private final Setting<Integer> stayDuration = sgGeneral.add(new IntSetting.Builder().name("Stay Duration")
         .description("Seconds to stay at each gateway.").defaultValue(5).min(1).max(300).sliderMax(60).visible(stayAtGateway::get).build());
+    private final Setting<Boolean> startContainerRecorder = sgGeneral.add(new BoolSetting.Builder().name("Start Container Recorder")
+        .description("Starts Container Recorder after End Gateway Finder has begun.").defaultValue(true).build());
     private final Setting<PathAlgorithm> pathAlgorithm = sgGeneral.add(new EnumSetting.Builder<PathAlgorithm>().name("Path Algorithm")
         .description("Order used to visit unvisited gateways.").defaultValue(PathAlgorithm.NEAREST_NEIGHBOR).build());
     private final Setting<Integer> renderDistance = sgRender.add(new IntSetting.Builder().name("Render Distance")
@@ -82,7 +83,7 @@ public final class EndGatewayFinder extends WaveXinModule {
     private final Setting<SettingColor> visitedColor = sgRender.add(color("Visited Color", 0, 0, 255, 30).build());
     private final Setting<SettingColor> visitedLine = sgRender.add(color("Visited Line", 0, 0, 255, 80).build());
     private final Setting<ShapeMode> renderMode = sgRender.add(new EnumSetting.Builder<ShapeMode>().name("Render Mode").defaultValue(ShapeMode.Both).build());
-    private final ContainerRecorder containerRecorder = new ContainerRecorder(this, sgContainerRecording, () -> 4);
+    private final ContainerRecorderModule containerRecorder;
 
     private final List<Gateway> gateways = new ArrayList<>();
     private final Set<Gateway> visited = new HashSet<>();
@@ -97,8 +98,9 @@ public final class EndGatewayFinder extends WaveXinModule {
     private long activeSeed;
     private GenerationVersion activeGenerationVersion;
 
-    public EndGatewayFinder() {
+    public EndGatewayFinder(ContainerRecorderModule containerRecorder) {
         super(WaveXinAddon.CATEGORY, "end-gateway-finder", "End Return Gateway Finder");
+        this.containerRecorder = containerRecorder;
     }
 
     @Override
@@ -118,7 +120,7 @@ public final class EndGatewayFinder extends WaveXinModule {
         stayUntil = 0;
         scanning = true;
         scanGeneration++;
-        containerRecorder.onActivate();
+        if (startContainerRecorder.get()) containerRecorder.startForScan(this);
 
         long seed = parsedSeed(worldSeed.get());
         activeSeed = seed;
@@ -135,7 +137,7 @@ public final class EndGatewayFinder extends WaveXinModule {
         releaseForward();
         stayUntil = 0;
         ready = false;
-        containerRecorder.onDeactivate();
+        containerRecorder.stopForScan(this);
     }
 
     private void startScan(long seed, int generation, GenerationVersion version) {
@@ -184,7 +186,6 @@ public final class EndGatewayFinder extends WaveXinModule {
     @EventHandler
     private void onTick(TickEvent.Pre event) {
         if (!ready || mc.player == null || mc.world == null) return;
-        containerRecorder.scanNear(mc.player.getChunkPos());
         if (stayUntil > 0) {
             releaseForward();
             if (System.currentTimeMillis() >= stayUntil) {
