@@ -165,6 +165,17 @@ public class BaseFinder extends WaveXinModule {
     private final SettingGroup sgContainerRecording = settings.createGroup("Container Recording");
     private final SettingGroup sgRender = settings.createGroup("Render");
     private final SettingGroup sgRestart = settings.createGroup("Restart");
+    private final ContainerRecorder containerRecorder = new ContainerRecorder(this, sgContainerRecording, this::getChunkWaitRadius);
+    private final Setting<Integer> containerThreshold = containerRecorder.threshold();
+    private final Setting<List<BlockEntityType<?>>> containerBlocks = containerRecorder.blocks();
+    private final Setting<Boolean> detectThrownPearls = containerRecorder.detectPearls();
+    private final Setting<Boolean> xaeroWaypoints = containerRecorder.xaeroWaypoints();
+    private final Setting<Boolean> recordThrownPearls = containerRecorder.recordPearls();
+    private final Setting<XaeroWaypointColor> xaeroWaypointColor = containerRecorder.waypointColor();
+    private final Setting<Integer> waypointLimitRadius = containerRecorder.waypointRadius();
+    private final Setting<Integer> maximumWaypointsPerArea = containerRecorder.waypointsPerArea();
+    private final Setting<String> xaeroWaypointPrefix = containerRecorder.waypointPrefix();
+    private final Setting<String> xaeroWaypointSuffix = containerRecorder.waypointSuffix();
     private ChunkPos originChunk;
     private ChunkPos targetChunk;
     private ChunkPos resumeCheckpointChunk;
@@ -418,71 +429,6 @@ public class BaseFinder extends WaveXinModule {
             .build());
 
 // Resume previous scan
-    private final Setting<Integer> containerThreshold = sgContainerRecording.add(new IntSetting.Builder()
-        .name("Container Threshold")
-        .description("Records the current chunk when it contains at least this many selected containers.")
-        .defaultValue(10)
-        .min(2)
-        .max(200)
-        .sliderRange(2, 200)
-        .build()
-    );
-
-    private final Setting<List<BlockEntityType<?>>> containerBlocks = sgContainerRecording.add(new StorageBlockListSetting.Builder()
-        .name("Container Blocks")
-        .description("Container block entity types to count, matching Meteor Storage ESP defaults.")
-        .defaultValue(StorageBlockListSetting.STORAGE_BLOCKS)
-        .build()
-    );
-
-    private final Setting<Boolean> detectThrownPearls = sgContainerRecording.add(new BoolSetting.Builder()
-        .name("Detect Thrown Pearls")
-        .description("Announces thrown ender pearls detected while Base Finder is active.")
-        .defaultValue(false)
-        .build()
-    );
-
-    private final Setting<Boolean> xaeroWaypoints = sgContainerRecording.add(new BoolSetting.Builder()
-        .name("Xaero Waypoints")
-        .description("Creates a Xaero waypoint when a container chunk is recorded. Requires Xaero's Minimap at runtime.")
-        .defaultValue(false)
-        .build()
-    );
-
-    private final Setting<Boolean> recordThrownPearls = sgContainerRecording.add(new BoolSetting.Builder()
-        .name("Record Thrown Pearl")
-        .description("Creates unlimited Xaero waypoints for detected thrown ender pearls, using Pearl names and P aliases.")
-        .defaultValue(false)
-        .visible(xaeroWaypoints::get)
-        .build()
-    );
-
-    private final Setting<XaeroWaypointColor> xaeroWaypointColor = sgContainerRecording.add(new XaeroWaypointColorSetting.Builder()
-        .name("Waypoint Color").description("Xaero waypoint color, or a random supported color for each waypoint.").defaultValue(XaeroWaypointColor.RANDOM).visible(xaeroWaypoints::get).build()
-    );
-    private final Setting<Integer> waypointLimitRadius = sgContainerRecording.add(new IntSetting.Builder()
-        .name("Area Radius").description("Chunk radius used to group nearby waypoints into one base area.").defaultValue(5).range(1, 64).sliderRange(1, 32).visible(xaeroWaypoints::get).build()
-    );
-    private final Setting<Integer> maximumWaypointsPerArea = sgContainerRecording.add(new IntSetting.Builder()
-        .name("Waypoints per Area").description("Maximum waypoints created within one base area during the current scan.").defaultValue(3).range(1, 100).sliderRange(1, 20).visible(xaeroWaypoints::get).build()
-    );
-    private final Setting<String> xaeroWaypointPrefix = sgContainerRecording.add(new StringSetting.Builder()
-        .name("Waypoint Prefix")
-        .description("Text before the waypoint name.")
-        .defaultValue("Base ")
-        .visible(xaeroWaypoints::get)
-        .build()
-    );
-
-    private final Setting<String> xaeroWaypointSuffix = sgContainerRecording.add(new StringSetting.Builder()
-        .name("Waypoint Suffix")
-        .description("Text after the waypoint name.")
-        .defaultValue("")
-        .visible(xaeroWaypoints::get)
-        .build()
-    );
-
-
     private final Setting<Boolean> lastBegin = sgRestart.add(new BoolSetting.Builder()
             .name("Resume Previous Scan")
             .description("Resumes from the saved scan progress.")
@@ -689,7 +635,8 @@ public class BaseFinder extends WaveXinModule {
 
     @Override
     public void onActivate() {
-        migrateLegacyContainerRecords();
+        ContainerRecorder.migrateLegacyRecords();
+        containerRecorder.onActivate();
         activeScanMethod = scanMethod.get();
         setScanForwardKey(false);
         scanStartPending = true;
@@ -707,20 +654,7 @@ public class BaseFinder extends WaveXinModule {
         }
 
         scanStartPending = false;
-        recordedContainerChunks.clear();
-        checkedContainerChunks.clear();
-        containerScanTicks = 0;
-        containerScanSettingsHash = Integer.MIN_VALUE;
-        containerScanWorld = mc.world;
-        recordedThrownPearls.clear();
-        createdWaypointPositions.clear();
-        warnedMissingLoadedChunks.clear();
         warnedNormalDebugStates.clear();
-        nextWaypointNumber = 1;
-        nextPearlWaypointNumber = 1;
-        warnedEmptyContainerBlocks = false;
-        warnedContainerScanUnavailable = false;
-        validateXaeroWaypointSetting();
         warnIfUnsafeScanHeight();
         if (activeScanMethod == ScanMethod.SPIRAL) {
             startSpiralScan();
@@ -995,6 +929,7 @@ public class BaseFinder extends WaveXinModule {
 
     @Override
     public void onDeactivate() {
+        containerRecorder.onDeactivate();
         setScanForwardKey(false);
         restoreNormalViewYaw();
         scanStartPending = false;
@@ -1002,15 +937,6 @@ public class BaseFinder extends WaveXinModule {
         if (stoppedScanMethod == ScanMethod.NORMAL) logNormalDebugSnapshot("DEACTIVATE", "moduleDisabled");
         ScanProgressManager.NormalScanProgress savedProgress = stoppedScanMethod == ScanMethod.NORMAL ? saveNormalScanProgress() : null;
         activeScanMethod = null;
-        recordedContainerChunks.clear();
-        checkedContainerChunks.clear();
-        containerScanTicks = 0;
-        containerScanSettingsHash = Integer.MIN_VALUE;
-        containerScanWorld = null;
-        recordedThrownPearls.clear();
-        createdWaypointPositions.clear();
-        warnedMissingLoadedChunks.clear();
-
         if (stoppedScanMethod == ScanMethod.SPIRAL) {
             saveSpiralProgress();
             clearSpiralState();
@@ -1369,6 +1295,14 @@ public class BaseFinder extends WaveXinModule {
         }
     }
     private void recordLoadedContainerChunksNear(ChunkPos center) {
+        containerRecorder.scanNear(center);
+    }
+
+    /*
+     * Kept below temporarily as the original recorder implementation reference while the shared
+     * recorder owns the active path. It is unreachable from BaseFinder after the delegation above.
+     */
+    private void legacyRecordLoadedContainerChunksNear(ChunkPos center) {
         if (mc.world == null) {
             if (!warnedContainerScanUnavailable) {
                 WaveXinAddon.LOG.warn("[BaseFinderDebug] Skipped container scan because world is null. method={} center={}", activeScanMethod, chunkDebugLabel(center));

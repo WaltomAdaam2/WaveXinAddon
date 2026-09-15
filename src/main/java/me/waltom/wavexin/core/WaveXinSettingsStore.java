@@ -17,8 +17,35 @@ import java.util.Map;
 
 public final class WaveXinSettingsStore {
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
+    private static boolean endGatewayFinderEnabled;
 
     private WaveXinSettingsStore() {
+    }
+
+    public static boolean loadEndGatewayFinderEnabled() {
+        endGatewayFinderEnabled = false;
+        if (!Files.exists(WaveXinDataPaths.SETTINGS_PATH)) return false;
+
+        try {
+            endGatewayFinderEnabled = endGatewayFeatureFromJson(Files.readString(WaveXinDataPaths.SETTINGS_PATH, StandardCharsets.UTF_8));
+            return endGatewayFinderEnabled;
+        } catch (IOException | JsonSyntaxException ignored) {
+            return false;
+        }
+    }
+
+    public static boolean isEndGatewayFinderEnabled() {
+        return endGatewayFinderEnabled;
+    }
+
+    static boolean endGatewayFeatureFromJson(String json) {
+        SettingsDocument document = GSON.fromJson(json, SettingsDocument.class);
+        return document != null && document.features != null && document.features.endGatewayFinder;
+    }
+
+    public static void enableEndGatewayFinder(Iterable<Module> modules) {
+        endGatewayFinderEnabled = true;
+        save(modules);
     }
 
     static boolean restore(Iterable<Module> modules) {
@@ -27,6 +54,7 @@ public final class WaveXinSettingsStore {
         try {
             SettingsDocument document = GSON.fromJson(Files.readString(WaveXinDataPaths.SETTINGS_PATH, StandardCharsets.UTF_8), SettingsDocument.class);
             if (document == null || document.modules == null) throw new JsonSyntaxException("Missing module settings");
+            endGatewayFinderEnabled = document.features != null && document.features.endGatewayFinder;
 
             for (Module module : modules) {
                 String serialized = document.modules.get(module.name);
@@ -44,6 +72,7 @@ public final class WaveXinSettingsStore {
 
     static void save(Iterable<Module> modules) {
         SettingsDocument document = new SettingsDocument();
+        document.features.endGatewayFinder = endGatewayFinderEnabled;
         for (Module module : modules) {
             var tag = module.toTag();
             if (tag != null) document.modules.put(module.name, tag.toString());
@@ -82,7 +111,12 @@ public final class WaveXinSettingsStore {
     }
 
     private static class SettingsDocument {
-        int version = 1;
+        int version = 2;
         Map<String, String> modules = new LinkedHashMap<>();
+        FeatureFlags features = new FeatureFlags();
+    }
+
+    private static class FeatureFlags {
+        boolean endGatewayFinder;
     }
 }
