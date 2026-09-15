@@ -117,6 +117,8 @@
   "setting.wavexin.better_elytra_fly.speed_acceleration.speed_increase_per_second.description": "Speed added for each second of active gliding.",
   "setting.wavexin.better_elytra_fly.speed_acceleration.max_speed.title": "Max Speed",
   "setting.wavexin.better_elytra_fly.speed_acceleration.max_speed.description": "Maximum accelerated flight speed; never lower than Initial Speed.",
+  "setting.wavexin.better_elytra_fly.speed_acceleration.disable_acceleration_while_ascending.title": "Disable Acceleration While Ascending",
+  "setting.wavexin.better_elytra_fly.speed_acceleration.disable_acceleration_while_ascending.description": "Stops speed acceleration while holding jump, without reducing the current accelerated speed.",
   "setting.wavexin.better_elytra_fly.speed_acceleration.reset_after_lagback.title": "Reset After Lagback",
   "setting.wavexin.better_elytra_fly.speed_acceleration.reset_after_lagback.description": "Resets to Initial Speed and holds it for five seconds after a server position correction.",
   "setting.wavexin.better_elytra_fly.general.descent_speed.title": "Descent Speed",

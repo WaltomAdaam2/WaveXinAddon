@@ -93,6 +93,14 @@ public class BetterElytraFly extends WaveXinModule {
         .build()
     );
 
+    public final Setting<Boolean> disableAccelerationWhileAscending = sgSpeedAcceleration.add(new BoolSetting.Builder()
+        .name("Disable Acceleration While Ascending")
+        .description("Stops speed acceleration while holding jump, without reducing the current accelerated speed")
+        .defaultValue(false)
+        .visible(speedAcceleration::get)
+        .build()
+    );
+
     public final Setting<Boolean> resetAfterLagback = sgSpeedAcceleration.add(new BoolSetting.Builder()
         .name("Reset After Lagback")
         .description("Resets to Initial Speed and holds it for five seconds after a server position correction")
@@ -222,7 +230,7 @@ public class BetterElytraFly extends WaveXinModule {
 
         ItemStack chestStack = mc.player.getEquippedStack(EquipmentSlot.CHEST);
         hasElytra = isUsableElytra(chestStack);
-        speedRamp.tick(hasElytra && mc.player.isGliding());
+        speedRamp.tick(hasElytra && mc.player.isGliding(), !disableAccelerationWhileAscending.get() || !mc.options.jumpKey.isPressed());
     }
 
     @EventHandler
