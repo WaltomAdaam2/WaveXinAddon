@@ -7,6 +7,7 @@ public final class ElytraFlightBehaviorTest {
     public static void main(String[] args) {
         testFixedSpeedWhenDisabled();
         testSpeedRampAndCap();
+        testAscentPausesAcceleration();
         testGlideReset();
         testLagbackCooldown();
         testCoordinateConversion();
@@ -36,6 +37,18 @@ public final class ElytraFlightBehaviorTest {
         ramp.tick(false);
         ramp.tick(true);
         assertEquals(1.805, ramp.speed(true, 1.8, 0.1, 5.0), "new glide resets elapsed speed");
+    }
+
+    private static void testAscentPausesAcceleration() {
+        ElytraSpeedRamp ramp = new ElytraSpeedRamp();
+        for (int i = 0; i < 40; i++) ramp.tick(true);
+        assertEquals(2.0, ramp.speed(true, 1.8, 0.1, 2.0), "speed reaches cap before ascent");
+        for (int i = 0; i < 100; i++) ramp.tick(true, false);
+        assertEquals(2.0, ramp.speed(true, 1.8, 0.1, 2.0), "ascent keeps capped speed without adding acceleration");
+        ElytraSpeedRamp partial = new ElytraSpeedRamp();
+        for (int i = 0; i < 20; i++) partial.tick(true);
+        for (int i = 0; i < 20; i++) partial.tick(true, false);
+        assertEquals(1.9, partial.speed(true, 1.8, 0.1, 5.0), "ascent preserves partial speed");
     }
 
     private static void testLagbackCooldown() {

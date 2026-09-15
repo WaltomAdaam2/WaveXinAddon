@@ -77,6 +77,21 @@ WaveXinAddon configuration files are automatically saved in:
 meteor-client/wavexin/
 ```
 
+## Update Checks
+
+By default, WaveXinAddon checks GitHub Releases in the background after client startup. It never blocks the game or downloads and installs updates automatically. GitHub is tried first; if it is unavailable, these public proxy fallbacks are tried in order:
+
+* `ghfast.top`
+* `gh-proxy.com`
+* `gh.3w.pm`
+
+These are third-party services and their availability may change. The check requests only public version information; it does not upload account, player, server, HWID, seed, or configuration data. Save the startup preference with:
+
+```text
+.wavexin check-update true
+.wavexin check-update false
+```
+
 ## Base Finder Recommended Settings
 
 Default configuration:

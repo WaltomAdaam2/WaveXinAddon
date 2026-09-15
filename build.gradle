@@ -344,6 +344,18 @@ tasks.register("testWaveXinTurtlePotionThrowerBehavior", JavaExec) {
     mainClass = "me.waltom.wavexin.modules.turtlepotionthrower.TurtlePotionThrowerBehaviorTest"
 }
 
+tasks.register("testWaveXinEndGatewayBehavior", JavaExec) {
+    dependsOn(tasks.named("testClasses"))
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = "me.waltom.wavexin.modules.endgateway.EndGatewayFinderBehaviorTest"
+}
+
+tasks.register("testWaveXinFeatureAccessBehavior", JavaExec) {
+    dependsOn(tasks.named("testClasses"))
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = "me.waltom.wavexin.core.EndGatewayFeatureAccessBehaviorTest"
+}
+
 tasks.register("testWaveXinLitematicaPrinterBehavior", JavaExec) {
     dependsOn(tasks.named("testClasses"))
     classpath = sourceSets.test.runtimeClasspath
@@ -356,13 +368,36 @@ tasks.register("testWaveXinElytraFlightBehavior", JavaExec) {
     mainClass = "me.waltom.wavexin.modules.elytrafly.ElytraFlightBehaviorTest"
 }
 
+tasks.register("testWaveXinContainerRecorderBehavior", JavaExec) {
+    dependsOn(tasks.named("testClasses"))
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = "me.waltom.wavexin.modules.containerrecorder.ContainerRecorderBehaviorTest"
+}
+
+tasks.register("testWaveXinSettingsStoreBehavior", JavaExec) {
+    dependsOn(tasks.named("testClasses"))
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = "me.waltom.wavexin.core.WaveXinSettingsStoreBehaviorTest"
+}
+
+tasks.register("testWaveXinUpdateCheckerBehavior", JavaExec) {
+    dependsOn(tasks.named("testClasses"))
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = "me.waltom.wavexin.core.UpdateCheckerBehaviorTest"
+}
+
 tasks.named("test") {
     dependsOn(tasks.named("testWaveXinI18nBehavior"))
     dependsOn(tasks.named("testWaveXinChatFilterBehavior"))
     dependsOn(tasks.named("testWaveXinBaseFinderBehavior"))
+    dependsOn(tasks.named("testWaveXinEndGatewayBehavior"))
+    dependsOn(tasks.named("testWaveXinFeatureAccessBehavior"))
     dependsOn(tasks.named("testWaveXinTurtlePotionThrowerBehavior"))
     dependsOn(tasks.named("testWaveXinLitematicaPrinterBehavior"))
     dependsOn(tasks.named("testWaveXinElytraFlightBehavior"))
+    dependsOn(tasks.named("testWaveXinContainerRecorderBehavior"))
+    dependsOn(tasks.named("testWaveXinSettingsStoreBehavior"))
+    dependsOn(tasks.named("testWaveXinUpdateCheckerBehavior"))
     failOnNoDiscoveredTests = false
 }
 

@@ -77,6 +77,21 @@ WaveXinAddon 的配置文件会自动保存到：
 meteor-client/wavexin/
 ```
 
+## 更新检查
+
+默认会在客户端启动后后台检查 GitHub Releases；不会阻塞游戏、不会自动下载或安装更新。优先直连 GitHub，直连失败时依次使用以下公开代理：
+
+* `ghfast.top`
+* `gh-proxy.com`
+* `gh.3w.pm`
+
+代理属于第三方服务，可用性可能变化。更新检查只请求公开的版本信息，不会上传账号、玩家、服务器、HWID、种子或配置内容。可用以下命令保存开关（下次启动生效）：
+
+```text
+.wavexin check-update true
+.wavexin check-update false
+```
+
 ## Base Finder 推荐配置
 
 默认配置：
