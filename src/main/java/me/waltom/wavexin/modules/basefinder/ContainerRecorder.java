@@ -16,12 +16,14 @@ import meteordevelopment.meteorclient.utils.render.color.Color;
 import net.minecraft.block.entity.BlockEntity;
 import net.minecraft.block.entity.BlockEntityType;
 import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.toast.SystemToast;
 import net.minecraft.client.world.ClientWorld;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.EntityType;
 import net.minecraft.text.Style;
 import net.minecraft.text.Text;
 import net.minecraft.text.TextColor;
+import net.minecraft.sound.SoundEvents;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.ChunkPos;
 import net.minecraft.world.chunk.WorldChunk;
@@ -68,6 +70,8 @@ public final class ContainerRecorder {
     private final Setting<Integer> threshold;
     private final Setting<List<BlockEntityType<?>>> blocks;
     private final Setting<Boolean> detectPearls;
+    private final Setting<Boolean> achievementToast;
+    private final Setting<Boolean> toastSound;
     private final Setting<Boolean> xaeroWaypoints;
     private final Setting<Boolean> recordPearls;
     private final Setting<BaseFinder.XaeroWaypointColor> waypointColor;
@@ -87,6 +91,10 @@ public final class ContainerRecorder {
             .defaultValue(StorageBlockListSetting.STORAGE_BLOCKS).build());
         detectPearls = group.add(new BoolSetting.Builder().name("Detect Thrown Pearls")
             .description("Announces thrown ender pearls detected while the scan module is active.").defaultValue(false).build());
+        achievementToast = group.add(new BoolSetting.Builder().name("Achievement Toast")
+            .description("Shows a vanilla toast when a container chunk is recorded.").defaultValue(true).build());
+        toastSound = group.add(new BoolSetting.Builder().name("Toast Sound")
+            .description("Plays the vanilla challenge-toast sound when a container chunk is recorded.").defaultValue(true).build());
         xaeroWaypoints = group.add(new BoolSetting.Builder().name("Xaero Waypoints")
             .description("Creates a Xaero waypoint when a container chunk is recorded. Requires Xaero's Minimap at runtime.").defaultValue(false).build());
         recordPearls = group.add(new BoolSetting.Builder().name("Record Thrown Pearl")
@@ -196,9 +204,17 @@ public final class ContainerRecorder {
         BlockPos recordPos = first == null ? playerPos : first;
         appendRecord(chunkPos, recordPos, playerPos, count);
         createWaypoint(recordPos);
+        showDiscoveryToast(mc, chunkPos, count);
         owner.warning(WaveXinI18n.tr("warning.wavexin.base_finder.base_found",
             "(highlight)(bold)Base found! (default)Chunk: (highlight)%d, %d(default) | Position: (highlight)%d, %d, %d(default) | Containers: (highlight)%d(default)",
             chunkPos.x, chunkPos.z, recordPos.getX(), recordPos.getY(), recordPos.getZ(), count));
+    }
+
+    private void showDiscoveryToast(MinecraftClient mc, ChunkPos chunkPos, int count) {
+        if (achievementToast.get()) SystemToast.show(mc.getToastManager(), SystemToast.Type.PERIODIC_NOTIFICATION,
+            Text.literal(WaveXinI18n.tr("message.wavexin.container_recorder.toast_title", "Container Recorder")),
+            Text.literal(WaveXinI18n.tr("message.wavexin.container_recorder.toast_description", "Recorded %d containers at %d, %d.", count, chunkPos.x, chunkPos.z)));
+        if (toastSound.get() && mc.player != null) mc.player.playSound(SoundEvents.UI_TOAST_CHALLENGE_COMPLETE, 1.0F, 1.0F);
     }
 
     private void detectPearls(MinecraftClient mc) {

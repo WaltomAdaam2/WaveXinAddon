@@ -22,6 +22,7 @@ import net.minecraft.registry.RegistryKeys;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.ChunkPos;
 import net.minecraft.util.math.random.ChunkRandom;
+import net.minecraft.util.math.random.LocalRandom;
 import net.minecraft.util.math.random.Xoroshiro128PlusPlusRandom;
 import net.minecraft.world.HeightLimitView;
 import net.minecraft.world.World;
@@ -42,6 +43,7 @@ import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.function.Consumer;
 
 /** Locally predicts and visits vanilla End return gateways for the configured seed. */
 public final class EndGatewayFinder extends WaveXinModule {
@@ -50,6 +52,8 @@ public final class EndGatewayFinder extends WaveXinModule {
     private final SettingGroup sgContainerRecording = settings.createGroup("Container Recording");
     private final Setting<String> worldSeed = sgGeneral.add(new StringSetting.Builder().name("World Seed")
         .description("World seed used to predict End return gateways locally.").defaultValue("3763250021837776656").build());
+    private final Setting<GenerationVersion> generationVersion = sgGeneral.add(new EnumSetting.Builder<GenerationVersion>().name("Generation Version")
+        .description("Uses the selected version's End gateway random placement rules.").defaultValue(GenerationVersion.V1_12).build());
     private final Setting<ScanShape> scanShape = sgGeneral.add(new EnumSetting.Builder<ScanShape>().name("Scan Shape")
         .description("Shape used to filter predicted gateway positions around the player.").defaultValue(ScanShape.CIRCLE).build());
     private final Setting<Integer> searchRadius = sgGeneral.add(new IntSetting.Builder().name("Search Radius")
@@ -71,23 +75,27 @@ public final class EndGatewayFinder extends WaveXinModule {
         .defaultValue(1024).min(64).max(1024).sliderMax(1024).build());
     private final Setting<SettingColor> targetColor = sgRender.add(color("Target Color", 255, 0, 0, 60).build());
     private final Setting<SettingColor> targetLine = sgRender.add(color("Target Line", 255, 0, 0, 220).build());
-    private final Setting<SettingColor> gatewayColor = sgRender.add(color("Gateway Color", 255, 255, 255, 40).build());
-    private final Setting<SettingColor> gatewayLine = sgRender.add(color("Gateway Line", 255, 255, 255, 180).build());
-    private final Setting<SettingColor> visitedColor = sgRender.add(color("Visited Color", 0, 255, 0, 30).build());
-    private final Setting<SettingColor> visitedLine = sgRender.add(color("Visited Line", 0, 255, 0, 80).build());
+    private final Setting<SettingColor> legacyGatewayColor = sgRender.add(color("1.12 Gateway Color", 0, 255, 0, 40).build());
+    private final Setting<SettingColor> legacyGatewayLine = sgRender.add(color("1.12 Gateway Line", 0, 255, 0, 180).build());
+    private final Setting<SettingColor> modernGatewayColor = sgRender.add(color("1.20.4 Gateway Color", 0, 0, 255, 40).build());
+    private final Setting<SettingColor> modernGatewayLine = sgRender.add(color("1.20.4 Gateway Line", 0, 0, 255, 180).build());
+    private final Setting<SettingColor> visitedColor = sgRender.add(color("Visited Color", 0, 0, 255, 30).build());
+    private final Setting<SettingColor> visitedLine = sgRender.add(color("Visited Line", 0, 0, 255, 80).build());
     private final Setting<ShapeMode> renderMode = sgRender.add(new EnumSetting.Builder<ShapeMode>().name("Render Mode").defaultValue(ShapeMode.Both).build());
     private final ContainerRecorder containerRecorder = new ContainerRecorder(this, sgContainerRecording, () -> 4);
 
     private final List<Gateway> gateways = new ArrayList<>();
-    private final Set<Long> visited = new HashSet<>();
+    private final Set<Gateway> visited = new HashSet<>();
     private List<Integer> route;
     private int routePosition = -1;
     private int target = -1;
     private int scanGeneration;
     private long stayUntil;
     private boolean ready;
+    private boolean scanning;
     private boolean forcingForward;
-    private Path visitedPath;
+    private long activeSeed;
+    private GenerationVersion activeGenerationVersion;
 
     public EndGatewayFinder() {
         super(WaveXinAddon.CATEGORY, "end-gateway-finder", "End Return Gateway Finder");
@@ -108,18 +116,21 @@ public final class EndGatewayFinder extends WaveXinModule {
         routePosition = -1;
         target = -1;
         stayUntil = 0;
+        scanning = true;
         scanGeneration++;
         containerRecorder.onActivate();
 
         long seed = parsedSeed(worldSeed.get());
-        visitedPath = visitPath(seed);
-        loadVisited();
-        startScan(seed, scanGeneration);
+        activeSeed = seed;
+        activeGenerationVersion = generationVersion.get();
+        for (GenerationVersion version : scanVersions(activeGenerationVersion)) loadVisited(version);
+        startScan(seed, scanGeneration, activeGenerationVersion);
     }
 
     @Override
     public void onDeactivate() {
         scanGeneration++;
+        scanning = false;
         saveVisited();
         releaseForward();
         stayUntil = 0;
@@ -127,7 +138,7 @@ public final class EndGatewayFinder extends WaveXinModule {
         containerRecorder.onDeactivate();
     }
 
-    private void startScan(long seed, int generation) {
+    private void startScan(long seed, int generation, GenerationVersion version) {
         int centerX = (int) mc.player.getX();
         int centerZ = (int) mc.player.getZ();
         int radius = scanShape.get() == ScanShape.SQUARE ? squareSearchRadius.get() : searchRadius.get();
@@ -135,39 +146,39 @@ public final class EndGatewayFinder extends WaveXinModule {
         ScanShape shape = scanShape.get();
         Thread thread = new Thread(() -> {
             try {
-                List<Gateway> result = scan(seed, centerX, centerZ, radius, queryRadius, shape);
-                mc.execute(() -> completeScan(generation, result, null));
+                scan(seed, centerX, centerZ, radius, queryRadius, shape, version, gateway -> mc.execute(() -> addGateway(generation, gateway)));
+                mc.execute(() -> completeScan(generation, null));
             } catch (RuntimeException exception) {
-                mc.execute(() -> completeScan(generation, List.of(), exception));
+                mc.execute(() -> completeScan(generation, exception));
             }
         }, "wavexin-end-gateway-scan");
         thread.setDaemon(true);
         thread.start();
     }
 
-    private void completeScan(int generation, List<Gateway> result, RuntimeException failure) {
+    private void addGateway(int generation, Gateway gateway) {
         if (!isActive() || generation != scanGeneration) return;
+        gateways.add(gateway);
+        if (!ready || target < 0) {
+            ready = true;
+            nextTarget();
+        }
+    }
+
+    private void completeScan(int generation, RuntimeException failure) {
+        if (!isActive() || generation != scanGeneration) return;
+        scanning = false;
         if (failure != null) {
             error("Gateway scan failed: %s", failure.getMessage());
             toggle();
             return;
         }
-        gateways.clear();
-        gateways.addAll(result);
         if (gateways.isEmpty()) {
             error("No gateways found in range. Try larger radius.");
             toggle();
             return;
         }
-        long remaining = gateways.stream().filter(gateway -> !visited.contains(pack(gateway.x, gateway.z))).count();
-        if (remaining == 0) {
-            info("All gateways visited!");
-            toggle();
-            return;
-        }
-        info("Found %d return gateways, %d remaining", gateways.size(), remaining);
-        ready = true;
-        nextTarget();
+        if (target < 0) nextTarget();
     }
 
     @EventHandler
@@ -187,7 +198,7 @@ public final class EndGatewayFinder extends WaveXinModule {
             double dx = gateway.x + 0.5 - mc.player.getX();
             double dz = gateway.z + 0.5 - mc.player.getZ();
             if (dx * dx + dz * dz <= arrivalDistance.get() * arrivalDistance.get()) {
-                visited.add(pack(gateway.x, gateway.z));
+                visited.add(gateway);
                 saveVisited();
                 releaseForward();
                 if (stayAtGateway.get()) {
@@ -203,11 +214,12 @@ public final class EndGatewayFinder extends WaveXinModule {
 
     private void nextTarget() {
         List<Integer> remaining = new ArrayList<>();
-        for (int i = 0; i < gateways.size(); i++) if (!visited.contains(pack(gateways.get(i).x, gateways.get(i).z))) remaining.add(i);
+        for (int i = 0; i < gateways.size(); i++) if (!visited.contains(gateways.get(i))) remaining.add(i);
         route = route(gateways, remaining, mc.player == null ? 0 : mc.player.getX(), mc.player == null ? 0 : mc.player.getZ(), pathAlgorithm.get());
         routePosition = 0;
         if (route.isEmpty()) {
             target = -1;
+            if (scanning) return;
             info("All gateways visited!");
             toggle();
             return;
@@ -253,15 +265,21 @@ public final class EndGatewayFinder extends WaveXinModule {
             double dz = gateway.z - mc.player.getZ();
             if (dx * dx + dz * dz > maximum) continue;
             boolean isTarget = i == target;
-            boolean isVisited = visited.contains(pack(gateway.x, gateway.z));
-            SettingColor side = isTarget ? targetColor.get() : isVisited ? visitedColor.get() : gatewayColor.get();
-            SettingColor line = isTarget ? targetLine.get() : isVisited ? visitedLine.get() : gatewayLine.get();
+            boolean isVisited = visited.contains(gateway);
+            SettingColor side = isTarget ? targetColor.get() : isVisited ? visitedColor.get() : gateway.version == GenerationVersion.V1_12 ? legacyGatewayColor.get() : modernGatewayColor.get();
+            SettingColor line = isTarget ? targetLine.get() : isVisited ? visitedLine.get() : gateway.version == GenerationVersion.V1_12 ? legacyGatewayLine.get() : modernGatewayLine.get();
             if (side.a <= 5 && line.a <= 5) continue;
             event.renderer.box(gateway.x, 0, gateway.z, gateway.x + 1, 384, gateway.z + 1, side, line, renderMode.get(), 0);
         }
     }
 
     static List<Gateway> scan(long seed, int centerX, int centerZ, int radius, int queryRadius, ScanShape shape) {
+        List<Gateway> result = new ArrayList<>();
+        scan(seed, centerX, centerZ, radius, queryRadius, shape, GenerationVersion.V1_20_4, result::add);
+        return result;
+    }
+
+    private static void scan(long seed, int centerX, int centerZ, int radius, int queryRadius, ScanShape shape, GenerationVersion version, Consumer<Gateway> consumer) {
         var registries = BuiltinRegistries.createWrapperLookup();
         var biomeSource = TheEndBiomeSource.createVanilla(registries.getOrThrow(RegistryKeys.BIOME));
         var settings = registries.getOrThrow(RegistryKeys.CHUNK_GENERATOR_SETTINGS).getOrThrow(ChunkGeneratorSettings.END);
@@ -271,30 +289,53 @@ public final class EndGatewayFinder extends WaveXinModule {
         var biomeAccess = new BiomeAccess((x, y, z) -> biomeSource.getBiome(x, y, z, sampler), BiomeAccess.hashSeed(seed));
         var heightLimit = HeightLimitView.create(0, 256);
         var random = new ChunkRandom(new Xoroshiro128PlusPlusRandom(0L));
-        List<Gateway> result = new ArrayList<>();
+        var legacyRandom = new LocalRandom(seed);
+        long legacyX = legacyRandom.nextLong() / 2L * 2L + 1L;
+        long legacyZ = legacyRandom.nextLong() / 2L * 2L + 1L;
         int minChunkX = (centerX - queryRadius) >> 4;
         int maxChunkX = (centerX + queryRadius) >> 4;
         int minChunkZ = (centerZ - queryRadius) >> 4;
         int maxChunkZ = (centerZ + queryRadius) >> 4;
         double queryRadiusSquared = (double) queryRadius * queryRadius;
-        for (int chunkZ = minChunkZ; chunkZ <= maxChunkZ; chunkZ++) for (int chunkX = minChunkX; chunkX <= maxChunkX; chunkX++) {
+        List<GenerationVersion> scanVersions = scanVersions(version);
+        for (int chunkZ = minChunkZ; chunkZ <= maxChunkZ; chunkZ++) for (int chunkX = minChunkX; chunkX <= maxChunkX; chunkX++) for (GenerationVersion scanVersion : scanVersions) {
             int blockX = chunkX << 4;
             int blockZ = chunkZ << 4;
-            long populationSeed = random.setPopulationSeed(seed, blockX, blockZ);
-            random.setDecoratorSeed(populationSeed, 0, 4);
-            if (random.nextFloat() >= 1F / 700F) continue;
-            int x = blockX + random.nextInt(16);
-            int z = blockZ + random.nextInt(16);
+            Gateway candidate = scanVersion == GenerationVersion.V1_12
+                ? legacyCandidate(seed, chunkX, chunkZ, legacyX, legacyZ, legacyRandom)
+                : modernCandidate(seed, blockX, blockZ, random);
+            if (candidate == null) continue;
+            int x = candidate.x;
+            int z = candidate.z;
             double dx = x - centerX;
             double dz = z - centerZ;
             if (dx * dx + dz * dz > queryRadiusSquared || shape == ScanShape.SQUARE && (Math.abs(dx) > radius || Math.abs(dz) > radius)) continue;
             int topY = generator.getHeight(x, z, Heightmap.Type.MOTION_BLOCKING, heightLimit, noiseConfig);
             if (!hasSurface(topY, heightLimit.getBottomY())) continue;
-            int y = topY + random.nextBetween(3, 9);
+            int y = topY + (scanVersion == GenerationVersion.V1_12 ? legacyRandom.nextInt(7) + 3 : random.nextBetween(3, 9));
             if (!biomeAccess.getBiome(new BlockPos(x, y, z)).matchesKey(BiomeKeys.END_HIGHLANDS)) continue;
-            result.add(new Gateway(x, z));
+            consumer.accept(candidate);
         }
-        return result;
+    }
+
+    static Gateway legacyCandidate(long seed, int chunkX, int chunkZ) {
+        var random = new LocalRandom(seed);
+        long xSeed = random.nextLong() / 2L * 2L + 1L;
+        long zSeed = random.nextLong() / 2L * 2L + 1L;
+        return legacyCandidate(seed, chunkX, chunkZ, xSeed, zSeed, random);
+    }
+
+    private static Gateway legacyCandidate(long seed, int chunkX, int chunkZ, long xSeed, long zSeed, LocalRandom random) {
+        random.setSeed((long) chunkX * xSeed + (long) chunkZ * zSeed ^ seed);
+        if (random.nextInt(700) != 0) return null;
+        return new Gateway((chunkX << 4) + random.nextInt(16), (chunkZ << 4) + random.nextInt(16), GenerationVersion.V1_12);
+    }
+
+    private static Gateway modernCandidate(long seed, int blockX, int blockZ, ChunkRandom random) {
+        long populationSeed = random.setPopulationSeed(seed, blockX, blockZ);
+        random.setDecoratorSeed(populationSeed, 0, 4);
+        if (random.nextFloat() >= 1F / 700F) return null;
+        return new Gateway(blockX + random.nextInt(16), blockZ + random.nextInt(16), GenerationVersion.V1_20_4);
     }
 
     static List<Integer> route(List<Gateway> gateways, List<Integer> candidates, double playerX, double playerZ, PathAlgorithm algorithm) {
@@ -357,13 +398,14 @@ public final class EndGatewayFinder extends WaveXinModule {
         return result;
     }
 
-    private void loadVisited() {
-        if (visitedPath == null || !Files.exists(visitedPath)) return;
+    private void loadVisited(GenerationVersion version) {
+        Path visitedPath = visitPath(activeSeed, version);
+        if (!Files.exists(visitedPath)) return;
         try {
             for (String line : Files.readAllLines(visitedPath, StandardCharsets.UTF_8)) {
                 if (line.isBlank() || line.startsWith("#")) continue;
                 String[] values = line.split(",", 2);
-                if (values.length == 2) visited.add(pack(Integer.parseInt(values[0].trim()), Integer.parseInt(values[1].trim())));
+                if (values.length == 2) visited.add(new Gateway(Integer.parseInt(values[0].trim()), Integer.parseInt(values[1].trim()), version));
             }
         } catch (IOException | NumberFormatException ignored) {
             WaveXinAddon.LOG.warn("Could not read End gateway visit history.");
@@ -371,19 +413,25 @@ public final class EndGatewayFinder extends WaveXinModule {
     }
 
     private void saveVisited() {
-        if (visitedPath == null) return;
-        StringBuilder output = new StringBuilder("# End Return Gateways\n");
-        for (long gateway : visited) output.append((int) (gateway >> 32)).append(',').append((int) gateway).append('\n');
-        try {
-            Files.createDirectories(visitedPath.getParent());
-            Files.writeString(visitedPath, output, StandardCharsets.UTF_8);
-        } catch (IOException ignored) {
-            WaveXinAddon.LOG.warn("Could not save End gateway visit history.");
+        if (activeGenerationVersion == null) return;
+        for (GenerationVersion version : scanVersions(activeGenerationVersion)) {
+            Path visitedPath = visitPath(activeSeed, version);
+            StringBuilder output = new StringBuilder("# End Return Gateways\n");
+            for (Gateway gateway : visited) if (gateway.version == version) output.append(gateway.x).append(',').append(gateway.z).append('\n');
+            try {
+                Files.createDirectories(visitedPath.getParent());
+                Files.writeString(visitedPath, output, StandardCharsets.UTF_8);
+            } catch (IOException ignored) {
+                WaveXinAddon.LOG.warn("Could not save End gateway visit history.");
+            }
         }
     }
 
-    static Path visitPath(long seed) { return WaveXinDataPaths.DIRECTORY.resolve("end-gateways").resolve(visitFilename(seed)); }
+    static Path visitPath(long seed) { return visitPath(seed, GenerationVersion.V1_20_4); }
+    static Path visitPath(long seed, GenerationVersion version) { return WaveXinDataPaths.DIRECTORY.resolve("end-gateways").resolve(visitFilename(seed, version)); }
     static String visitFilename(long seed) { return seed + ".dat"; }
+    static String visitFilename(long seed, GenerationVersion version) { return version == GenerationVersion.V1_20_4 ? visitFilename(seed) : seed + "-1.12.dat"; }
+    static List<GenerationVersion> scanVersions(GenerationVersion version) { return version == GenerationVersion.BOTH ? List.of(GenerationVersion.V1_12, GenerationVersion.V1_20_4) : List.of(version); }
     static boolean hasSurface(int topY, int bottomY) { return topY > bottomY; }
     static long pack(int x, int z) { return (long) x << 32 | z & 0xffffffffL; }
     static long parsedSeed(String seed) { try { return Long.parseLong(seed); } catch (NumberFormatException ignored) { return seed.hashCode(); } }
@@ -392,6 +440,9 @@ public final class EndGatewayFinder extends WaveXinModule {
     private static ColorSetting.Builder color(String name, int red, int green, int blue, int alpha) { return new ColorSetting.Builder().name(name).defaultValue(new SettingColor(red, green, blue, alpha)); }
 
     enum ScanShape { CIRCLE, SQUARE }
+    enum GenerationVersion { V1_12, V1_20_4, BOTH }
     enum PathAlgorithm { NEAREST_NEIGHBOR, TSP, SCAN_ORDER, RANDOM }
-    record Gateway(int x, int z) {}
+    record Gateway(int x, int z, GenerationVersion version) {
+        Gateway(int x, int z) { this(x, z, GenerationVersion.V1_20_4); }
+    }
 }
