@@ -8,6 +8,7 @@ public final class EndGatewayFinderBehaviorTest {
 
     public static void main(String[] args) {
         testCoordinatePacking();
+        testVoidHeightIsExcluded();
         testSeedPathsAreIsolated();
         testRoutesRetainEveryCandidate();
         testNearestRouteStartsAtClosestGateway();
@@ -16,6 +17,11 @@ public final class EndGatewayFinderBehaviorTest {
     private static void testCoordinatePacking() {
         assertEquals(EndGatewayFinder.pack(-1, 17), EndGatewayFinder.pack(-1, 17), "stable coordinate packing");
         assertTrue(EndGatewayFinder.pack(-1, 17) != EndGatewayFinder.pack(17, -1), "coordinate order");
+    }
+
+    private static void testVoidHeightIsExcluded() {
+        assertTrue(!EndGatewayFinder.hasSurface(0, 0), "bottom world height is void");
+        assertTrue(EndGatewayFinder.hasSurface(1, 0), "terrain above world bottom is valid");
     }
 
     private static void testSeedPathsAreIsolated() {

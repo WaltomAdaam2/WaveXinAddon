@@ -289,6 +289,7 @@ public final class EndGatewayFinder extends WaveXinModule {
             double dz = z - centerZ;
             if (dx * dx + dz * dz > queryRadiusSquared || shape == ScanShape.SQUARE && (Math.abs(dx) > radius || Math.abs(dz) > radius)) continue;
             int topY = generator.getHeight(x, z, Heightmap.Type.MOTION_BLOCKING, heightLimit, noiseConfig);
+            if (!hasSurface(topY, heightLimit.getBottomY())) continue;
             int y = topY + random.nextBetween(3, 9);
             if (!biomeAccess.getBiome(new BlockPos(x, y, z)).matchesKey(BiomeKeys.END_HIGHLANDS)) continue;
             result.add(new Gateway(x, z));
@@ -383,6 +384,7 @@ public final class EndGatewayFinder extends WaveXinModule {
 
     static Path visitPath(long seed) { return WaveXinDataPaths.DIRECTORY.resolve("end-gateways").resolve(visitFilename(seed)); }
     static String visitFilename(long seed) { return seed + ".dat"; }
+    static boolean hasSurface(int topY, int bottomY) { return topY > bottomY; }
     static long pack(int x, int z) { return (long) x << 32 | z & 0xffffffffL; }
     static long parsedSeed(String seed) { try { return Long.parseLong(seed); } catch (NumberFormatException ignored) { return seed.hashCode(); } }
     private static double squared(double x1, double z1, double x2, double z2) { double dx = x1 - x2; double dz = z1 - z2; return dx * dx + dz * dz; }
