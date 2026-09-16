@@ -14,6 +14,7 @@ import net.minecraft.component.DataComponentTypes;
 import net.minecraft.client.gui.screen.ingame.HandledScreen;
 import net.minecraft.item.ItemStack;
 import net.minecraft.screen.ScreenHandler;
+import net.minecraft.screen.GenericContainerScreenHandler;
 import net.minecraft.text.Text;
 import org.lwjgl.glfw.GLFW;
 
@@ -54,7 +55,8 @@ public final class AdvancedTooltip extends WaveXinModule {
         if (mc.currentScreen instanceof HandledScreen<?> screen) {
             ScreenHandler handler = screen.getScreenHandler();
             if (handler != mc.player.playerScreenHandler) {
-                mc.setScreen(new ContainerPreviewScreen(screen.getTitle(), handler.slots.stream().map(slot -> slot.getStack().copy()).toList(), maximumRows.get(), coloredPreview.get(), shortItemCounts.get()));
+                int containerSlots = handler instanceof GenericContainerScreenHandler generic ? generic.getRows() * 9 : handler.slots.size();
+                mc.setScreen(new ContainerPreviewScreen(screen.getTitle(), handler.slots.subList(0, containerSlots).stream().map(slot -> slot.getStack().copy()).toList(), maximumRows.get(), coloredPreview.get(), shortItemCounts.get()));
             }
             return;
         }
