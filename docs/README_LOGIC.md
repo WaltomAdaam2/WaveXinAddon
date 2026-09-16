@@ -47,13 +47,26 @@
 - `Quick Swap` 默认启用。目标药水在副手或主手时直接使用对应手；在背包内时会临时换到当前快捷栏槽位、右键投掷，并在 `finally` 中按 Meteor 原版 quick swap 逻辑换回。
 - 关闭 `Quick Swap` 后只使用副手、主手或快捷栏内的目标药水；临时切换到其他快捷栏槽位时使用本模块捕获的原 selected slot 在 `finally` 中恢复，不依赖 Meteor 的共享 `swapBack()` 状态。找不到可用药水、切换失败、投掷被拒绝或恢复失败都会写入 warn 级游戏 log；`Notify` 仅决定是否额外在聊天栏按 WaveXin 警告格式提示。
 
+### 容器记录器 (Container Recorder)
+
+- Container Recorder 是独立的常驻模块，以玩家周围的 `Scan Radius`（默认 4 区块）检查已加载区块；仅在符合容器类型筛选且数量达到 `Container Threshold` 时记录坐标和数量。
+- 模块保留末影珍珠检测、记录文件、Xaero 路径点、原版成就提示框及挑战完成提示音。手动启用时独立运行，不依赖任何扫描模块。
+- Base Finder 的普通扫描、螺旋扫描和 End Gateway Finder 都有独立的 `Start Container Recorder` 开关。扫描真正开始后才请求启动记录器；多个扫描同时请求时，记录器会等最后一个请求结束才自动关闭。若玩家原本手动开启，扫描结束不会将其关闭。
+
 ### 基地狩猎扫图 (Base Finder)
 
 - `普通扫描`从起始区块向外按环扫描，在目标之间移动，并可等待区块加载。每完成一圈只输出一条简洁消息。Restart 字段保持为可编辑的 Meteor 设置；启用`恢复上次扫描`后，直接使用填写的环数、路线、起点和断点值恢复。Base Finder 停用时会保存一次当前断点并同步更新这些字段，不会每 tick 刷新；若在返回已保存断点途中停用，则保留原断点而不写入途中位置。从设置界面或快捷键停用均使用同一流程。Restart 的重置按钮会清除已保存的普通扫描重启数据。
 - `Spiral Scan` 使用独立的螺旋路线、步长、段数和渲染设置；自动走路时会持续朝当前目标区块中心修正方向，偏到目标区块边缘时先拉回中心再进入下一段。`Lock View` 开启时可见视角会锁向当前目标，关闭时仍会临时转向完成自动导航但每 tick 恢复玩家原视角；可选冲刺和打开界面时暂停。它不复用 Normal Scan 的断点逻辑。
 - 普通扫描会在玩家经过区块的当个游戏刻记录为已访问，并让已访问颜色优先于当前路径颜色，因此无需等到下一次转向才变绿。普通扫描渲染距离默认 128 区块、上限 256 区块，预加载环数默认 10、上限 20。返回保存断点期间，该断点区块使用默认 `#E0B0FF` 的独立可调颜色高亮；到达后立即恢复普通路径颜色。
-- 两种扫描共享容器记录：扫描到已选择容器数量达到阈值的区块时，记录坐标与容器数量。`Detect Thrown Pearls` 会用和基地检测相同的警告聊天样式提示新检测到的被扔出末影珍珠实体。普通目标中心修正是正常移动状态，不写 warn；`BaseFinderDebug` warn 仅用于玩家/世界缺失、等待当前区块等异常或需要诊断的状态。
+- 两种扫描可通过各自的 `Start Container Recorder` 设置联动独立的 Container Recorder。普通目标中心修正是正常移动状态，不写 warn；`BaseFinderDebug` warn 仅用于玩家/世界缺失、等待当前区块等异常或需要诊断的状态。
 - Xaero 路径点为可选功能。仅在开启该选项时检查 Xaero Minimap；缺失时会关闭该选项并给出聊天警告，普通容器记录仍可用。基地路径点名称可使用数字、前缀和后缀，并按区域半径与每区域上限去重；`Area Radius` 默认 5，`Waypoints per Area` 默认 3。`Record Thrown Pearl` 会创建不限数量的 `Pearl 1`、`Pearl 2` 路径点，别名为 `P1`、`P2`，使用同一个路径点颜色设置，并且不计入基地的每区域路径点上限。创建成功的聊天提示会保留 WaveXin 前缀，并将路径点名称加粗、使用 Xaero 实际的 0–15 颜色编号对应色显示；随机颜色只生成一次，同一个编号同时用于路径点和聊天提示。
+
+### 末地折跃门定位 (End Gateway Finder)
+
+- 模块只会在末地开始，根据输入的世界种子在本地预测末地返回折跃门。`Generation Version` 可选择 1.12、1.20.4 或同时扫描两种规则；预测结果不会替代已加载区块中的实际方块确认。
+- 搜索从当前玩家区块向外按同心环处理，先发现内圈候选并立即开始路线，不等待整个搜索范围完成；后台会继续补充候选。圆形和方形搜索半径默认均为 2,000 格，最大可设为 500,000 格；大范围仍会增加后台计算时间。
+- 支持四种路线算法、到点停留、自动移动、已访问网关的种子隔离持久化及渲染。默认颜色为当前目标橘色、1.12 预测绿色、1.20.4 预测红色、已完成蓝色，全部可在设置中自行修改。
+- 在模块确认末地并开始扫描后，`Start Container Recorder` 可联动启动独立的 Container Recorder。
 
 ### 投影打印机 (Litematica Printer)
 
@@ -70,7 +83,7 @@
 
 ### 双语实现 (Bilingual Implementation)
 
-- WaveXin 可见文本使用 Minecraft 原生 `assets/wavexin/lang/*.json` 资源；当客户端语言是简体中文时读取 `zh_cn`，英文和其他语言使用 `en_us` 兜底。
+- WaveXin 可见文本使用 Minecraft 原生 `assets/wavexin/lang/*.json` 资源；默认随客户端语言选择简体中文或英文兜底。`.wavexin lang Simplified Chinese` 和 `.wavexin lang English` 可保存 WaveXinAddon 自身的显示语言覆盖，不会修改 Minecraft、Meteor 或其他 addon 的语言。
 - 翻译只影响显示文本；`Module.name`、`Setting.name`、`SettingGroup.name`、enum 常量、NBT 和配置值都保持原始标识符，因此切换语言不会改写已保存设置。
 - ClickGUI 的模块卡片、模块页面、设置组、设置标题与描述、enum 下拉框、自定义按钮、搜索结果和 Active Modules HUD 通过 WaveXin 专用 i18n 辅助方法显示当前语言文案；非 WaveXin 的 Meteor 模块保持上游行为。
 - 聊天消息、警告、调试状态、断开原因和实体默认名称使用相同翻译层，并保留 Java Formatter 占位符和 Meteor 聊天样式 token。

@@ -642,5 +642,6 @@
   "setting.wavexin.container_recorder.container_recording.waypoint_suffix.description": "添加在路径点名称后面的文字。",
   "message.wavexin.update_check.available.title": "WaveXinAddon 有可用更新",
   "message.wavexin.update_check.available.description": "GitHub Releases 已发布版本 %s。",
-  "message.wavexin.update_check.setting_saved": "启动时检查更新：%s。"
+  "message.wavexin.update_check.setting_saved": "启动时检查更新：%s。",
+  "message.wavexin.language.setting_saved": "WaveXin 语言已切换。"
 }

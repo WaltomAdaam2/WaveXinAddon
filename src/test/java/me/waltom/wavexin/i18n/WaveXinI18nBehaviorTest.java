@@ -32,6 +32,8 @@ public final class WaveXinI18nBehaviorTest {
         assertEquals("Unknown direction", WaveXinI18n.enumLabelOr(null, "Unknown direction"), "null direction fallback");
         assertEquals("Custom fallback", WaveXinI18n.enumLabelOr(null, "Custom fallback"), "custom null enum fallback");
         assertEquals("", WaveXinI18n.enumLabelOr(null, null), "null enum null fallback");
+        assertEquals("English", WaveXinI18n.bundledTranslation("en_us", "meta.wavexin.language"), "bundled English translation");
+        assertEquals("简体中文", WaveXinI18n.bundledTranslation("zh_cn", "meta.wavexin.language"), "bundled Chinese translation");
     }
 
     private static void assertEquals(String expected, String actual, String message) {

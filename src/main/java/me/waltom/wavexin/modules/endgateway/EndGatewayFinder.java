@@ -43,6 +43,7 @@ import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 
 /** Locally predicts and visits vanilla End return gateways for the configured seed. */
@@ -56,10 +57,10 @@ public final class EndGatewayFinder extends WaveXinModule {
     private final Setting<ScanShape> scanShape = sgGeneral.add(new EnumSetting.Builder<ScanShape>().name("Scan Shape")
         .description("Shape used to filter predicted gateway positions around the player.").defaultValue(ScanShape.CIRCLE).build());
     private final Setting<Integer> searchRadius = sgGeneral.add(new IntSetting.Builder().name("Search Radius")
-        .description("Circular search radius in blocks.").defaultValue(2000).min(128).max(50000).sliderMax(50000)
+        .description("Circular search radius in blocks.").defaultValue(2000).min(128).max(500000).sliderMax(500000)
         .visible(() -> scanShape.get() == ScanShape.CIRCLE).build());
     private final Setting<Integer> squareSearchRadius = sgGeneral.add(new IntSetting.Builder().name("Square Search Radius")
-        .description("Square half-width in blocks.").defaultValue(2000).min(128).max(35000).sliderMax(35000)
+        .description("Square half-width in blocks.").defaultValue(2000).min(128).max(500000).sliderMax(500000)
         .visible(() -> scanShape.get() == ScanShape.SQUARE).build());
     private final Setting<Double> arrivalDistance = sgGeneral.add(new DoubleSetting.Builder().name("Arrival Distance")
         .defaultValue(16.0).min(1.0).max(128.0).build());
@@ -74,12 +75,12 @@ public final class EndGatewayFinder extends WaveXinModule {
         .description("Order used to visit unvisited gateways.").defaultValue(PathAlgorithm.NEAREST_NEIGHBOR).build());
     private final Setting<Integer> renderDistance = sgRender.add(new IntSetting.Builder().name("Render Distance")
         .defaultValue(1024).min(64).max(1024).sliderMax(1024).build());
-    private final Setting<SettingColor> targetColor = sgRender.add(color("Target Color", 255, 0, 0, 60).build());
-    private final Setting<SettingColor> targetLine = sgRender.add(color("Target Line", 255, 0, 0, 220).build());
+    private final Setting<SettingColor> targetColor = sgRender.add(color("Target Color", 255, 165, 0, 60).build());
+    private final Setting<SettingColor> targetLine = sgRender.add(color("Target Line", 255, 165, 0, 220).build());
     private final Setting<SettingColor> legacyGatewayColor = sgRender.add(color("1.12 Gateway Color", 0, 255, 0, 40).build());
     private final Setting<SettingColor> legacyGatewayLine = sgRender.add(color("1.12 Gateway Line", 0, 255, 0, 180).build());
-    private final Setting<SettingColor> modernGatewayColor = sgRender.add(color("1.20.4 Gateway Color", 0, 0, 255, 40).build());
-    private final Setting<SettingColor> modernGatewayLine = sgRender.add(color("1.20.4 Gateway Line", 0, 0, 255, 180).build());
+    private final Setting<SettingColor> modernGatewayColor = sgRender.add(color("1.20.4 Gateway Color", 255, 0, 0, 40).build());
+    private final Setting<SettingColor> modernGatewayLine = sgRender.add(color("1.20.4 Gateway Line", 255, 0, 0, 180).build());
     private final Setting<SettingColor> visitedColor = sgRender.add(color("Visited Color", 0, 0, 255, 30).build());
     private final Setting<SettingColor> visitedLine = sgRender.add(color("Visited Line", 0, 0, 255, 80).build());
     private final Setting<ShapeMode> renderMode = sgRender.add(new EnumSetting.Builder<ShapeMode>().name("Render Mode").defaultValue(ShapeMode.Both).build());
@@ -299,23 +300,41 @@ public final class EndGatewayFinder extends WaveXinModule {
         int maxChunkZ = (centerZ + queryRadius) >> 4;
         double queryRadiusSquared = (double) queryRadius * queryRadius;
         List<GenerationVersion> scanVersions = scanVersions(version);
-        for (int chunkZ = minChunkZ; chunkZ <= maxChunkZ; chunkZ++) for (int chunkX = minChunkX; chunkX <= maxChunkX; chunkX++) for (GenerationVersion scanVersion : scanVersions) {
-            int blockX = chunkX << 4;
-            int blockZ = chunkZ << 4;
-            Gateway candidate = scanVersion == GenerationVersion.V1_12
-                ? legacyCandidate(seed, chunkX, chunkZ, legacyX, legacyZ, legacyRandom)
-                : modernCandidate(seed, blockX, blockZ, random);
-            if (candidate == null) continue;
-            int x = candidate.x;
-            int z = candidate.z;
-            double dx = x - centerX;
-            double dz = z - centerZ;
-            if (dx * dx + dz * dz > queryRadiusSquared || shape == ScanShape.SQUARE && (Math.abs(dx) > radius || Math.abs(dz) > radius)) continue;
-            int topY = generator.getHeight(x, z, Heightmap.Type.MOTION_BLOCKING, heightLimit, noiseConfig);
-            if (!hasSurface(topY, heightLimit.getBottomY())) continue;
-            int y = topY + (scanVersion == GenerationVersion.V1_12 ? legacyRandom.nextInt(7) + 3 : random.nextBetween(3, 9));
-            if (!biomeAccess.getBiome(new BlockPos(x, y, z)).matchesKey(BiomeKeys.END_HIGHLANDS)) continue;
-            consumer.accept(candidate);
+        visitChunksFromCenter(minChunkX, maxChunkX, minChunkZ, maxChunkZ, centerX >> 4, centerZ >> 4, (chunkX, chunkZ) -> {
+            for (GenerationVersion scanVersion : scanVersions) {
+                int blockX = chunkX << 4;
+                int blockZ = chunkZ << 4;
+                Gateway candidate = scanVersion == GenerationVersion.V1_12
+                    ? legacyCandidate(seed, chunkX, chunkZ, legacyX, legacyZ, legacyRandom)
+                    : modernCandidate(seed, blockX, blockZ, random);
+                if (candidate == null) continue;
+                int x = candidate.x;
+                int z = candidate.z;
+                double dx = x - centerX;
+                double dz = z - centerZ;
+                if (dx * dx + dz * dz > queryRadiusSquared || shape == ScanShape.SQUARE && (Math.abs(dx) > radius || Math.abs(dz) > radius)) continue;
+                int topY = generator.getHeight(x, z, Heightmap.Type.MOTION_BLOCKING, heightLimit, noiseConfig);
+                if (!hasSurface(topY, heightLimit.getBottomY())) continue;
+                int y = topY + (scanVersion == GenerationVersion.V1_12 ? legacyRandom.nextInt(7) + 3 : random.nextBetween(3, 9));
+                if (!biomeAccess.getBiome(new BlockPos(x, y, z)).matchesKey(BiomeKeys.END_HIGHLANDS)) continue;
+                consumer.accept(candidate);
+            }
+        });
+    }
+
+    static void visitChunksFromCenter(int minChunkX, int maxChunkX, int minChunkZ, int maxChunkZ, int centerChunkX, int centerChunkZ, BiConsumer<Integer, Integer> consumer) {
+        int maximumRing = Math.max(
+            Math.max(Math.abs(minChunkX - centerChunkX), Math.abs(maxChunkX - centerChunkX)),
+            Math.max(Math.abs(minChunkZ - centerChunkZ), Math.abs(maxChunkZ - centerChunkZ))
+        );
+        for (int ring = 0; ring <= maximumRing; ring++) {
+            int minX = Math.max(minChunkX, centerChunkX - ring);
+            int maxX = Math.min(maxChunkX, centerChunkX + ring);
+            int minZ = Math.max(minChunkZ, centerChunkZ - ring);
+            int maxZ = Math.min(maxChunkZ, centerChunkZ + ring);
+            for (int chunkZ = minZ; chunkZ <= maxZ; chunkZ++) for (int chunkX = minX; chunkX <= maxX; chunkX++) {
+                if (Math.max(Math.abs(chunkX - centerChunkX), Math.abs(chunkZ - centerChunkZ)) == ring) consumer.accept(chunkX, chunkZ);
+            }
         }
     }
 

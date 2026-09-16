@@ -642,5 +642,6 @@
   "setting.wavexin.container_recorder.container_recording.waypoint_suffix.description": "Text after the waypoint name.",
   "message.wavexin.update_check.available.title": "WaveXinAddon update available",
   "message.wavexin.update_check.available.description": "Version %s is available on GitHub Releases.",
-  "message.wavexin.update_check.setting_saved": "Update checks on startup: %s."
+  "message.wavexin.update_check.setting_saved": "Update checks on startup: %s.",
+  "message.wavexin.language.setting_saved": "WaveXin language changed."
 }

@@ -30,6 +30,12 @@ public final class WaveXinSettingsStoreBehaviorTest {
             "migration must copy container settings");
         expect(!migratedTag.getCompound("settings").orElseThrow().contains("Maximum Scan Rings"),
             "migration must not retain Base Finder scan settings");
+        expect(WaveXinSettingsStore.languageFromJson("{\"features\":{\"language\":\"zh_cn\"}}").equals("zh_cn"),
+            "simplified Chinese language setting");
+        expect(WaveXinSettingsStore.languageFromJson("{\"features\":{\"language\":\"en_us\"}}").equals("en_us"),
+            "English language setting");
+        expect(WaveXinSettingsStore.languageFromJson("{\"features\":{\"language\":\"invalid\"}}") == null,
+            "unsupported language setting ignored");
     }
 
     private static void expect(boolean condition, String message) {

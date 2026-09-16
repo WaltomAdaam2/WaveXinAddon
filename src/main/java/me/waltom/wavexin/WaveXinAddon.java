@@ -62,7 +62,7 @@ public class WaveXinAddon extends MeteorAddon {
         Modules.get().add(printer);
         Commands.add(new PrinterSelectionCommand(printer));
         Commands.add(new WaveRedeemCommand(this::unlockEndGatewayFinder));
-        Commands.add(new WaveXinCommand(this::unlockEndGatewayFinder, this::setUpdateCheckEnabled));
+        Commands.add(new WaveXinCommand(this::unlockEndGatewayFinder, this::setUpdateCheckEnabled, this::setLanguage));
         registerEndGatewayFinderIfEnabled();
         MeteorClient.EVENT_BUS.subscribe(new PrinterSupplySelectionRenderer(printer));
         WaveXinI18n.validateResources(Modules.get().getAll());
@@ -84,6 +84,10 @@ public class WaveXinAddon extends MeteorAddon {
     private void setUpdateCheckEnabled(boolean enabled) {
         WaveXinSettingsStore.setUpdateCheckEnabled(enabled, Modules.get().getGroup(CATEGORY));
         if (!enabled) UpdateChecker.cancel();
+    }
+
+    private void setLanguage(String language) {
+        WaveXinSettingsStore.setLanguage(language, Modules.get().getGroup(CATEGORY));
     }
 
     private static Text createChatPrefix() {

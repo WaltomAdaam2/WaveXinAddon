@@ -22,6 +22,7 @@ public final class WaveXinSettingsStore {
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
     private static boolean endGatewayFinderEnabled;
     private static boolean updateCheckEnabled = true;
+    private static String language;
 
     private WaveXinSettingsStore() {
     }
@@ -29,12 +30,14 @@ public final class WaveXinSettingsStore {
     public static void loadFeatureFlags() {
         endGatewayFinderEnabled = false;
         updateCheckEnabled = true;
+        language = null;
         if (!Files.exists(WaveXinDataPaths.SETTINGS_PATH)) return;
 
         try {
             FeatureFlags features = featureFlagsFromJson(Files.readString(WaveXinDataPaths.SETTINGS_PATH, StandardCharsets.UTF_8));
             endGatewayFinderEnabled = features != null && features.endGatewayFinder;
             updateCheckEnabled = features == null || features.updateCheck;
+            language = features == null ? null : normalizeLanguage(features.language);
         } catch (IOException | JsonSyntaxException ignored) {
             // Keep safe legacy defaults when settings cannot be read.
         }
@@ -48,6 +51,10 @@ public final class WaveXinSettingsStore {
         return updateCheckEnabled;
     }
 
+    public static String getLanguage() {
+        return language;
+    }
+
     static boolean endGatewayFeatureFromJson(String json) {
         FeatureFlags features = featureFlagsFromJson(json);
         return features != null && features.endGatewayFinder;
@@ -56,6 +63,11 @@ public final class WaveXinSettingsStore {
     static boolean updateCheckFeatureFromJson(String json) {
         FeatureFlags features = featureFlagsFromJson(json);
         return features == null || features.updateCheck;
+    }
+
+    static String languageFromJson(String json) {
+        FeatureFlags features = featureFlagsFromJson(json);
+        return features == null ? null : normalizeLanguage(features.language);
     }
 
     private static FeatureFlags featureFlagsFromJson(String json) {
@@ -73,6 +85,11 @@ public final class WaveXinSettingsStore {
         save(modules);
     }
 
+    public static void setLanguage(String selectedLanguage, Iterable<Module> modules) {
+        language = normalizeLanguage(selectedLanguage);
+        save(modules);
+    }
+
     static boolean restore(Iterable<Module> modules) {
         if (!Files.exists(WaveXinDataPaths.SETTINGS_PATH)) return false;
 
@@ -81,6 +98,7 @@ public final class WaveXinSettingsStore {
             if (document == null || document.modules == null) throw new JsonSyntaxException("Missing module settings");
             endGatewayFinderEnabled = document.features != null && document.features.endGatewayFinder;
             updateCheckEnabled = document.features == null || document.features.updateCheck;
+            language = document.features == null ? null : normalizeLanguage(document.features.language);
 
             List<Module> moduleList = new ArrayList<>();
             for (Module module : modules) moduleList.add(module);
@@ -112,6 +130,7 @@ public final class WaveXinSettingsStore {
         SettingsDocument document = new SettingsDocument();
         document.features.endGatewayFinder = endGatewayFinderEnabled;
         document.features.updateCheck = updateCheckEnabled;
+        document.features.language = language;
         for (Module module : modules) {
             var tag = module.toTag();
             if (tag != null) document.modules.put(module.name, tag.toString());
@@ -187,5 +206,10 @@ public final class WaveXinSettingsStore {
     private static class FeatureFlags {
         boolean endGatewayFinder;
         boolean updateCheck = true;
+        String language;
+    }
+
+    private static String normalizeLanguage(String value) {
+        return "en_us".equals(value) || "zh_cn".equals(value) ? value : null;
     }
 }

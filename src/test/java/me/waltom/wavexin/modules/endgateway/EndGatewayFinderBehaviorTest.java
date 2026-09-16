@@ -1,5 +1,6 @@
 package me.waltom.wavexin.modules.endgateway;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
 
@@ -14,6 +15,7 @@ public final class EndGatewayFinderBehaviorTest {
         testSeedPathsAreIsolated();
         testRoutesRetainEveryCandidate();
         testNearestRouteStartsAtClosestGateway();
+        testChunkScanStartsAtCenter();
     }
 
     private static void testCoordinatePacking() {
@@ -68,6 +70,20 @@ public final class EndGatewayFinderBehaviorTest {
         List<EndGatewayFinder.Gateway> gateways = List.of(new EndGatewayFinder.Gateway(100, 0), new EndGatewayFinder.Gateway(10, 0));
         List<Integer> route = EndGatewayFinder.route(gateways, List.of(0, 1), 0, 0, EndGatewayFinder.PathAlgorithm.NEAREST_NEIGHBOR);
         assertEquals(1, route.getFirst(), "nearest route first gateway");
+    }
+
+    private static void testChunkScanStartsAtCenter() {
+        List<String> chunks = new ArrayList<>();
+        EndGatewayFinder.visitChunksFromCenter(-2, 2, -2, 2, 0, 0, (x, z) -> chunks.add(x + "," + z));
+        assertEquals("0,0", chunks.getFirst(), "center chunk is scanned first");
+        assertEquals(25, chunks.size(), "all chunks scanned once");
+        int previousRing = -1;
+        for (String chunk : chunks) {
+            String[] coordinates = chunk.split(",");
+            int ring = Math.max(Math.abs(Integer.parseInt(coordinates[0])), Math.abs(Integer.parseInt(coordinates[1])));
+            assertTrue(ring >= previousRing, "chunks expand outward by ring");
+            previousRing = ring;
+        }
     }
 
     private static void assertEquals(Object expected, Object actual, String description) {

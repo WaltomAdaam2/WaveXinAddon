@@ -642,3 +642,4 @@ setting.wavexin.end_gateway_finder.general.start_container_recorder.description
 message.wavexin.update_check.available.title
 message.wavexin.update_check.available.description
 message.wavexin.update_check.setting_saved
+message.wavexin.language.setting_saved
