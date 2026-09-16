@@ -1,8 +1,8 @@
 package me.waltom.wavexin;
 
 import me.waltom.wavexin.commands.PrinterSelectionCommand;
-import me.waltom.wavexin.commands.WaveRedeemCommand;
 import me.waltom.wavexin.commands.WaveXinCommand;
+import me.waltom.wavexin.core.EndGatewayFeatureAccess;
 import me.waltom.wavexin.core.UpdateChecker;
 import me.waltom.wavexin.core.WaveXinSettingsStore;
 import me.waltom.wavexin.modules.sniffernametags.SnifferNametags;
@@ -13,6 +13,7 @@ import me.waltom.wavexin.modules.turtlepotionthrower.TurtlePotionThrower;
 import me.waltom.wavexin.modules.betterelytrafly.BetterElytraFly;
 import me.waltom.wavexin.modules.basefinder.BaseFinder;
 import me.waltom.wavexin.modules.containerrecorder.ContainerRecorderModule;
+import me.waltom.wavexin.modules.advancedtooltip.AdvancedTooltip;
 import me.waltom.wavexin.modules.endgateway.EndGatewayFinder;
 import me.waltom.wavexin.modules.litematicaprinter.LitematicaPrinter;
 import me.waltom.wavexin.modules.litematicaprinter.PrinterSupplySelectionRenderer;
@@ -55,13 +56,13 @@ public class WaveXinAddon extends MeteorAddon {
         Modules.get().add(new AutoLogin());
         Modules.get().add(new ChatFilter());
         Modules.get().add(new TurtlePotionThrower());
+        Modules.get().add(new AdvancedTooltip());
         containerRecorder = new ContainerRecorderModule();
         Modules.get().add(containerRecorder);
         Modules.get().add(new BaseFinder(containerRecorder));
         LitematicaPrinter printer = new LitematicaPrinter();
         Modules.get().add(printer);
         Commands.add(new PrinterSelectionCommand(printer));
-        Commands.add(new WaveRedeemCommand(this::unlockEndGatewayFinder));
         Commands.add(new WaveXinCommand(this::unlockEndGatewayFinder, this::setUpdateCheckEnabled, this::setLanguage));
         registerEndGatewayFinderIfEnabled();
         MeteorClient.EVENT_BUS.subscribe(new PrinterSupplySelectionRenderer(printer));
@@ -69,13 +70,14 @@ public class WaveXinAddon extends MeteorAddon {
         UpdateChecker.checkOnStartup();
     }
 
-    private void unlockEndGatewayFinder() {
-        WaveXinSettingsStore.enableEndGatewayFinder(Modules.get().getGroup(CATEGORY));
+    private boolean unlockEndGatewayFinder() {
+        if (!EndGatewayFeatureAccess.issueLicense()) return false;
         registerEndGatewayFinderIfEnabled();
+        return true;
     }
 
     private void registerEndGatewayFinderIfEnabled() {
-        if (!WaveXinSettingsStore.isEndGatewayFinderEnabled() || endGatewayFinder != null) return;
+        if (!EndGatewayFeatureAccess.hasValidLicense() || endGatewayFinder != null) return;
         endGatewayFinder = new EndGatewayFinder(containerRecorder);
         Modules.get().add(endGatewayFinder);
         Modules.get().sortModules();

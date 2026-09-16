@@ -3,18 +3,20 @@ package me.waltom.wavexin.commands;
 import com.mojang.brigadier.arguments.BoolArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
+import me.waltom.wavexin.core.EndGatewayFeatureAccess;
 import me.waltom.wavexin.i18n.WaveXinI18n;
 import meteordevelopment.meteorclient.commands.Command;
 import net.minecraft.command.CommandSource;
 
+import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
 
 public final class WaveXinCommand extends Command {
-    private final Runnable onRedeemed;
+    private final BooleanSupplier onRedeemed;
     private final Consumer<Boolean> onUpdateCheckChanged;
     private final Consumer<String> onLanguageChanged;
 
-    public WaveXinCommand(Runnable onRedeemed, Consumer<Boolean> onUpdateCheckChanged, Consumer<String> onLanguageChanged) {
+    public WaveXinCommand(BooleanSupplier onRedeemed, Consumer<Boolean> onUpdateCheckChanged, Consumer<String> onLanguageChanged) {
         super("wavexin", "WaveXinAddon settings and access commands.");
         this.onRedeemed = onRedeemed;
         this.onUpdateCheckChanged = onUpdateCheckChanged;
@@ -36,12 +38,15 @@ public final class WaveXinCommand extends Command {
     }
 
     private int redeem(String code) {
-        if (!WaveRedeemCommand.matches(code)) {
-            error(WaveXinI18n.tr("error.wavexin.waveredeem.invalid", "The redemption code is invalid."));
+        if (!EndGatewayFeatureAccess.matches(code)) {
+            error(WaveXinI18n.tr("error.wavexin.redeem.invalid", "The redemption code is invalid."));
             return 0;
         }
-        onRedeemed.run();
-        info(WaveXinI18n.tr("message.wavexin.waveredeem.success", "Redeemed successfully. The optional scan module is now available."));
+        if (!onRedeemed.getAsBoolean()) {
+            error(WaveXinI18n.tr("error.wavexin.redeem.license_save_failed", "Could not save the local license file."));
+            return 0;
+        }
+        info(WaveXinI18n.tr("message.wavexin.redeem.success", "Redeemed successfully. The optional scan module is now available."));
         return SINGLE_SUCCESS;
     }
 

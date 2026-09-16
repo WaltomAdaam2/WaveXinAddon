@@ -16,6 +16,7 @@ public final class EndGatewayFinderBehaviorTest {
         testRoutesRetainEveryCandidate();
         testNearestRouteStartsAtClosestGateway();
         testChunkScanStartsAtCenter();
+        testCandidateSelectionDoesNotSpam();
     }
 
     private static void testCoordinatePacking() {
@@ -51,7 +52,7 @@ public final class EndGatewayFinderBehaviorTest {
 
     private static void testSeedPathsAreIsolated() {
         assertTrue(!EndGatewayFinder.visitFilename(1L).equals(EndGatewayFinder.visitFilename(2L)), "visit history by seed");
-        assertTrue(!EndGatewayFinder.visitFilename(1L, EndGatewayFinder.GenerationVersion.V1_12).equals(EndGatewayFinder.visitFilename(1L, EndGatewayFinder.GenerationVersion.V1_20_4)), "visit history by generation version");
+        assertEquals(EndGatewayFinder.visitFilename(1L, EndGatewayFinder.GenerationVersion.V1_12), EndGatewayFinder.visitFilename(1L, EndGatewayFinder.GenerationVersion.V1_20_4), "visit history is unified by seed");
         assertEquals(List.of(EndGatewayFinder.GenerationVersion.V1_12, EndGatewayFinder.GenerationVersion.V1_20_4), EndGatewayFinder.scanVersions(EndGatewayFinder.GenerationVersion.BOTH), "both scans both generation versions");
         assertTrue(!new EndGatewayFinder.Gateway(12, 34, EndGatewayFinder.GenerationVersion.V1_12).equals(new EndGatewayFinder.Gateway(12, 34, EndGatewayFinder.GenerationVersion.V1_20_4)), "visit history distinguishes generation versions at the same coordinates");
     }
@@ -84,6 +85,13 @@ public final class EndGatewayFinderBehaviorTest {
             assertTrue(ring >= previousRing, "chunks expand outward by ring");
             previousRing = ring;
         }
+    }
+
+    private static void testCandidateSelectionDoesNotSpam() {
+        assertTrue(EndGatewayFinder.shouldSelectTarget(false, -1, false), "first candidate selects a target");
+        assertTrue(!EndGatewayFinder.shouldSelectTarget(true, 0, false), "active target suppresses candidate output");
+        assertTrue(!EndGatewayFinder.shouldSelectTarget(true, -1, true), "visited candidate does not restart routing");
+        assertTrue(EndGatewayFinder.shouldSelectTarget(true, -1, false), "new candidate restores an empty route");
     }
 
     private static void assertEquals(Object expected, Object actual, String description) {

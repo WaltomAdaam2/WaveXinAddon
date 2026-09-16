@@ -20,7 +20,6 @@ import java.util.Map;
 
 public final class WaveXinSettingsStore {
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
-    private static boolean endGatewayFinderEnabled;
     private static boolean updateCheckEnabled = true;
     private static String language;
 
@@ -28,23 +27,17 @@ public final class WaveXinSettingsStore {
     }
 
     public static void loadFeatureFlags() {
-        endGatewayFinderEnabled = false;
         updateCheckEnabled = true;
         language = null;
         if (!Files.exists(WaveXinDataPaths.SETTINGS_PATH)) return;
 
         try {
             FeatureFlags features = featureFlagsFromJson(Files.readString(WaveXinDataPaths.SETTINGS_PATH, StandardCharsets.UTF_8));
-            endGatewayFinderEnabled = features != null && features.endGatewayFinder;
             updateCheckEnabled = features == null || features.updateCheck;
             language = features == null ? null : normalizeLanguage(features.language);
         } catch (IOException | JsonSyntaxException ignored) {
             // Keep safe legacy defaults when settings cannot be read.
         }
-    }
-
-    public static boolean isEndGatewayFinderEnabled() {
-        return endGatewayFinderEnabled;
     }
 
     public static boolean isUpdateCheckEnabled() {
@@ -53,11 +46,6 @@ public final class WaveXinSettingsStore {
 
     public static String getLanguage() {
         return language;
-    }
-
-    static boolean endGatewayFeatureFromJson(String json) {
-        FeatureFlags features = featureFlagsFromJson(json);
-        return features != null && features.endGatewayFinder;
     }
 
     static boolean updateCheckFeatureFromJson(String json) {
@@ -73,11 +61,6 @@ public final class WaveXinSettingsStore {
     private static FeatureFlags featureFlagsFromJson(String json) {
         SettingsDocument document = GSON.fromJson(json, SettingsDocument.class);
         return document == null ? null : document.features;
-    }
-
-    public static void enableEndGatewayFinder(Iterable<Module> modules) {
-        endGatewayFinderEnabled = true;
-        save(modules);
     }
 
     public static void setUpdateCheckEnabled(boolean enabled, Iterable<Module> modules) {
@@ -96,7 +79,6 @@ public final class WaveXinSettingsStore {
         try {
             SettingsDocument document = GSON.fromJson(Files.readString(WaveXinDataPaths.SETTINGS_PATH, StandardCharsets.UTF_8), SettingsDocument.class);
             if (document == null || document.modules == null) throw new JsonSyntaxException("Missing module settings");
-            endGatewayFinderEnabled = document.features != null && document.features.endGatewayFinder;
             updateCheckEnabled = document.features == null || document.features.updateCheck;
             language = document.features == null ? null : normalizeLanguage(document.features.language);
 
@@ -128,7 +110,6 @@ public final class WaveXinSettingsStore {
 
     static void save(Iterable<Module> modules) {
         SettingsDocument document = new SettingsDocument();
-        document.features.endGatewayFinder = endGatewayFinderEnabled;
         document.features.updateCheck = updateCheckEnabled;
         document.features.language = language;
         for (Module module : modules) {
@@ -144,9 +125,13 @@ public final class WaveXinSettingsStore {
     }
 
     public static void writeAtomically(java.nio.file.Path path, String contents) throws IOException {
+        writeAtomically(path, contents.getBytes(StandardCharsets.UTF_8));
+    }
+
+    public static void writeAtomically(java.nio.file.Path path, byte[] contents) throws IOException {
         Files.createDirectories(path.getParent());
         java.nio.file.Path temporaryPath = path.resolveSibling(path.getFileName() + ".tmp");
-        Files.writeString(temporaryPath, contents, StandardCharsets.UTF_8);
+        Files.write(temporaryPath, contents);
 
         try {
             Files.move(temporaryPath, path, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
@@ -169,7 +154,7 @@ public final class WaveXinSettingsStore {
     }
 
     private static class SettingsDocument {
-        int version = 3;
+        int version = 4;
         Map<String, String> modules = new LinkedHashMap<>();
         FeatureFlags features = new FeatureFlags();
     }
@@ -204,7 +189,6 @@ public final class WaveXinSettingsStore {
     }
 
     private static class FeatureFlags {
-        boolean endGatewayFinder;
         boolean updateCheck = true;
         String language;
     }

@@ -386,6 +386,12 @@ tasks.register("testWaveXinUpdateCheckerBehavior", JavaExec) {
     mainClass = "me.waltom.wavexin.core.UpdateCheckerBehaviorTest"
 }
 
+tasks.register("testWaveXinAdvancedTooltipBehavior", JavaExec) {
+    dependsOn(tasks.named("testClasses"))
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = "me.waltom.wavexin.modules.advancedtooltip.AdvancedTooltipBehaviorTest"
+}
+
 tasks.named("test") {
     dependsOn(tasks.named("testWaveXinI18nBehavior"))
     dependsOn(tasks.named("testWaveXinChatFilterBehavior"))
@@ -398,6 +404,7 @@ tasks.named("test") {
     dependsOn(tasks.named("testWaveXinContainerRecorderBehavior"))
     dependsOn(tasks.named("testWaveXinSettingsStoreBehavior"))
     dependsOn(tasks.named("testWaveXinUpdateCheckerBehavior"))
+    dependsOn(tasks.named("testWaveXinAdvancedTooltipBehavior"))
     failOnNoDiscoveredTests = false
 }
 

@@ -96,6 +96,7 @@ public final class EndGatewayFinder extends WaveXinModule {
     private boolean ready;
     private boolean scanning;
     private boolean forcingForward;
+    private boolean containerRecorderRequested;
     private long activeSeed;
     private GenerationVersion activeGenerationVersion;
 
@@ -121,12 +122,13 @@ public final class EndGatewayFinder extends WaveXinModule {
         stayUntil = 0;
         scanning = true;
         scanGeneration++;
-        if (startContainerRecorder.get()) containerRecorder.startForScan(this);
+        containerRecorderRequested = startContainerRecorder.get();
+        if (containerRecorderRequested) containerRecorder.startForScan(this);
 
         long seed = parsedSeed(worldSeed.get());
         activeSeed = seed;
         activeGenerationVersion = generationVersion.get();
-        for (GenerationVersion version : scanVersions(activeGenerationVersion)) loadVisited(version);
+        loadVisited();
         startScan(seed, scanGeneration, activeGenerationVersion);
     }
 
@@ -138,7 +140,7 @@ public final class EndGatewayFinder extends WaveXinModule {
         releaseForward();
         stayUntil = 0;
         ready = false;
-        containerRecorder.stopForScan(this);
+        releaseContainerRecorder();
     }
 
     private void startScan(long seed, int generation, GenerationVersion version) {
@@ -162,7 +164,7 @@ public final class EndGatewayFinder extends WaveXinModule {
     private void addGateway(int generation, Gateway gateway) {
         if (!isActive() || generation != scanGeneration) return;
         gateways.add(gateway);
-        if (!ready || target < 0) {
+        if (shouldSelectTarget(ready, target, visited.contains(gateway))) {
             ready = true;
             nextTarget();
         }
@@ -173,11 +175,13 @@ public final class EndGatewayFinder extends WaveXinModule {
         scanning = false;
         if (failure != null) {
             error("Gateway scan failed: %s", failure.getMessage());
+            releaseContainerRecorder();
             toggle();
             return;
         }
         if (gateways.isEmpty()) {
             error("No gateways found in range. Try larger radius.");
+            releaseContainerRecorder();
             toggle();
             return;
         }
@@ -223,6 +227,7 @@ public final class EndGatewayFinder extends WaveXinModule {
             target = -1;
             if (scanning) return;
             info("All gateways visited!");
+            releaseContainerRecorder();
             toggle();
             return;
         }
@@ -255,6 +260,12 @@ public final class EndGatewayFinder extends WaveXinModule {
     private void releaseForward() {
         if (forcingForward && mc.options != null) mc.options.forwardKey.setPressed(false);
         forcingForward = false;
+    }
+
+    private void releaseContainerRecorder() {
+        if (!containerRecorderRequested) return;
+        containerRecorderRequested = false;
+        containerRecorder.stopForScan(this);
     }
 
     @EventHandler
@@ -418,42 +429,55 @@ public final class EndGatewayFinder extends WaveXinModule {
         return result;
     }
 
-    private void loadVisited(GenerationVersion version) {
-        Path visitedPath = visitPath(activeSeed, version);
-        if (!Files.exists(visitedPath)) return;
+    private void loadVisited() {
+        boolean rewrite = loadVisited(visitPath(activeSeed), GenerationVersion.V1_20_4, true);
+        rewrite |= loadVisited(legacyVisitPath(activeSeed), GenerationVersion.V1_12, false);
+        if (rewrite) saveVisited();
+    }
+
+    private boolean loadVisited(Path visitedPath, GenerationVersion fallbackVersion, boolean acceptUnifiedRows) {
+        if (!Files.exists(visitedPath)) return false;
+        boolean rewrite = false;
+        int before = visited.size();
         try {
             for (String line : Files.readAllLines(visitedPath, StandardCharsets.UTF_8)) {
                 if (line.isBlank() || line.startsWith("#")) continue;
-                String[] values = line.split(",", 2);
-                if (values.length == 2) visited.add(new Gateway(Integer.parseInt(values[0].trim()), Integer.parseInt(values[1].trim()), version));
+                String[] values = line.split(",", 3);
+                if (acceptUnifiedRows && values.length == 3) {
+                    visited.add(new Gateway(Integer.parseInt(values[1].trim()), Integer.parseInt(values[2].trim()), GenerationVersion.valueOf(values[0].trim())));
+                } else if (values.length == 2) {
+                    visited.add(new Gateway(Integer.parseInt(values[0].trim()), Integer.parseInt(values[1].trim()), fallbackVersion));
+                    rewrite = true;
+                }
             }
-        } catch (IOException | NumberFormatException ignored) {
+        } catch (IOException | IllegalArgumentException ignored) {
             WaveXinAddon.LOG.warn("Could not read End gateway visit history.");
         }
+        return rewrite && visited.size() > before;
     }
 
     private void saveVisited() {
         if (activeGenerationVersion == null) return;
-        for (GenerationVersion version : scanVersions(activeGenerationVersion)) {
-            Path visitedPath = visitPath(activeSeed, version);
-            StringBuilder output = new StringBuilder("# End Return Gateways\n");
-            for (Gateway gateway : visited) if (gateway.version == version) output.append(gateway.x).append(',').append(gateway.z).append('\n');
-            try {
-                Files.createDirectories(visitedPath.getParent());
-                Files.writeString(visitedPath, output, StandardCharsets.UTF_8);
-            } catch (IOException ignored) {
-                WaveXinAddon.LOG.warn("Could not save End gateway visit history.");
-            }
+        Path visitedPath = visitPath(activeSeed);
+        StringBuilder output = new StringBuilder("# End Return Gateways v2\n");
+        for (Gateway gateway : visited) output.append(gateway.version.name()).append(',').append(gateway.x).append(',').append(gateway.z).append('\n');
+        try {
+            Files.createDirectories(visitedPath.getParent());
+            Files.writeString(visitedPath, output, StandardCharsets.UTF_8);
+        } catch (IOException ignored) {
+            WaveXinAddon.LOG.warn("Could not save End gateway visit history.");
         }
     }
 
-    static Path visitPath(long seed) { return visitPath(seed, GenerationVersion.V1_20_4); }
-    static Path visitPath(long seed, GenerationVersion version) { return WaveXinDataPaths.DIRECTORY.resolve("end-gateways").resolve(visitFilename(seed, version)); }
+    static Path visitPath(long seed) { return WaveXinDataPaths.DIRECTORY.resolve("end-gateways").resolve(visitFilename(seed)); }
+    static Path legacyVisitPath(long seed) { return WaveXinDataPaths.DIRECTORY.resolve("end-gateways").resolve(seed + "-1.12.dat"); }
+    static Path visitPath(long seed, GenerationVersion version) { return visitPath(seed); }
     static String visitFilename(long seed) { return seed + ".dat"; }
-    static String visitFilename(long seed, GenerationVersion version) { return version == GenerationVersion.V1_20_4 ? visitFilename(seed) : seed + "-1.12.dat"; }
+    static String visitFilename(long seed, GenerationVersion version) { return visitFilename(seed); }
     static List<GenerationVersion> scanVersions(GenerationVersion version) { return version == GenerationVersion.BOTH ? List.of(GenerationVersion.V1_12, GenerationVersion.V1_20_4) : List.of(version); }
     static boolean hasSurface(int topY, int bottomY) { return topY > bottomY; }
     static long pack(int x, int z) { return (long) x << 32 | z & 0xffffffffL; }
+    static boolean shouldSelectTarget(boolean ready, int target, boolean candidateVisited) { return !ready || target < 0 && !candidateVisited; }
     static long parsedSeed(String seed) { try { return Long.parseLong(seed); } catch (NumberFormatException ignored) { return seed.hashCode(); } }
     private static double squared(double x1, double z1, double x2, double z2) { double dx = x1 - x2; double dz = z1 - z2; return dx * dx + dz * dz; }
     private static double distance(Gateway first, Gateway second) { return Math.sqrt(squared(first.x, first.z, second.x, second.z)); }
