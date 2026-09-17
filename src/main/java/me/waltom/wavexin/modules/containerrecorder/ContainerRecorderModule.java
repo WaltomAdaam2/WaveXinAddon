@@ -1,6 +1,7 @@
 package me.waltom.wavexin.modules.containerrecorder;
 
 import me.waltom.wavexin.WaveXinAddon;
+import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 import me.waltom.wavexin.core.WaveXinDataPaths;
 import me.waltom.wavexin.core.WaveXinModule;
 import me.waltom.wavexin.i18n.WaveXinI18n;
@@ -82,8 +83,8 @@ public final class ContainerRecorderModule extends WaveXinModule {
     private final SettingGroup sgRecording = settings.createGroup("Container Recording");
     private final XaeroWaypointBridge xaero = new XaeroWaypointBridge();
     private final ContainerRecorderClaimState scanRequests = new ContainerRecorderClaimState();
-    private final Set<Long> recordedChunks = new HashSet<>();
-    private final Set<ChunkPos> checkedChunks = new HashSet<>();
+    private final LongOpenHashSet recordedChunks = new LongOpenHashSet();
+    private final LongOpenHashSet checkedChunks = new LongOpenHashSet();
     private final Set<UUID> recordedPearls = new HashSet<>();
     private final List<BlockPos> createdWaypointPositions = new ArrayList<>();
     private final Set<Long> warnedMissingChunks = new HashSet<>();
@@ -129,7 +130,6 @@ public final class ContainerRecorderModule extends WaveXinModule {
     private int nextPearlWaypointNumber = 1;
     private boolean warnedEmptyTypes;
     private boolean warnedUnavailable;
-    private boolean enablingForScan;
     private XaeroWaypointBridge.Status lastXaeroWarning;
     private long lastXaeroWarningAt;
 
@@ -139,9 +139,7 @@ public final class ContainerRecorderModule extends WaveXinModule {
 
     public void startForScan(WaveXinModule requester) {
         if (!scanRequests.request(requester, isActive())) return;
-        enablingForScan = true;
         toggle();
-        enablingForScan = false;
     }
 
     public void stopForScan(WaveXinModule requester) {
@@ -149,14 +147,12 @@ public final class ContainerRecorderModule extends WaveXinModule {
     }
 
     @Override public void onActivate() {
-        if (!enablingForScan) scanRequests.manuallyActivated();
         migrateLegacyRecords();
         clearSession();
         validateXaeroSetting();
     }
 
     @Override public void onDeactivate() {
-        scanRequests.deactivated();
         clearSession();
     }
 
@@ -192,20 +188,27 @@ public final class ContainerRecorderModule extends WaveXinModule {
         if (++scanTicks >= RESCAN_INTERVAL_TICKS) { checkedChunks.clear(); scanTicks = 0; }
 
         int radius = Math.min(scanRadius.get(), Math.max(1, client.options.getViewDistance().getValue()));
-        checkedChunks.removeIf(chunk -> Math.abs((long) chunk.x - center.x) > radius || Math.abs((long) chunk.z - center.z) > radius
-            || !client.world.getChunkManager().isChunkLoaded(chunk.x, chunk.z));
-        for (int x = center.x - radius; x <= center.x + radius; x++) for (int z = center.z - radius; z <= center.z + radius; z++)
+        var checked = checkedChunks.iterator();
+        while (checked.hasNext()) {
+            long key = checked.nextLong();
+            int x = ChunkPos.getPackedX(key), z = ChunkPos.getPackedZ(key);
+            if (Math.abs((long) x - center.x) > radius || Math.abs((long) z - center.z) > radius
+                || !client.world.getChunkManager().isChunkLoaded(x, z)) checked.remove();
+        }
+        for (int x = center.x - radius; x <= center.x + radius; x++) for (int z = center.z - radius; z <= center.z + radius; z++) {
+            long key = ChunkPos.toLong(x, z);
+            if (recordedChunks.contains(key) || checkedChunks.contains(key)) continue;
             if (client.world.getChunkManager().isChunkLoaded(x, z)) recordChunk(client, new ChunkPos(x, z), selected);
+        }
     }
 
     private void recordChunk(MinecraftClient client, ChunkPos chunkPos, List<BlockEntityType<?>> selected) {
         long key = chunkPos.toLong();
-        if (recordedChunks.contains(key) || checkedChunks.contains(chunkPos)) return;
         WorldChunk chunk = client.world.getChunkManager().getWorldChunk(chunkPos.x, chunkPos.z, false);
         if (chunk == null) { if (warnedMissingChunks.add(key)) WaveXinAddon.LOG.warn("Loaded container candidate had no WorldChunk: {}", chunkPos); return; }
         int count = 0; BlockPos first = null;
         for (BlockEntity blockEntity : chunk.getBlockEntities().values()) if (selected.contains(blockEntity.getType())) { count++; if (first == null) first = blockEntity.getPos(); }
-        checkedChunks.add(chunkPos);
+        checkedChunks.add(key);
         if (count < threshold.get()) return;
         recordedChunks.add(key);
         BlockPos playerPos = client.player.getBlockPos();

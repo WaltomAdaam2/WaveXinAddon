@@ -4,7 +4,7 @@ public final class ElytraFlightBehaviorTest {
     private ElytraFlightBehaviorTest() {
     }
 
-    public static void main(String[] args) {
+    public static void main(String[] args) throws ReflectiveOperationException {
         testFixedSpeedWhenDisabled();
         testSpeedRampAndCap();
         testAscentPausesAcceleration();
@@ -12,6 +12,7 @@ public final class ElytraFlightBehaviorTest {
         testLagbackCooldown();
         testCoordinateConversion();
         testWaypointGate();
+        me.waltom.wavexin.modules.basefinder.XaeroWaypointBridgeBehaviorTest.run();
     }
 
     private static void testFixedSpeedWhenDisabled() {

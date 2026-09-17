@@ -108,7 +108,7 @@ public final class WaveXinSettingsStore {
         }
     }
 
-    static void save(Iterable<Module> modules) {
+    static boolean save(Iterable<Module> modules) {
         SettingsDocument document = new SettingsDocument();
         document.features.updateCheck = updateCheckEnabled;
         document.features.language = language;
@@ -119,8 +119,10 @@ public final class WaveXinSettingsStore {
 
         try {
             writeAtomically(WaveXinDataPaths.SETTINGS_PATH, GSON.toJson(document));
+            return true;
         } catch (IOException e) {
             WaveXinAddon.LOG.error("Could not save WaveXin settings to {}.", WaveXinDataPaths.SETTINGS_PATH, e);
+            return false;
         }
     }
 

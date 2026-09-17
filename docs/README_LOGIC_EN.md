@@ -17,7 +17,7 @@ This page describes implementation details and notable behavior for the public C
 - With `Nether Pos Calculation` enabled, the entered X and Z are each divided by 8 before they become the actual target coordinates.
 - Arrival uses `Arrival Distance`. When both automatic stopping and automatic disconnect are enabled, the module stops before disconnecting.
 - The module can take off automatically and warns when started outside its recommended altitude. Its final speed uses the same optional ramping controls as Better Elytra Fly.
-- The optional Xaero waypoint creates `Elytra Path` with initials `EP` on activation. It uses converted X/Z when Nether conversion is enabled and the player's activation Y. Deactivation only attempts to remove the exact object created by that activation; missing or unsupported Xaero APIs issue one warning without stopping flight.
+- The optional Xaero waypoint creates `Elytra Path` with initials `EP` on activation, using converted X/Z when Nether conversion is enabled and the player's activation Y. It uses Xaero's native temporary flag and is never saved to waypoint files, so a crash or forced process exit cannot restore it on the next launch. Deactivation or disconnect removes that exact object from its original set, even after switching sets; failed removal retains the handle for a later retry. Missing or unsupported required Xaero APIs skip creation with a warning while flight continues. Previously saved points without ownership markers are not bulk-deleted by name.
 
 ### Chicken Nametags and Sniffer Nametags
 
@@ -51,7 +51,7 @@ This page describes implementation details and notable behavior for the public C
 
 - Container Recorder is an independent persistent module. It checks loaded chunks within its `Scan Radius` around the player (default: 4 chunks) and records a coordinate and count only when the selected container types meet `Container Threshold`.
 - It retains thrown-ender-pearl detection, record files, Xaero waypoints, the vanilla achievement toast, and the challenge-complete sound. When enabled manually, it operates independently of every scan module.
-- Base Finder Normal Scan, Base Finder Spiral Scan, and End Gateway Finder each expose `Start Container Recorder`. A scan requests the recorder only after it really starts; concurrent requests keep it active until the last scan ends. A recorder the player enabled manually remains on after scans end.
+- Base Finder Normal Scan, Base Finder Spiral Scan, and End Gateway Finder each expose `Start Container Recorder`. A scan requests the recorder only after it really starts; concurrent requests keep it active until the last scan ends, including when the player originally enabled the recorder manually. Scans without this option do not take ownership of the recorder.
 
 ### Base Finder
 
@@ -82,6 +82,13 @@ This page describes implementation details and notable behavior for the public C
 - Projection targets and observed containers use a session cache bound to the world, projection fingerprint, region, and state summary. Disabling the module preserves progress; leaving the world or game clears it. On activation, loaded projection chunks and supply containers are scanned immediately, while unloaded portions are recorded as the player approaches. Cache data never replaces final loaded-state confirmation.
 - `Debug Log` creates one `meteor-client/wavexin/printer/yyyy-MM-dd-N.log` file per Minecraft process; module toggles only flush it. It records planner decisions, support sources, exact states, temporary rotation, screen interception, restocking, cache decisions, and audit results.
 - `Maximum Projection Volume` defaults to 10,000,000 and has a hard limit of 500,000,000. Raising the cap only permits larger bounds; scanning remains constrained by per-tick budgets, chunk loading, and memory. Liquids, entities, waterlogged states, and structures that cannot be placed reliably are reported after other actionable blocks have been handled.
+
+### Performance and Lifecycle
+
+- Addon settings are checked for changes every 20 ticks, with immediate flushes on screen changes, disconnect and orderly shutdown. Failed writes do not advance the saved signature and are retried. Forced process termination can lose approximately the last second of setting changes.
+- Container scanning uses primitive chunk keys and skips cache hits before accessing the chunk manager. The 20-tick recheck interval, thresholds and record format remain unchanged.
+- Chicken and sniffer nametags use spatial queries filtered by entity type for ranges up to 256 blocks and squared-distance filtering. Larger ranges fall back to entity iteration to avoid enumerating large empty regions.
+- Elytra path flight combines velocity writes while preserving speed and damping calculations. AutoLogin rechecks the server on every activation so reconnecting while disabled cannot reuse a previous server's eligibility.
 
 ### Bilingual Implementation
 

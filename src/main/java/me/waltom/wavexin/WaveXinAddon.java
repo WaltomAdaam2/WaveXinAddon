@@ -47,7 +47,7 @@ public class WaveXinAddon extends MeteorAddon {
         WaveXinSettingsStore.loadFeatureFlags();
         ChatUtils.registerCustomPrefix(getPackage(), WaveXinAddon::createChatPrefix);
         BetterChat.registerCustomHead("[WaveXin]", CHAT_AVATAR);
-        MeteorClient.EVENT_BUS.subscribe(new WaveXinSettingsAutoSaver());
+        MeteorClient.EVENT_BUS.subscribe(WaveXinSettingsAutoSaver.INSTANCE);
         Modules.get().add(new BetterElytraFly());
         Modules.get().add(new ElytraFlyPath());
         Modules.get().add(new ChickenNametags());
