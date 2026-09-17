@@ -119,6 +119,7 @@ public final class EndGatewayFinder extends WaveXinModule {
     private long lastToastUpdate;
     private long stayUntil;
     private int arrivedCount;
+    private int pendingArrivalNumber;
     private boolean forcingForward;
     private boolean containerRecorderRequested;
     private boolean activationRejected;
@@ -157,6 +158,7 @@ public final class EndGatewayFinder extends WaveXinModule {
         target = -1;
         stayUntil = 0;
         arrivedCount = 0;
+        pendingArrivalNumber = 0;
         scanGeneration++;
         activeWorld = mc.world;
         activeSeed = parsedSeed(worldSeed.get());
@@ -181,6 +183,7 @@ public final class EndGatewayFinder extends WaveXinModule {
         releaseForward();
         NavigationModuleControl.restoreMovementInput();
         stayUntil = 0;
+        pendingArrivalNumber = 0;
         hideScanToast();
         releaseContainerRecorder();
     }
@@ -202,7 +205,9 @@ public final class EndGatewayFinder extends WaveXinModule {
             releaseForward();
             if (System.currentTimeMillis() >= stayUntil) {
                 stayUntil = 0;
-                nextTarget();
+                int arrivalNumber = pendingArrivalNumber;
+                pendingArrivalNumber = 0;
+                nextTarget(arrivalNumber);
             }
             return;
         }
@@ -212,18 +217,19 @@ public final class EndGatewayFinder extends WaveXinModule {
             double dx = gateway.x + 0.5 - mc.player.getX();
             double dz = gateway.z + 0.5 - mc.player.getZ();
             if (dx * dx + dz * dz <= arrivalDistance.get() * arrivalDistance.get()) {
+                int arrivalNumber = 0;
                 if (visited.add(gateway)) {
-                    arrivedCount++;
-                    info("Arrived at #%d", arrivedCount);
+                    arrivalNumber = ++arrivedCount;
                     saveVisited();
                 }
                 releaseForward();
                 target = -1;
                 if (stayAtGateway.get()) {
+                    pendingArrivalNumber = arrivalNumber;
                     stayUntil = System.currentTimeMillis() + stayDuration.get() * 1000L;
                     return;
                 }
-                nextTarget();
+                nextTarget(arrivalNumber);
             }
         }
         moveToTarget();
@@ -361,7 +367,7 @@ public final class EndGatewayFinder extends WaveXinModule {
             }
         }
 
-        if (target < 0 && addedGateway) nextTarget();
+        if (target < 0 && addedGateway && stayUntil == 0) nextTarget();
         if (complete && revision == scanRevision) {
             scanning = false;
             completedViewTiles = Math.min(completedViewTiles, totalViewTiles);
@@ -404,7 +410,7 @@ public final class EndGatewayFinder extends WaveXinModule {
         activeGatewaySet.clear();
         activeGatewaySet.addAll(rebuilt);
         target = current == null ? -1 : gateways.indexOf(current);
-        if (target < 0 || visited.contains(gateways.get(target))) nextTarget();
+        if (stayUntil == 0 && (target < 0 || visited.contains(gateways.get(target)))) nextTarget();
     }
 
     private boolean gatewayInsideView(Gateway gateway) {
@@ -415,6 +421,10 @@ public final class EndGatewayFinder extends WaveXinModule {
     }
 
     private void nextTarget() {
+        nextTarget(0);
+    }
+
+    private void nextTarget(int arrivalNumber) {
         List<Integer> remaining = new ArrayList<>();
         for (int i = 0; i < gateways.size(); i++) if (!visited.contains(gateways.get(i))) remaining.add(i);
         List<Integer> candidates = nearestWindow(gateways, remaining, mc.player == null ? 0 : mc.player.getX(), mc.player == null ? 0 : mc.player.getZ(), ROUTE_WINDOW_SIZE);
@@ -422,13 +432,21 @@ public final class EndGatewayFinder extends WaveXinModule {
         if (route.isEmpty()) {
             target = -1;
             releaseForward();
+            if (arrivalNumber > 0) info(arrivalMessage(arrivalNumber, null));
             return;
         }
         int next = route.getFirst();
         if (next == target) return;
         target = next;
         Gateway gateway = gateways.get(target);
-        info("-> (%d, %d)", gateway.x, gateway.z);
+        if (arrivalNumber > 0) info(arrivalMessage(arrivalNumber, gateway));
+        else info("-> (%d, %d)", gateway.x, gateway.z);
+    }
+
+    static String arrivalMessage(int arrivalNumber, Gateway next) {
+        return next == null
+            ? "Arrived at #%d".formatted(arrivalNumber)
+            : "Arrived at #%d -> (%d, %d)".formatted(arrivalNumber, next.x, next.z);
     }
 
     private void moveToTarget() {

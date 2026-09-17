@@ -19,6 +19,7 @@ public final class EndGatewayFinderBehaviorTest {
         testNearestRouteStartsAtClosestGateway();
         testChunkScanStartsAtCenter();
         testCandidateSelectionDoesNotSpam();
+        testArrivalMessageMergesNextTarget();
         testRollingBoundary();
         testTileSchedulerCoverageAndCaching();
         testNearestWindowIsBounded();
@@ -100,6 +101,12 @@ public final class EndGatewayFinderBehaviorTest {
         assertTrue(!EndGatewayFinder.shouldSelectTarget(true, 0, false), "active target suppresses candidate output");
         assertTrue(!EndGatewayFinder.shouldSelectTarget(true, -1, true), "visited candidate does not restart routing");
         assertTrue(EndGatewayFinder.shouldSelectTarget(true, -1, false), "new candidate restores an empty route");
+    }
+
+    private static void testArrivalMessageMergesNextTarget() {
+        EndGatewayFinder.Gateway next = new EndGatewayFinder.Gateway(-12, 34);
+        assertEquals("Arrived at #115 -> (-12, 34)", EndGatewayFinder.arrivalMessage(115, next), "arrival and next target share one line");
+        assertEquals("Arrived at #115", EndGatewayFinder.arrivalMessage(115, null), "final arrival has no empty arrow");
     }
 
     private static void testRollingBoundary() {
