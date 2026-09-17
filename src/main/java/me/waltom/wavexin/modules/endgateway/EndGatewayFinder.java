@@ -4,6 +4,7 @@ import me.waltom.wavexin.WaveXinAddon;
 import me.waltom.wavexin.core.WaveXinDataPaths;
 import me.waltom.wavexin.core.WaveXinModule;
 import me.waltom.wavexin.i18n.WaveXinI18n;
+import me.waltom.wavexin.modules.NavigationModuleControl;
 import me.waltom.wavexin.modules.containerrecorder.ContainerRecorderModule;
 import meteordevelopment.meteorclient.events.render.Render3DEvent;
 import meteordevelopment.meteorclient.events.world.TickEvent;
@@ -58,10 +59,11 @@ public final class EndGatewayFinder extends WaveXinModule {
     static final int TILE_SIZE_CHUNKS = 32;
     static final int TILE_SIZE_BLOCKS = TILE_SIZE_CHUNKS * 16;
     static final int PREFETCH_DISTANCE_BLOCKS = 100;
+    static final int DEFAULT_ROLLING_RADIUS_CHUNKS = 1000;
     private static final int BATCH_SIZE_TILES = 32;
     private static final int ROUTE_WINDOW_SIZE = 256;
     private static final long PROGRESS_UPDATE_INTERVAL_MS = 1000L;
-    private static final SystemToast.Type SCAN_TOAST_TYPE = new SystemToast.Type(5000L);
+    private static final SystemToast.Type SCAN_TOAST_TYPE = new SystemToast.Type(Long.MAX_VALUE);
 
     private final SettingGroup sgGeneral = settings.getDefaultGroup();
     private final SettingGroup sgRender = settings.createGroup("Render");
@@ -71,7 +73,7 @@ public final class EndGatewayFinder extends WaveXinModule {
         .description("Uses the selected version's End gateway random placement rules.").defaultValue(GenerationVersion.V1_12).build());
     private final Setting<Integer> rollingRadiusChunks = sgGeneral.add(new IntSetting.Builder().name("Rolling Radius (Chunks)")
         .description("Circular scan radius in chunks. Results are cached for this game session.")
-        .defaultValue(5000).min(8).max(100000).sliderMax(100000).build());
+        .defaultValue(DEFAULT_ROLLING_RADIUS_CHUNKS).min(8).max(100000).sliderMax(100000).build());
     private final Setting<Double> arrivalDistance = sgGeneral.add(new DoubleSetting.Builder().name("Arrival Distance")
         .defaultValue(16.0).min(1.0).max(128.0).build());
     private final Setting<Boolean> autoLook = sgGeneral.add(new BoolSetting.Builder().name("Auto Look").defaultValue(true).build());
@@ -119,6 +121,7 @@ public final class EndGatewayFinder extends WaveXinModule {
     private int arrivedCount;
     private boolean forcingForward;
     private boolean containerRecorderRequested;
+    private boolean activationRejected;
     private long activeSeed;
     private GenerationVersion activeGenerationVersion;
     private ClientWorld activeWorld;
@@ -133,12 +136,19 @@ public final class EndGatewayFinder extends WaveXinModule {
 
     @Override
     public void onActivate() {
+        if (NavigationModuleControl.reportConflictingActivation(this)) {
+            activationRejected = true;
+            toggle();
+            return;
+        }
+        activationRejected = false;
         if (mc.player == null || mc.world == null) return;
         if (!mc.world.getRegistryKey().equals(World.END)) {
             error("End Gateway Finder can only run in The End.");
             toggle();
             return;
         }
+        NavigationModuleControl.suppressMovementInput();
 
         gateways.clear();
         activeGatewaySet.clear();
@@ -161,10 +171,15 @@ public final class EndGatewayFinder extends WaveXinModule {
 
     @Override
     public void onDeactivate() {
+        if (activationRejected) {
+            activationRejected = false;
+            return;
+        }
         scanGeneration++;
         scanning = false;
         saveVisited();
         releaseForward();
+        NavigationModuleControl.restoreMovementInput();
         stayUntil = 0;
         hideScanToast();
         releaseContainerRecorder();
@@ -178,6 +193,7 @@ public final class EndGatewayFinder extends WaveXinModule {
             toggle();
             return;
         }
+        NavigationModuleControl.suppressMovementInput();
 
         refreshConfigurationAndView();
         if (scanning && runningGeneration != scanGeneration) startScanWorker(scanGeneration, activeSeed, activeGenerationVersion);
@@ -327,9 +343,9 @@ public final class EndGatewayFinder extends WaveXinModule {
         if (failure != null) {
             scanning = false;
             error("Gateway scan failed: %s", failure.getMessage());
+            showScanToast(ScanState.FAILED, true);
             releaseContainerRecorder();
             toggle();
-            showScanToast(ScanState.FAILED, true);
             return;
         }
 
@@ -463,7 +479,8 @@ public final class EndGatewayFinder extends WaveXinModule {
         };
         SystemToast.show(mc.getToastManager(), SCAN_TOAST_TYPE,
             Text.literal(WaveXinI18n.tr("message.wavexin.end_gateway_finder.scan_toast_title", "End Gateway Scan - %s", stateText)),
-            Text.literal(WaveXinI18n.tr("message.wavexin.end_gateway_finder.scan_toast_progress", "%d/%d chunks (%d%%)", completedChunks, totalChunks, percent)));
+            Text.literal(WaveXinI18n.tr("message.wavexin.end_gateway_finder.scan_toast_progress", "%d/%d chunks (%d%%)", completedChunks, totalChunks, percent)
+                + "\n" + WaveXinI18n.tr("message.wavexin.end_gateway_finder.scan_toast_gateways", "Gateways: %d", gateways.size())));
     }
 
     private void hideScanToast() {

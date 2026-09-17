@@ -6,6 +6,7 @@ import me.waltom.wavexin.core.WaveXinModule;
 import me.waltom.wavexin.WaveXinAddon;
 import me.waltom.wavexin.gui.TargetCoordinateInput;
 import me.waltom.wavexin.i18n.WaveXinI18n;
+import me.waltom.wavexin.modules.NavigationModuleControl;
 import me.waltom.wavexin.modules.basefinder.BaseFinder;
 import me.waltom.wavexin.modules.basefinder.XaeroWaypointBridge;
 import me.waltom.wavexin.modules.basefinder.XaeroWaypointColorSetting;
@@ -22,7 +23,6 @@ import meteordevelopment.orbit.EventHandler;
 import meteordevelopment.orbit.EventPriority;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.network.ClientPlayerEntity;
-import net.minecraft.client.option.KeyBinding;
 import net.minecraft.entity.EquipmentSlot;
 import net.minecraft.entity.MovementType;
 import net.minecraft.entity.effect.StatusEffects;
@@ -40,6 +40,7 @@ import java.util.concurrent.ThreadLocalRandom;
 public class ElytraFlyPath extends WaveXinModule {
     private static final MinecraftClient mc = MinecraftClient.getInstance();
     private static final int MAX_TARGET_COORDINATE = 30000000;
+    private boolean activationRejected;
 
     static {
         SettingsWidgetFactory.registerCustomFactory(TargetCoordinateSetting.class, theme -> (table, setting) -> {
@@ -234,6 +235,12 @@ public class ElytraFlyPath extends WaveXinModule {
 
     @Override
     public void onActivate() {
+        if (NavigationModuleControl.reportConflictingActivation(this)) {
+            activationRejected = true;
+            toggle();
+            return;
+        }
+        activationRejected = false;
         
         if (mc.player == null || mc.world == null || !hasWorkingElytra()) {
             toggle();
@@ -268,6 +275,10 @@ public class ElytraFlyPath extends WaveXinModule {
 
     @Override
     public void onDeactivate() {
+        if (activationRejected) {
+            activationRejected = false;
+            return;
+        }
         removeTemporaryWaypoint();
         target = null;
         isArrive = false;
@@ -338,20 +349,11 @@ public class ElytraFlyPath extends WaveXinModule {
     }
 
     private void suppressMovementInput() {
-        if (mc.options == null) return;
-        mc.options.forwardKey.setPressed(false);
-        mc.options.backKey.setPressed(false);
-        mc.options.leftKey.setPressed(false);
-        mc.options.rightKey.setPressed(false);
-        mc.options.sneakKey.setPressed(false);
-        mc.options.jumpKey.setPressed(false);
-        if (mc.player != null && mc.player.input != null) mc.player.input.tick();
+        NavigationModuleControl.suppressMovementInput();
     }
 
     private void restoreMovementInput() {
-        if (mc.options == null) return;
-        KeyBinding.updatePressedStates();
-        if (mc.player != null && mc.player.input != null) mc.player.input.tick();
+        NavigationModuleControl.restoreMovementInput();
     }
 
 

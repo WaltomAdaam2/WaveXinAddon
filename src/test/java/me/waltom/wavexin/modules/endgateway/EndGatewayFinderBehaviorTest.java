@@ -103,7 +103,8 @@ public final class EndGatewayFinderBehaviorTest {
     }
 
     private static void testRollingBoundary() {
-        int radiusChunks = 5000;
+        int radiusChunks = EndGatewayFinder.DEFAULT_ROLLING_RADIUS_CHUNKS;
+        assertEquals(1000, radiusChunks, "rolling radius default");
         int threshold = radiusChunks * 16 - EndGatewayFinder.PREFETCH_DISTANCE_BLOCKS;
         assertTrue(!EndGatewayFinder.shouldAdvanceView(0, 0, radiusChunks, threshold - 1, 0), "view stays before prefetch boundary");
         assertTrue(EndGatewayFinder.shouldAdvanceView(0, 0, radiusChunks, threshold, 0), "view advances at prefetch boundary");

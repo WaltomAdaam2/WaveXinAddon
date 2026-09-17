@@ -3,6 +3,7 @@ package me.waltom.wavexin.modules.basefinder;
 import me.waltom.wavexin.core.WaveXinModule;
 import me.waltom.wavexin.WaveXinAddon;
 import me.waltom.wavexin.i18n.WaveXinI18n;
+import me.waltom.wavexin.modules.NavigationModuleControl;
 import me.waltom.wavexin.modules.containerrecorder.ContainerRecorderModule;
 import me.waltom.wavexin.gui.WaveXinEnumDropdown;
 import meteordevelopment.meteorclient.gui.renderer.GuiRenderer;
@@ -31,6 +32,8 @@ import java.util.HashSet;
 import java.util.Set;
 
 public class BaseFinder extends WaveXinModule {
+    private boolean activationRejected;
+
     static {
         SettingsWidgetFactory.registerCustomFactory(RestartIntSetting.class, theme -> (table, setting) -> {
             RestartIntSetting intSetting = (RestartIntSetting) setting;
@@ -602,6 +605,13 @@ public class BaseFinder extends WaveXinModule {
 
     @Override
     public void onActivate() {
+        if (NavigationModuleControl.reportConflictingActivation(this)) {
+            activationRejected = true;
+            toggle();
+            return;
+        }
+        activationRejected = false;
+        NavigationModuleControl.suppressMovementInput();
         activeScanMethod = scanMethod.get();
         setScanForwardKey(false);
         scanStartPending = true;
@@ -747,6 +757,7 @@ public class BaseFinder extends WaveXinModule {
 
     @EventHandler
     private void onTick(TickEvent.Pre event) {
+        if (activeScanMethod != ScanMethod.SPIRAL) NavigationModuleControl.suppressMovementInput();
         if (activeScanMethod == ScanMethod.NORMAL) normalDebugTicks++;
         if (scanStartPending) {
             initializeActiveScan();
@@ -896,8 +907,14 @@ public class BaseFinder extends WaveXinModule {
 
     @Override
     public void onDeactivate() {
+        if (activationRejected) {
+            activationRejected = false;
+            return;
+        }
         containerRecorder.stopForScan(this);
         setScanForwardKey(false);
+        NavigationModuleControl.restoreMovementInput();
+        if (activeScanMethod == null) return;
         restoreNormalViewYaw();
         scanStartPending = false;
         ScanMethod stoppedScanMethod = activeScanMethod;
@@ -1547,6 +1564,7 @@ public class BaseFinder extends WaveXinModule {
     @EventHandler(priority = EventPriority.HIGHEST)
     private void onSpiralTick(TickEvent.Pre event) {
         if (activeScanMethod != ScanMethod.SPIRAL) return;
+        NavigationModuleControl.suppressMovementInput();
         if (scanStartPending) initializeActiveScan();
         if (!scanStartPending) runSpiralScan();
     }

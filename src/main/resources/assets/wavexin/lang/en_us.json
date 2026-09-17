@@ -46,6 +46,8 @@
   "status.wavexin.end_gateway_finder.failed": "Failed",
   "message.wavexin.end_gateway_finder.scan_toast_title": "End Gateway Scan - %s",
   "message.wavexin.end_gateway_finder.scan_toast_progress": "%d/%d chunks (%d%%)",
+  "message.wavexin.end_gateway_finder.scan_toast_gateways": "Gateways: %d",
+  "message.wavexin.navigation_module_conflict": "Cannot enable %s while %s is active.",
   "enum.wavexin.generation_version.v1_12": "1.12",
   "enum.wavexin.generation_version.v1_20_4": "1.20.4",
   "enum.wavexin.generation_version.both": "Both",

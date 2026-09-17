@@ -46,6 +46,8 @@
   "status.wavexin.end_gateway_finder.failed": "失败",
   "message.wavexin.end_gateway_finder.scan_toast_title": "末地折跃门扫描 - %s",
   "message.wavexin.end_gateway_finder.scan_toast_progress": "已完成 %d/%d 个区块（%d%%）",
+  "message.wavexin.end_gateway_finder.scan_toast_gateways": "折跃门总数：%d",
+  "message.wavexin.navigation_module_conflict": "无法启用 %s，因为 %s 已经启用。",
   "enum.wavexin.generation_version.v1_12": "1.12",
   "enum.wavexin.generation_version.v1_20_4": "1.20.4",
   "enum.wavexin.generation_version.both": "同时",

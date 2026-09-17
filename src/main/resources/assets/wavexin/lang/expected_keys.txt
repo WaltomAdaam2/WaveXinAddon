@@ -593,6 +593,8 @@ status.wavexin.end_gateway_finder.complete
 status.wavexin.end_gateway_finder.failed
 message.wavexin.end_gateway_finder.scan_toast_title
 message.wavexin.end_gateway_finder.scan_toast_progress
+message.wavexin.end_gateway_finder.scan_toast_gateways
+message.wavexin.navigation_module_conflict
 enum.wavexin.generation_version.v1_12
 enum.wavexin.generation_version.v1_20_4
 enum.wavexin.generation_version.both
