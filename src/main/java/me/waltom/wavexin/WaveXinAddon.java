@@ -13,7 +13,6 @@ import me.waltom.wavexin.modules.turtlepotionthrower.TurtlePotionThrower;
 import me.waltom.wavexin.modules.betterelytrafly.BetterElytraFly;
 import me.waltom.wavexin.modules.basefinder.BaseFinder;
 import me.waltom.wavexin.modules.containerrecorder.ContainerRecorderModule;
-import me.waltom.wavexin.modules.advancedtooltip.AdvancedTooltip;
 import me.waltom.wavexin.modules.endgateway.EndGatewayFinder;
 import me.waltom.wavexin.modules.litematicaprinter.LitematicaPrinter;
 import me.waltom.wavexin.modules.litematicaprinter.PrinterSupplySelectionRenderer;
@@ -56,7 +55,6 @@ public class WaveXinAddon extends MeteorAddon {
         Modules.get().add(new AutoLogin());
         Modules.get().add(new ChatFilter());
         Modules.get().add(new TurtlePotionThrower());
-        Modules.get().add(new AdvancedTooltip());
         containerRecorder = new ContainerRecorderModule();
         Modules.get().add(containerRecorder);
         Modules.get().add(new BaseFinder(containerRecorder));

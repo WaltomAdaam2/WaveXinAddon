@@ -1,8 +1,10 @@
 package me.waltom.wavexin.modules.endgateway;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Random;
+import java.util.Set;
 
 public final class EndGatewayFinderBehaviorTest {
     private EndGatewayFinderBehaviorTest() {
@@ -17,11 +19,17 @@ public final class EndGatewayFinderBehaviorTest {
         testNearestRouteStartsAtClosestGateway();
         testChunkScanStartsAtCenter();
         testCandidateSelectionDoesNotSpam();
+        testRollingBoundary();
+        testTileSchedulerCoverageAndCaching();
+        testNearestWindowIsBounded();
     }
 
     private static void testCoordinatePacking() {
         assertEquals(EndGatewayFinder.pack(-1, 17), EndGatewayFinder.pack(-1, 17), "stable coordinate packing");
         assertTrue(EndGatewayFinder.pack(-1, 17) != EndGatewayFinder.pack(17, -1), "coordinate order");
+        long packed = EndGatewayFinder.pack(-7, -11);
+        assertEquals(-7, (int) (packed >> 32), "negative packed x");
+        assertEquals(-11, (int) packed, "negative packed z");
     }
 
     private static void testLegacyCandidatesUseJavaRandom() {
@@ -92,6 +100,52 @@ public final class EndGatewayFinderBehaviorTest {
         assertTrue(!EndGatewayFinder.shouldSelectTarget(true, 0, false), "active target suppresses candidate output");
         assertTrue(!EndGatewayFinder.shouldSelectTarget(true, -1, true), "visited candidate does not restart routing");
         assertTrue(EndGatewayFinder.shouldSelectTarget(true, -1, false), "new candidate restores an empty route");
+    }
+
+    private static void testRollingBoundary() {
+        int radiusChunks = 5000;
+        int threshold = radiusChunks * 16 - EndGatewayFinder.PREFETCH_DISTANCE_BLOCKS;
+        assertTrue(!EndGatewayFinder.shouldAdvanceView(0, 0, radiusChunks, threshold - 1, 0), "view stays before prefetch boundary");
+        assertTrue(EndGatewayFinder.shouldAdvanceView(0, 0, radiusChunks, threshold, 0), "view advances at prefetch boundary");
+        assertTrue(!EndGatewayFinder.shouldAdvanceView(-1234, 5678, radiusChunks, -1234, 5678), "negative center stays stable");
+    }
+
+    private static void testTileSchedulerCoverageAndCaching() {
+        int radiusChunks = 64;
+        EndGatewayFinder.TileScheduler scheduler = new EndGatewayFinder.TileScheduler(0, 0, radiusChunks);
+        Set<Long> completed = new HashSet<>();
+        EndGatewayFinder.Tile first = scheduler.next(completed::contains);
+        assertEquals(new EndGatewayFinder.Tile(0, 0), first, "scheduler starts at center tile");
+        completed.add(EndGatewayFinder.pack(first.x(), first.z()));
+
+        EndGatewayFinder.Tile tile;
+        while ((tile = scheduler.next(completed::contains)) != null) {
+            long key = EndGatewayFinder.pack(tile.x(), tile.z());
+            assertTrue(completed.add(key), "scheduler emits each tile once");
+            assertTrue(EndGatewayFinder.tileIntersectsCircle(0, 0, radiusChunks, tile.x(), tile.z()), "scheduled tile intersects view");
+        }
+        assertEquals(EndGatewayFinder.countTilesInCircle(0, 0, radiusChunks), (long) completed.size(), "scheduler covers every tile");
+        assertEquals(null, new EndGatewayFinder.TileScheduler(0, 0, radiusChunks).next(completed::contains), "completed cache is reused");
+
+        EndGatewayFinder.TileScheduler negativeScheduler = new EndGatewayFinder.TileScheduler(-1234, 5678, radiusChunks);
+        Set<Long> negativeTiles = new HashSet<>();
+        while ((tile = negativeScheduler.next(negativeTiles::contains)) != null) {
+            assertTrue(negativeTiles.add(EndGatewayFinder.pack(tile.x(), tile.z())), "negative scheduler emits each tile once");
+        }
+        assertEquals(EndGatewayFinder.countTilesInCircle(-1234, 5678, radiusChunks), (long) negativeTiles.size(), "negative scheduler covers every tile");
+    }
+
+    private static void testNearestWindowIsBounded() {
+        List<EndGatewayFinder.Gateway> gateways = new ArrayList<>();
+        List<Integer> candidates = new ArrayList<>();
+        for (int i = 0; i < 300; i++) {
+            gateways.add(new EndGatewayFinder.Gateway(i * 10, 0));
+            candidates.add(i);
+        }
+        List<Integer> window = EndGatewayFinder.nearestWindow(gateways, candidates, 0, 0, 256);
+        assertEquals(256, window.size(), "route window is bounded");
+        assertEquals(0, window.getFirst(), "route window starts nearby");
+        assertEquals(255, window.getLast(), "route window excludes distant candidates");
     }
 
     private static void assertEquals(Object expected, Object actual, String description) {

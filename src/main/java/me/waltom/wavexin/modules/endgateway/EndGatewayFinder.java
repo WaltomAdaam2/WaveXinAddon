@@ -3,6 +3,7 @@ package me.waltom.wavexin.modules.endgateway;
 import me.waltom.wavexin.WaveXinAddon;
 import me.waltom.wavexin.core.WaveXinDataPaths;
 import me.waltom.wavexin.core.WaveXinModule;
+import me.waltom.wavexin.i18n.WaveXinI18n;
 import me.waltom.wavexin.modules.containerrecorder.ContainerRecorderModule;
 import meteordevelopment.meteorclient.events.render.Render3DEvent;
 import meteordevelopment.meteorclient.events.world.TickEvent;
@@ -17,22 +18,24 @@ import meteordevelopment.meteorclient.settings.SettingGroup;
 import meteordevelopment.meteorclient.settings.StringSetting;
 import meteordevelopment.meteorclient.utils.render.color.SettingColor;
 import meteordevelopment.orbit.EventHandler;
+import net.minecraft.client.toast.SystemToast;
+import net.minecraft.client.world.ClientWorld;
 import net.minecraft.registry.BuiltinRegistries;
 import net.minecraft.registry.RegistryKeys;
+import net.minecraft.text.Text;
 import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.ChunkPos;
 import net.minecraft.util.math.random.ChunkRandom;
 import net.minecraft.util.math.random.LocalRandom;
 import net.minecraft.util.math.random.Xoroshiro128PlusPlusRandom;
 import net.minecraft.world.HeightLimitView;
+import net.minecraft.world.Heightmap;
 import net.minecraft.world.World;
 import net.minecraft.world.biome.BiomeKeys;
 import net.minecraft.world.biome.source.BiomeAccess;
 import net.minecraft.world.biome.source.TheEndBiomeSource;
-import net.minecraft.world.Heightmap;
-import net.minecraft.world.gen.noise.NoiseConfig;
 import net.minecraft.world.gen.chunk.ChunkGeneratorSettings;
 import net.minecraft.world.gen.chunk.NoiseChunkGenerator;
+import net.minecraft.world.gen.noise.NoiseConfig;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -40,28 +43,35 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
+import java.util.function.LongPredicate;
 
 /** Locally predicts and visits vanilla End return gateways for the configured seed. */
 public final class EndGatewayFinder extends WaveXinModule {
+    static final int TILE_SIZE_CHUNKS = 32;
+    static final int TILE_SIZE_BLOCKS = TILE_SIZE_CHUNKS * 16;
+    static final int PREFETCH_DISTANCE_BLOCKS = 100;
+    private static final int BATCH_SIZE_TILES = 32;
+    private static final int ROUTE_WINDOW_SIZE = 256;
+    private static final long PROGRESS_UPDATE_INTERVAL_MS = 1000L;
+    private static final SystemToast.Type SCAN_TOAST_TYPE = new SystemToast.Type(5000L);
+
     private final SettingGroup sgGeneral = settings.getDefaultGroup();
     private final SettingGroup sgRender = settings.createGroup("Render");
     private final Setting<String> worldSeed = sgGeneral.add(new StringSetting.Builder().name("World Seed")
         .description("World seed used to predict End return gateways locally.").defaultValue("3763250021837776656").build());
     private final Setting<GenerationVersion> generationVersion = sgGeneral.add(new EnumSetting.Builder<GenerationVersion>().name("Generation Version")
         .description("Uses the selected version's End gateway random placement rules.").defaultValue(GenerationVersion.V1_12).build());
-    private final Setting<ScanShape> scanShape = sgGeneral.add(new EnumSetting.Builder<ScanShape>().name("Scan Shape")
-        .description("Shape used to filter predicted gateway positions around the player.").defaultValue(ScanShape.CIRCLE).build());
-    private final Setting<Integer> searchRadius = sgGeneral.add(new IntSetting.Builder().name("Search Radius")
-        .description("Circular search radius in blocks.").defaultValue(2000).min(128).max(500000).sliderMax(500000)
-        .visible(() -> scanShape.get() == ScanShape.CIRCLE).build());
-    private final Setting<Integer> squareSearchRadius = sgGeneral.add(new IntSetting.Builder().name("Square Search Radius")
-        .description("Square half-width in blocks.").defaultValue(2000).min(128).max(500000).sliderMax(500000)
-        .visible(() -> scanShape.get() == ScanShape.SQUARE).build());
+    private final Setting<Integer> rollingRadiusChunks = sgGeneral.add(new IntSetting.Builder().name("Rolling Radius (Chunks)")
+        .description("Circular scan radius in chunks. Results are cached for this game session.")
+        .defaultValue(5000).min(8).max(100000).sliderMax(100000).build());
     private final Setting<Double> arrivalDistance = sgGeneral.add(new DoubleSetting.Builder().name("Arrival Distance")
         .defaultValue(16.0).min(1.0).max(128.0).build());
     private final Setting<Boolean> autoLook = sgGeneral.add(new BoolSetting.Builder().name("Auto Look").defaultValue(true).build());
@@ -86,19 +96,35 @@ public final class EndGatewayFinder extends WaveXinModule {
     private final Setting<ShapeMode> renderMode = sgRender.add(new EnumSetting.Builder<ShapeMode>().name("Render Mode").defaultValue(ShapeMode.Both).build());
     private final ContainerRecorderModule containerRecorder;
 
+    private final Object cacheLock = new Object();
+    private final Set<Long> completedTiles = new HashSet<>();
+    private final Set<Long> activeCompletedTiles = new HashSet<>();
+    private final Map<Long, List<Gateway>> cachedGateways = new HashMap<>();
     private final List<Gateway> gateways = new ArrayList<>();
+    private final Set<Gateway> activeGatewaySet = new HashSet<>();
     private final Set<Gateway> visited = new HashSet<>();
-    private List<Integer> route;
-    private int routePosition = -1;
+    private List<Integer> route = List.of();
     private int target = -1;
-    private int scanGeneration;
+    private volatile int scanGeneration;
+    private volatile int scanRevision;
+    private volatile int rollingCenterX;
+    private volatile int rollingCenterZ;
+    private volatile int activeRadiusChunks;
+    private volatile boolean scanning;
+    private volatile int runningGeneration = -1;
+    private long completedViewTiles;
+    private long totalViewTiles;
+    private long lastToastUpdate;
     private long stayUntil;
-    private boolean ready;
-    private boolean scanning;
+    private int arrivedCount;
     private boolean forcingForward;
     private boolean containerRecorderRequested;
     private long activeSeed;
     private GenerationVersion activeGenerationVersion;
+    private ClientWorld activeWorld;
+    private ClientWorld cachedWorld;
+    private long cachedSeed = Long.MIN_VALUE;
+    private GenerationVersion cachedGenerationVersion;
 
     public EndGatewayFinder(ContainerRecorderModule containerRecorder) {
         super(WaveXinAddon.CATEGORY, "end-gateway-finder", "End Return Gateway Finder");
@@ -113,23 +139,24 @@ public final class EndGatewayFinder extends WaveXinModule {
             toggle();
             return;
         }
-        ready = false;
+
         gateways.clear();
+        activeGatewaySet.clear();
         visited.clear();
-        route = null;
-        routePosition = -1;
+        route = List.of();
         target = -1;
         stayUntil = 0;
-        scanning = true;
+        arrivedCount = 0;
         scanGeneration++;
+        activeWorld = mc.world;
+        activeSeed = parsedSeed(worldSeed.get());
+        activeGenerationVersion = generationVersion.get();
+        ensureSessionCache(activeWorld, activeSeed, activeGenerationVersion);
+        loadVisited();
+
         containerRecorderRequested = startContainerRecorder.get();
         if (containerRecorderRequested) containerRecorder.startForScan(this);
-
-        long seed = parsedSeed(worldSeed.get());
-        activeSeed = seed;
-        activeGenerationVersion = generationVersion.get();
-        loadVisited();
-        startScan(seed, scanGeneration, activeGenerationVersion);
+        configureRollingView(mc.player.getBlockX(), mc.player.getBlockZ(), rollingRadiusChunks.get(), false);
     }
 
     @Override
@@ -139,58 +166,22 @@ public final class EndGatewayFinder extends WaveXinModule {
         saveVisited();
         releaseForward();
         stayUntil = 0;
-        ready = false;
+        hideScanToast();
         releaseContainerRecorder();
-    }
-
-    private void startScan(long seed, int generation, GenerationVersion version) {
-        int centerX = (int) mc.player.getX();
-        int centerZ = (int) mc.player.getZ();
-        int radius = scanShape.get() == ScanShape.SQUARE ? squareSearchRadius.get() : searchRadius.get();
-        int queryRadius = scanShape.get() == ScanShape.SQUARE ? (int) Math.ceil(radius * Math.sqrt(2.0)) : radius;
-        ScanShape shape = scanShape.get();
-        Thread thread = new Thread(() -> {
-            try {
-                scan(seed, centerX, centerZ, radius, queryRadius, shape, version, gateway -> mc.execute(() -> addGateway(generation, gateway)));
-                mc.execute(() -> completeScan(generation, null));
-            } catch (RuntimeException exception) {
-                mc.execute(() -> completeScan(generation, exception));
-            }
-        }, "wavexin-end-gateway-scan");
-        thread.setDaemon(true);
-        thread.start();
-    }
-
-    private void addGateway(int generation, Gateway gateway) {
-        if (!isActive() || generation != scanGeneration) return;
-        gateways.add(gateway);
-        if (shouldSelectTarget(ready, target, visited.contains(gateway))) {
-            ready = true;
-            nextTarget();
-        }
-    }
-
-    private void completeScan(int generation, RuntimeException failure) {
-        if (!isActive() || generation != scanGeneration) return;
-        scanning = false;
-        if (failure != null) {
-            error("Gateway scan failed: %s", failure.getMessage());
-            releaseContainerRecorder();
-            toggle();
-            return;
-        }
-        if (gateways.isEmpty()) {
-            error("No gateways found in range. Try larger radius.");
-            releaseContainerRecorder();
-            toggle();
-            return;
-        }
-        if (target < 0) nextTarget();
     }
 
     @EventHandler
     private void onTick(TickEvent.Pre event) {
-        if (!ready || mc.player == null || mc.world == null) return;
+        if (mc.player == null || mc.world == null) return;
+        if (!mc.world.getRegistryKey().equals(World.END)) {
+            error("End Gateway Finder can only run in The End.");
+            toggle();
+            return;
+        }
+
+        refreshConfigurationAndView();
+        if (scanning && runningGeneration != scanGeneration) startScanWorker(scanGeneration, activeSeed, activeGenerationVersion);
+
         if (stayUntil > 0) {
             releaseForward();
             if (System.currentTimeMillis() >= stayUntil) {
@@ -199,17 +190,21 @@ public final class EndGatewayFinder extends WaveXinModule {
             }
             return;
         }
+
         if (target >= 0 && target < gateways.size()) {
             Gateway gateway = gateways.get(target);
             double dx = gateway.x + 0.5 - mc.player.getX();
             double dz = gateway.z + 0.5 - mc.player.getZ();
             if (dx * dx + dz * dz <= arrivalDistance.get() * arrivalDistance.get()) {
-                visited.add(gateway);
-                saveVisited();
+                if (visited.add(gateway)) {
+                    arrivedCount++;
+                    info("Arrived at #%d", arrivedCount);
+                    saveVisited();
+                }
                 releaseForward();
+                target = -1;
                 if (stayAtGateway.get()) {
                     stayUntil = System.currentTimeMillis() + stayDuration.get() * 1000L;
-                    info("Arrived at #%d/%d, staying for %d seconds", routePosition + 1, route.size(), stayDuration.get());
                     return;
                 }
                 nextTarget();
@@ -218,22 +213,206 @@ public final class EndGatewayFinder extends WaveXinModule {
         moveToTarget();
     }
 
+    private void refreshConfigurationAndView() {
+        long seed = parsedSeed(worldSeed.get());
+        GenerationVersion version = generationVersion.get();
+        int radius = rollingRadiusChunks.get();
+        boolean identityChanged = mc.world != activeWorld || seed != activeSeed || version != activeGenerationVersion;
+
+        if (identityChanged) {
+            saveVisited();
+            scanGeneration++;
+            activeWorld = mc.world;
+            activeSeed = seed;
+            activeGenerationVersion = version;
+            ensureSessionCache(activeWorld, activeSeed, activeGenerationVersion);
+            visited.clear();
+            loadVisited();
+            configureRollingView(mc.player.getBlockX(), mc.player.getBlockZ(), radius, false);
+        } else if (radius != activeRadiusChunks) {
+            configureRollingView(mc.player.getBlockX(), mc.player.getBlockZ(), radius, false);
+        } else if (shouldAdvanceView(rollingCenterX, rollingCenterZ, activeRadiusChunks, mc.player.getBlockX(), mc.player.getBlockZ())) {
+            configureRollingView(mc.player.getBlockX(), mc.player.getBlockZ(), radius, true);
+        }
+    }
+
+    private void ensureSessionCache(ClientWorld world, long seed, GenerationVersion version) {
+        synchronized (cacheLock) {
+            if (cachedWorld == world && cachedSeed == seed && cachedGenerationVersion == version) return;
+            completedTiles.clear();
+            cachedGateways.clear();
+            cachedWorld = world;
+            cachedSeed = seed;
+            cachedGenerationVersion = version;
+        }
+    }
+
+    private void configureRollingView(int centerX, int centerZ, int radiusChunks, boolean nextArea) {
+        rollingCenterX = centerX;
+        rollingCenterZ = centerZ;
+        activeRadiusChunks = radiusChunks;
+        scanRevision++;
+        totalViewTiles = countTilesInCircle(centerX, centerZ, radiusChunks);
+        completedViewTiles = countCompletedTilesInView(centerX, centerZ, radiusChunks);
+        rebuildActiveGateways();
+        scanning = completedViewTiles < totalViewTiles;
+        showScanToast(scanning ? nextArea ? ScanState.NEXT_AREA : ScanState.SCANNING : ScanState.COMPLETE, true);
+        if (scanning) startScanWorker(scanGeneration, activeSeed, activeGenerationVersion);
+    }
+
+    private void startScanWorker(int generation, long seed, GenerationVersion version) {
+        if (!scanning || runningGeneration == generation) return;
+        runningGeneration = generation;
+        Thread thread = new Thread(() -> runScanWorker(generation, seed, version), "wavexin-end-gateway-scan");
+        thread.setDaemon(true);
+        thread.start();
+    }
+
+    private void runScanWorker(int generation, long seed, GenerationVersion version) {
+        try {
+            ScanContext context = new ScanContext(seed);
+            int revision = -1;
+            TileScheduler scheduler = null;
+            List<TileResult> batch = new ArrayList<>();
+            long lastUpdate = System.currentTimeMillis();
+
+            while (isActive() && generation == scanGeneration) {
+                int currentRevision = scanRevision;
+                if (revision != currentRevision) {
+                    postBatch(generation, revision, batch, false, null);
+                    batch = new ArrayList<>();
+                    revision = currentRevision;
+                    scheduler = new TileScheduler(rollingCenterX, rollingCenterZ, activeRadiusChunks);
+                }
+
+                Tile tile = scheduler.next(this::isTileCached);
+                if (tile == null) {
+                    postBatch(generation, revision, batch, true, null);
+                    if (revision == scanRevision) scanning = false;
+                    return;
+                }
+
+                List<Gateway> result = scanTile(seed, version, context, tile);
+                if (!isActive() || generation != scanGeneration) return;
+                long key = pack(tile.x, tile.z);
+                boolean added;
+                synchronized (cacheLock) {
+                    added = completedTiles.add(key);
+                    if (added && !result.isEmpty()) cachedGateways.put(key, result);
+                }
+                if (!added) continue;
+
+                batch.add(new TileResult(tile, result));
+                long now = System.currentTimeMillis();
+                if (batch.size() >= BATCH_SIZE_TILES || now - lastUpdate >= PROGRESS_UPDATE_INTERVAL_MS) {
+                    postBatch(generation, revision, batch, false, null);
+                    batch = new ArrayList<>();
+                    lastUpdate = now;
+                }
+            }
+        } catch (RuntimeException failure) {
+            postBatch(generation, scanRevision, List.of(), false, failure);
+        } finally {
+            if (runningGeneration == generation) runningGeneration = -1;
+        }
+    }
+
+    private void postBatch(int generation, int revision, List<TileResult> results, boolean complete, RuntimeException failure) {
+        List<TileResult> copy = results.isEmpty() ? List.of() : List.copyOf(results);
+        mc.execute(() -> applyBatch(generation, revision, copy, complete, failure));
+    }
+
+    private void applyBatch(int generation, int revision, List<TileResult> results, boolean complete, RuntimeException failure) {
+        if (!isActive() || generation != scanGeneration) return;
+        if (failure != null) {
+            scanning = false;
+            error("Gateway scan failed: %s", failure.getMessage());
+            releaseContainerRecorder();
+            toggle();
+            showScanToast(ScanState.FAILED, true);
+            return;
+        }
+
+        boolean addedGateway = false;
+        for (TileResult result : results) {
+            long tileKey = pack(result.tile.x, result.tile.z);
+            if (tileIntersectsCircle(rollingCenterX, rollingCenterZ, activeRadiusChunks, result.tile.x, result.tile.z)
+                && activeCompletedTiles.add(tileKey)) completedViewTiles = activeCompletedTiles.size();
+            for (Gateway gateway : result.gateways) {
+                if (!gatewayInsideView(gateway) || !activeGatewaySet.add(gateway)) continue;
+                gateways.add(gateway);
+                addedGateway = true;
+            }
+        }
+
+        if (target < 0 && addedGateway) nextTarget();
+        if (complete && revision == scanRevision) {
+            scanning = false;
+            completedViewTiles = Math.min(completedViewTiles, totalViewTiles);
+            showScanToast(ScanState.COMPLETE, true);
+        } else if (!results.isEmpty()) {
+            showScanToast(ScanState.SCANNING, false);
+        }
+    }
+
+    private boolean isTileCached(long key) {
+        synchronized (cacheLock) {
+            return completedTiles.contains(key);
+        }
+    }
+
+    private long countCompletedTilesInView(int centerX, int centerZ, int radiusChunks) {
+        activeCompletedTiles.clear();
+        synchronized (cacheLock) {
+            for (long key : completedTiles) {
+                if (tileIntersectsCircle(centerX, centerZ, radiusChunks, (int) (key >> 32), (int) key)) activeCompletedTiles.add(key);
+            }
+        }
+        return activeCompletedTiles.size();
+    }
+
+    private void rebuildActiveGateways() {
+        Gateway current = target >= 0 && target < gateways.size() ? gateways.get(target) : null;
+        List<Gateway> rebuilt = new ArrayList<>();
+        synchronized (cacheLock) {
+            for (Map.Entry<Long, List<Gateway>> entry : cachedGateways.entrySet()) {
+                long key = entry.getKey();
+                if (!tileIntersectsCircle(rollingCenterX, rollingCenterZ, activeRadiusChunks, (int) (key >> 32), (int) key)) continue;
+                for (Gateway gateway : entry.getValue()) if (gatewayInsideView(gateway)) rebuilt.add(gateway);
+            }
+        }
+        rebuilt.sort(Comparator.comparingLong((Gateway gateway) -> squaredDistance(gateway.x, gateway.z, rollingCenterX, rollingCenterZ))
+            .thenComparingInt(gateway -> gateway.z >> 4).thenComparingInt(gateway -> gateway.x >> 4).thenComparing(gateway -> gateway.version));
+        gateways.clear();
+        gateways.addAll(rebuilt);
+        activeGatewaySet.clear();
+        activeGatewaySet.addAll(rebuilt);
+        target = current == null ? -1 : gateways.indexOf(current);
+        if (target < 0 || visited.contains(gateways.get(target))) nextTarget();
+    }
+
+    private boolean gatewayInsideView(Gateway gateway) {
+        long radius = (long) activeRadiusChunks * 16L;
+        long dx = (long) gateway.x - rollingCenterX;
+        long dz = (long) gateway.z - rollingCenterZ;
+        return dx * dx + dz * dz <= radius * radius;
+    }
+
     private void nextTarget() {
         List<Integer> remaining = new ArrayList<>();
         for (int i = 0; i < gateways.size(); i++) if (!visited.contains(gateways.get(i))) remaining.add(i);
-        route = route(gateways, remaining, mc.player == null ? 0 : mc.player.getX(), mc.player == null ? 0 : mc.player.getZ(), pathAlgorithm.get());
-        routePosition = 0;
+        List<Integer> candidates = nearestWindow(gateways, remaining, mc.player == null ? 0 : mc.player.getX(), mc.player == null ? 0 : mc.player.getZ(), ROUTE_WINDOW_SIZE);
+        route = route(gateways, candidates, mc.player == null ? 0 : mc.player.getX(), mc.player == null ? 0 : mc.player.getZ(), pathAlgorithm.get());
         if (route.isEmpty()) {
             target = -1;
-            if (scanning) return;
-            info("All gateways visited!");
-            releaseContainerRecorder();
-            toggle();
+            releaseForward();
             return;
         }
-        target = route.getFirst();
+        int next = route.getFirst();
+        if (next == target) return;
+        target = next;
         Gateway gateway = gateways.get(target);
-        info("-> #1/%d (%d, %d)", route.size(), gateway.x, gateway.z);
+        info("-> (%d, %d)", gateway.x, gateway.z);
     }
 
     private void moveToTarget() {
@@ -268,9 +447,32 @@ public final class EndGatewayFinder extends WaveXinModule {
         containerRecorder.stopForScan(this);
     }
 
+    private void showScanToast(ScanState state, boolean force) {
+        if (mc == null) return;
+        long now = System.currentTimeMillis();
+        if (!force && now - lastToastUpdate < PROGRESS_UPDATE_INTERVAL_MS) return;
+        lastToastUpdate = now;
+        long completedChunks = Math.min(completedViewTiles, totalViewTiles) * TILE_SIZE_CHUNKS * TILE_SIZE_CHUNKS;
+        long totalChunks = totalViewTiles * TILE_SIZE_CHUNKS * TILE_SIZE_CHUNKS;
+        long percent = totalViewTiles == 0 ? 100 : Math.min(100, completedViewTiles * 100 / totalViewTiles);
+        String stateText = switch (state) {
+            case SCANNING -> WaveXinI18n.tr("status.wavexin.end_gateway_finder.scanning", "Scanning");
+            case NEXT_AREA -> WaveXinI18n.tr("status.wavexin.end_gateway_finder.next_area", "Scanning next area");
+            case COMPLETE -> WaveXinI18n.tr("status.wavexin.end_gateway_finder.complete", "Complete");
+            case FAILED -> WaveXinI18n.tr("status.wavexin.end_gateway_finder.failed", "Failed");
+        };
+        SystemToast.show(mc.getToastManager(), SCAN_TOAST_TYPE,
+            Text.literal(WaveXinI18n.tr("message.wavexin.end_gateway_finder.scan_toast_title", "End Gateway Scan - %s", stateText)),
+            Text.literal(WaveXinI18n.tr("message.wavexin.end_gateway_finder.scan_toast_progress", "%d/%d chunks (%d%%)", completedChunks, totalChunks, percent)));
+    }
+
+    private void hideScanToast() {
+        if (mc != null) SystemToast.hide(mc.getToastManager(), SCAN_TOAST_TYPE);
+    }
+
     @EventHandler
     private void onRender(Render3DEvent event) {
-        if (!ready || mc.player == null) return;
+        if (mc.player == null) return;
         double maximum = (double) renderDistance.get() * renderDistance.get();
         for (int i = 0; i < gateways.size(); i++) {
             Gateway gateway = gateways.get(i);
@@ -286,51 +488,54 @@ public final class EndGatewayFinder extends WaveXinModule {
         }
     }
 
-    static List<Gateway> scan(long seed, int centerX, int centerZ, int radius, int queryRadius, ScanShape shape) {
+    private static List<Gateway> scanTile(long seed, GenerationVersion version, ScanContext context, Tile tile) {
         List<Gateway> result = new ArrayList<>();
-        scan(seed, centerX, centerZ, radius, queryRadius, shape, GenerationVersion.V1_20_4, result::add);
+        List<GenerationVersion> versions = scanVersions(version);
+        int minChunkX = tile.x * TILE_SIZE_CHUNKS;
+        int minChunkZ = tile.z * TILE_SIZE_CHUNKS;
+        for (int chunkZ = minChunkZ; chunkZ < minChunkZ + TILE_SIZE_CHUNKS; chunkZ++) {
+            for (int chunkX = minChunkX; chunkX < minChunkX + TILE_SIZE_CHUNKS; chunkX++) {
+                scanChunk(seed, chunkX, chunkZ, versions, context, result::add);
+            }
+        }
         return result;
     }
 
-    private static void scan(long seed, int centerX, int centerZ, int radius, int queryRadius, ScanShape shape, GenerationVersion version, Consumer<Gateway> consumer) {
-        var registries = BuiltinRegistries.createWrapperLookup();
-        var biomeSource = TheEndBiomeSource.createVanilla(registries.getOrThrow(RegistryKeys.BIOME));
-        var settings = registries.getOrThrow(RegistryKeys.CHUNK_GENERATOR_SETTINGS).getOrThrow(ChunkGeneratorSettings.END);
-        var noiseConfig = NoiseConfig.create(registries, ChunkGeneratorSettings.END, seed);
-        var generator = new NoiseChunkGenerator(biomeSource, settings);
-        var sampler = noiseConfig.getMultiNoiseSampler();
-        var biomeAccess = new BiomeAccess((x, y, z) -> biomeSource.getBiome(x, y, z, sampler), BiomeAccess.hashSeed(seed));
-        var heightLimit = HeightLimitView.create(0, 256);
-        var random = new ChunkRandom(new Xoroshiro128PlusPlusRandom(0L));
-        var legacyRandom = new LocalRandom(seed);
-        long legacyX = legacyRandom.nextLong() / 2L * 2L + 1L;
-        long legacyZ = legacyRandom.nextLong() / 2L * 2L + 1L;
+    static List<Gateway> scan(long seed, int centerX, int centerZ, int radius, int queryRadius, ScanShape shape) {
+        List<Gateway> result = new ArrayList<>();
+        ScanContext context = new ScanContext(seed);
         int minChunkX = (centerX - queryRadius) >> 4;
         int maxChunkX = (centerX + queryRadius) >> 4;
         int minChunkZ = (centerZ - queryRadius) >> 4;
         int maxChunkZ = (centerZ + queryRadius) >> 4;
         double queryRadiusSquared = (double) queryRadius * queryRadius;
-        List<GenerationVersion> scanVersions = scanVersions(version);
         visitChunksFromCenter(minChunkX, maxChunkX, minChunkZ, maxChunkZ, centerX >> 4, centerZ >> 4, (chunkX, chunkZ) -> {
-            for (GenerationVersion scanVersion : scanVersions) {
-                int blockX = chunkX << 4;
-                int blockZ = chunkZ << 4;
-                Gateway candidate = scanVersion == GenerationVersion.V1_12
-                    ? legacyCandidate(seed, chunkX, chunkZ, legacyX, legacyZ, legacyRandom)
-                    : modernCandidate(seed, blockX, blockZ, random);
-                if (candidate == null) continue;
-                int x = candidate.x;
-                int z = candidate.z;
-                double dx = x - centerX;
-                double dz = z - centerZ;
+            List<Gateway> chunk = new ArrayList<>();
+            scanChunk(seed, chunkX, chunkZ, List.of(GenerationVersion.V1_20_4), context, chunk::add);
+            for (Gateway gateway : chunk) {
+                double dx = gateway.x - centerX;
+                double dz = gateway.z - centerZ;
                 if (dx * dx + dz * dz > queryRadiusSquared || shape == ScanShape.SQUARE && (Math.abs(dx) > radius || Math.abs(dz) > radius)) continue;
-                int topY = generator.getHeight(x, z, Heightmap.Type.MOTION_BLOCKING, heightLimit, noiseConfig);
-                if (!hasSurface(topY, heightLimit.getBottomY())) continue;
-                int y = topY + (scanVersion == GenerationVersion.V1_12 ? legacyRandom.nextInt(7) + 3 : random.nextBetween(3, 9));
-                if (!biomeAccess.getBiome(new BlockPos(x, y, z)).matchesKey(BiomeKeys.END_HIGHLANDS)) continue;
-                consumer.accept(candidate);
+                result.add(gateway);
             }
         });
+        return result;
+    }
+
+    private static void scanChunk(long seed, int chunkX, int chunkZ, List<GenerationVersion> versions, ScanContext context, Consumer<Gateway> consumer) {
+        int blockX = chunkX << 4;
+        int blockZ = chunkZ << 4;
+        for (GenerationVersion version : versions) {
+            Gateway candidate = version == GenerationVersion.V1_12
+                ? legacyCandidate(seed, chunkX, chunkZ, context.legacyX, context.legacyZ, context.legacyRandom)
+                : modernCandidate(seed, blockX, blockZ, context.modernRandom);
+            if (candidate == null) continue;
+            int topY = context.generator.getHeight(candidate.x, candidate.z, Heightmap.Type.MOTION_BLOCKING, context.heightLimit, context.noiseConfig);
+            if (!hasSurface(topY, context.heightLimit.getBottomY())) continue;
+            int y = topY + (version == GenerationVersion.V1_12 ? context.legacyRandom.nextInt(7) + 3 : context.modernRandom.nextBetween(3, 9));
+            if (!context.biomeAccess.getBiome(new BlockPos(candidate.x, y, candidate.z)).matchesKey(BiomeKeys.END_HIGHLANDS)) continue;
+            consumer.accept(candidate);
+        }
     }
 
     static void visitChunksFromCenter(int minChunkX, int maxChunkX, int minChunkZ, int maxChunkZ, int centerChunkX, int centerChunkZ, BiConsumer<Integer, Integer> consumer) {
@@ -367,6 +572,12 @@ public final class EndGatewayFinder extends WaveXinModule {
         random.setDecoratorSeed(populationSeed, 0, 4);
         if (random.nextFloat() >= 1F / 700F) return null;
         return new Gateway(blockX + random.nextInt(16), blockZ + random.nextInt(16), GenerationVersion.V1_20_4);
+    }
+
+    static List<Integer> nearestWindow(List<Gateway> gateways, List<Integer> candidates, double playerX, double playerZ, int maximum) {
+        List<Integer> window = new ArrayList<>(candidates);
+        window.sort(Comparator.comparingDouble(index -> squared(gateways.get(index).x + .5, gateways.get(index).z + .5, playerX, playerZ)));
+        return window.size() <= maximum ? window : new ArrayList<>(window.subList(0, maximum));
     }
 
     static List<Integer> route(List<Gateway> gateways, List<Integer> candidates, double playerX, double playerZ, PathAlgorithm algorithm) {
@@ -469,6 +680,46 @@ public final class EndGatewayFinder extends WaveXinModule {
         }
     }
 
+    static boolean shouldAdvanceView(int centerX, int centerZ, int radiusChunks, int playerX, int playerZ) {
+        long threshold = Math.max(0L, (long) radiusChunks * 16L - PREFETCH_DISTANCE_BLOCKS);
+        long dx = (long) playerX - centerX;
+        long dz = (long) playerZ - centerZ;
+        return dx * dx + dz * dz >= threshold * threshold;
+    }
+
+    static boolean tileIntersectsCircle(int centerX, int centerZ, int radiusChunks, int tileX, int tileZ) {
+        long radius = (long) radiusChunks * 16L;
+        long minX = (long) tileX * TILE_SIZE_BLOCKS;
+        long minZ = (long) tileZ * TILE_SIZE_BLOCKS;
+        long maxX = minX + TILE_SIZE_BLOCKS - 1L;
+        long maxZ = minZ + TILE_SIZE_BLOCKS - 1L;
+        long closestX = Math.max(minX, Math.min(maxX, centerX));
+        long closestZ = Math.max(minZ, Math.min(maxZ, centerZ));
+        long dx = (long) centerX - closestX;
+        long dz = (long) centerZ - closestZ;
+        return dx * dx + dz * dz <= radius * radius;
+    }
+
+    static long countTilesInCircle(int centerX, int centerZ, int radiusChunks) {
+        long radius = (long) radiusChunks * 16L;
+        int minTileZ = (int) Math.floorDiv((long) centerZ - radius, TILE_SIZE_BLOCKS);
+        int maxTileZ = (int) Math.floorDiv((long) centerZ + radius, TILE_SIZE_BLOCKS);
+        long count = 0;
+        for (int tileZ = minTileZ; tileZ <= maxTileZ; tileZ++) {
+            long minZ = (long) tileZ * TILE_SIZE_BLOCKS;
+            long maxZ = minZ + TILE_SIZE_BLOCKS - 1L;
+            long closestZ = Math.max(minZ, Math.min(maxZ, centerZ));
+            long dz = (long) centerZ - closestZ;
+            long remaining = radius * radius - dz * dz;
+            if (remaining < 0) continue;
+            long extent = (long) Math.floor(Math.sqrt(remaining));
+            int minTileX = (int) Math.floorDiv((long) centerX - extent, TILE_SIZE_BLOCKS);
+            int maxTileX = (int) Math.floorDiv((long) centerX + extent, TILE_SIZE_BLOCKS);
+            count += (long) maxTileX - minTileX + 1L;
+        }
+        return count;
+    }
+
     static Path visitPath(long seed) { return WaveXinDataPaths.DIRECTORY.resolve("end-gateways").resolve(visitFilename(seed)); }
     static Path legacyVisitPath(long seed) { return WaveXinDataPaths.DIRECTORY.resolve("end-gateways").resolve(seed + "-1.12.dat"); }
     static Path visitPath(long seed, GenerationVersion version) { return visitPath(seed); }
@@ -480,13 +731,100 @@ public final class EndGatewayFinder extends WaveXinModule {
     static boolean shouldSelectTarget(boolean ready, int target, boolean candidateVisited) { return !ready || target < 0 && !candidateVisited; }
     static long parsedSeed(String seed) { try { return Long.parseLong(seed); } catch (NumberFormatException ignored) { return seed.hashCode(); } }
     private static double squared(double x1, double z1, double x2, double z2) { double dx = x1 - x2; double dz = z1 - z2; return dx * dx + dz * dz; }
+    private static long squaredDistance(int x1, int z1, int x2, int z2) { long dx = (long) x1 - x2; long dz = (long) z1 - z2; return dx * dx + dz * dz; }
     private static double distance(Gateway first, Gateway second) { return Math.sqrt(squared(first.x, first.z, second.x, second.z)); }
     private static ColorSetting.Builder color(String name, int red, int green, int blue, int alpha) { return new ColorSetting.Builder().name(name).defaultValue(new SettingColor(red, green, blue, alpha)); }
+
+    private static final class ScanContext {
+        final NoiseConfig noiseConfig;
+        final NoiseChunkGenerator generator;
+        final BiomeAccess biomeAccess;
+        final HeightLimitView heightLimit = HeightLimitView.create(0, 256);
+        final ChunkRandom modernRandom = new ChunkRandom(new Xoroshiro128PlusPlusRandom(0L));
+        final LocalRandom legacyRandom;
+        final long legacyX;
+        final long legacyZ;
+
+        ScanContext(long seed) {
+            var registries = BuiltinRegistries.createWrapperLookup();
+            var biomeSource = TheEndBiomeSource.createVanilla(registries.getOrThrow(RegistryKeys.BIOME));
+            var settings = registries.getOrThrow(RegistryKeys.CHUNK_GENERATOR_SETTINGS).getOrThrow(ChunkGeneratorSettings.END);
+            noiseConfig = NoiseConfig.create(registries, ChunkGeneratorSettings.END, seed);
+            generator = new NoiseChunkGenerator(biomeSource, settings);
+            var sampler = noiseConfig.getMultiNoiseSampler();
+            biomeAccess = new BiomeAccess((x, y, z) -> biomeSource.getBiome(x, y, z, sampler), BiomeAccess.hashSeed(seed));
+            legacyRandom = new LocalRandom(seed);
+            legacyX = legacyRandom.nextLong() / 2L * 2L + 1L;
+            legacyZ = legacyRandom.nextLong() / 2L * 2L + 1L;
+        }
+    }
+
+    static final class TileScheduler {
+        private final int centerX;
+        private final int centerZ;
+        private final int centerTileX;
+        private final int centerTileZ;
+        private final int maximumRing;
+        private final int radiusChunks;
+        private int ring;
+        private int position;
+        private List<Tile> currentRing = List.of();
+
+        TileScheduler(int centerX, int centerZ, int radiusChunks) {
+            this.centerX = centerX;
+            this.centerZ = centerZ;
+            centerTileX = Math.floorDiv(centerX, TILE_SIZE_BLOCKS);
+            centerTileZ = Math.floorDiv(centerZ, TILE_SIZE_BLOCKS);
+            maximumRing = radiusChunks / TILE_SIZE_CHUNKS + 2;
+            this.radiusChunks = radiusChunks;
+        }
+
+        Tile next(LongPredicate cached) {
+            while (ring <= maximumRing) {
+                if (position >= currentRing.size()) {
+                    currentRing = createRing(ring++);
+                    position = 0;
+                    if (currentRing.isEmpty()) continue;
+                }
+                Tile tile = currentRing.get(position++);
+                if (!cached.test(pack(tile.x, tile.z))) return tile;
+            }
+            return null;
+        }
+
+        private List<Tile> createRing(int radius) {
+            List<Tile> tasks = new ArrayList<>(radius == 0 ? 1 : radius * 8);
+            if (radius == 0) {
+                tasks.add(new Tile(centerTileX, centerTileZ));
+            } else {
+                for (int x = centerTileX - radius; x <= centerTileX + radius; x++) {
+                    tasks.add(new Tile(x, centerTileZ - radius));
+                    tasks.add(new Tile(x, centerTileZ + radius));
+                }
+                for (int z = centerTileZ - radius + 1; z < centerTileZ + radius; z++) {
+                    tasks.add(new Tile(centerTileX - radius, z));
+                    tasks.add(new Tile(centerTileX + radius, z));
+                }
+            }
+            tasks.removeIf(tile -> !tileIntersectsCircle(centerX, centerZ, radiusChunks, tile.x, tile.z));
+            tasks.sort(Comparator.comparingLong(this::distanceSquared));
+            return tasks;
+        }
+
+        private long distanceSquared(Tile tile) {
+            long dx = (long) tile.x * TILE_SIZE_BLOCKS + TILE_SIZE_BLOCKS / 2L - centerX;
+            long dz = (long) tile.z * TILE_SIZE_BLOCKS + TILE_SIZE_BLOCKS / 2L - centerZ;
+            return dx * dx + dz * dz;
+        }
+    }
 
     enum ScanShape { CIRCLE, SQUARE }
     enum GenerationVersion { V1_12, V1_20_4, BOTH }
     enum PathAlgorithm { NEAREST_NEIGHBOR, TSP, SCAN_ORDER, RANDOM }
+    private enum ScanState { SCANNING, NEXT_AREA, COMPLETE, FAILED }
     record Gateway(int x, int z, GenerationVersion version) {
         Gateway(int x, int z) { this(x, z, GenerationVersion.V1_20_4); }
     }
+    record Tile(int x, int z) {}
+    private record TileResult(Tile tile, List<Gateway> gateways) {}
 }
