@@ -6,6 +6,7 @@ import me.waltom.wavexin.core.WaveXinModule;
 import me.waltom.wavexin.WaveXinAddon;
 import me.waltom.wavexin.gui.TargetCoordinateInput;
 import me.waltom.wavexin.i18n.WaveXinI18n;
+import me.waltom.wavexin.modules.NavigationModuleControl;
 import me.waltom.wavexin.modules.basefinder.BaseFinder;
 import me.waltom.wavexin.modules.basefinder.XaeroWaypointBridge;
 import me.waltom.wavexin.modules.basefinder.XaeroWaypointColorSetting;
@@ -22,7 +23,6 @@ import meteordevelopment.orbit.EventHandler;
 import meteordevelopment.orbit.EventPriority;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.network.ClientPlayerEntity;
-import net.minecraft.client.option.KeyBinding;
 import net.minecraft.entity.EquipmentSlot;
 import net.minecraft.entity.MovementType;
 import net.minecraft.entity.effect.StatusEffects;
@@ -40,6 +40,7 @@ import java.util.concurrent.ThreadLocalRandom;
 public class ElytraFlyPath extends WaveXinModule {
     private static final MinecraftClient mc = MinecraftClient.getInstance();
     private static final int MAX_TARGET_COORDINATE = 30000000;
+    private boolean activationRejected;
 
     static {
         SettingsWidgetFactory.registerCustomFactory(TargetCoordinateSetting.class, theme -> (table, setting) -> {
@@ -219,7 +220,6 @@ public class ElytraFlyPath extends WaveXinModule {
 
 
     
-    private BlockPos target;                
 
     
 
@@ -234,6 +234,12 @@ public class ElytraFlyPath extends WaveXinModule {
 
     @Override
     public void onActivate() {
+        if (NavigationModuleControl.reportConflictingActivation(this)) {
+            activationRejected = true;
+            toggle();
+            return;
+        }
+        activationRejected = false;
         
         if (mc.player == null || mc.world == null || !hasWorkingElytra()) {
             toggle();
@@ -268,8 +274,11 @@ public class ElytraFlyPath extends WaveXinModule {
 
     @Override
     public void onDeactivate() {
+        if (activationRejected) {
+            activationRejected = false;
+            return;
+        }
         removeTemporaryWaypoint();
-        target = null;
         isArrive = false;
         speedRamp.reset();
 
@@ -338,20 +347,11 @@ public class ElytraFlyPath extends WaveXinModule {
     }
 
     private void suppressMovementInput() {
-        if (mc.options == null) return;
-        mc.options.forwardKey.setPressed(false);
-        mc.options.backKey.setPressed(false);
-        mc.options.leftKey.setPressed(false);
-        mc.options.rightKey.setPressed(false);
-        mc.options.sneakKey.setPressed(false);
-        mc.options.jumpKey.setPressed(false);
-        if (mc.player != null && mc.player.input != null) mc.player.input.tick();
+        NavigationModuleControl.suppressMovementInput();
     }
 
     private void restoreMovementInput() {
-        if (mc.options == null) return;
-        KeyBinding.updatePressedStates();
-        if (mc.player != null && mc.player.input != null) mc.player.input.tick();
+        NavigationModuleControl.restoreMovementInput();
     }
 
 
@@ -371,15 +371,10 @@ public class ElytraFlyPath extends WaveXinModule {
         
         int currentTargetX = getTargetX();
         int currentTargetZ = getTargetZ();
-        target = new BlockPos(currentTargetX, 0, currentTargetZ);
 
         
-        Vec3d playerPos = new Vec3d(mc.player.getX(), mc.player.getY(), mc.player.getZ());
-        
-        Vec3d targetPos = new Vec3d(currentTargetX, playerPos.y, currentTargetZ);
-        
-        double deltaX = targetPos.x - playerPos.x;
-        double deltaZ = targetPos.z - playerPos.z;
+        double deltaX = currentTargetX - mc.player.getX();
+        double deltaZ = currentTargetZ - mc.player.getZ();
 
         
         double distance2D = Math.sqrt(deltaX * deltaX + deltaZ * deltaZ);
@@ -390,16 +385,12 @@ public class ElytraFlyPath extends WaveXinModule {
         }
 
         
-        Vec3d direction = new Vec3d(deltaX, 0, deltaZ).normalize();
         double flightSpeed = Math.min(currentFlightSpeed(), distance2D - arrivalDistance2D.get());
-        setX(direction.x * flightSpeed);
-        setY(0);
-        setZ(direction.z * flightSpeed);
-
-        
-        setY(getY() * 0.9900000095367432D);
-        setX(getX() * 0.9800000190734863D);
-        setZ(getZ() * 0.9900000095367432D);
+        mc.player.setVelocity(
+            deltaX / distance2D * flightSpeed * 0.9800000190734863D,
+            0,
+            deltaZ / distance2D * flightSpeed * 0.9900000095367432D
+        );
 
         
         event.cancel();
@@ -470,6 +461,8 @@ public class ElytraFlyPath extends WaveXinModule {
     }
 
     private void createTemporaryWaypoint() {
+        removeTemporaryWaypoint();
+        if (temporaryWaypoint != null) return;
         if (!createXaeroWaypoint.get() || mc.player == null) return;
         if (!ElytraFlightLogic.shouldCreateWaypoint(createXaeroWaypoint.get(), xaeroWaypointBridge.isAvailable())) {
             warningKey("warning.wavexin.elytra_fly_path.xaero_unavailable", "Xaero waypoint was not created: %s", xaeroWaypointBridge.unavailableReason());
@@ -479,7 +472,7 @@ public class ElytraFlyPath extends WaveXinModule {
         int colorId = xaeroWaypointColor.get() == BaseFinder.XaeroWaypointColor.RANDOM
             ? ThreadLocalRandom.current().nextInt(16)
             : xaeroWaypointColor.get().colorId();
-        XaeroWaypointBridge.Result result = xaeroWaypointBridge.create(
+        XaeroWaypointBridge.Result result = xaeroWaypointBridge.createTemporary(
             new BlockPos(getTargetX(), mc.player.getBlockY(), getTargetZ()),
             "Elytra Path",
             "EP",
@@ -494,8 +487,10 @@ public class ElytraFlyPath extends WaveXinModule {
 
     private void removeTemporaryWaypoint() {
         XaeroWaypointBridge.WaypointHandle waypoint = temporaryWaypoint;
-        temporaryWaypoint = null;
-        if (waypoint != null) xaeroWaypointBridge.remove(waypoint);
+        if (waypoint == null) return;
+        XaeroWaypointBridge.Result result = xaeroWaypointBridge.remove(waypoint);
+        if (result.removed()) temporaryWaypoint = null;
+        else WaveXinAddon.LOG.warn("Temporary flight waypoint cleanup failed: {}", result.detail());
     }
 
     
@@ -573,56 +568,8 @@ public class ElytraFlyPath extends WaveXinModule {
     
 
 
-    private double getX() {
-        return mc.player.getVelocity().x;
-    }
-
     private static boolean isUsableElytra(ItemStack stack) {
         return stack.isOf(Items.ELYTRA) && stack.getDamage() < stack.getMaxDamage() - 1;
-    }
-
-    
-
-
-    private double getY() {
-        return mc.player.getVelocity().y;
-    }
-
-    
-
-
-    private double getZ() {
-        return mc.player.getVelocity().z;
-    }
-
-    
-
-
-
-    private void setX(double f) {
-        Vec3d currentVel = mc.player.getVelocity();
-        Vec3d newVel = new Vec3d(f, currentVel.y, currentVel.z);
-        mc.player.setVelocity(newVel);
-    }
-
-    
-
-
-
-    private void setY(double f) {
-        Vec3d currentVel = mc.player.getVelocity();
-        Vec3d newVel = new Vec3d(currentVel.x, f, currentVel.z);
-        mc.player.setVelocity(newVel);
-    }
-
-    
-
-
-
-    private void setZ(double f) {
-        Vec3d currentVel = mc.player.getVelocity();
-        Vec3d newVel = new Vec3d(currentVel.x, currentVel.y, f);
-        mc.player.setVelocity(newVel);
     }
 
     private static class TargetCoordinateSetting extends Setting<Integer> {

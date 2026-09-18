@@ -233,6 +233,8 @@ public class AutoLogin extends WaveXinModule {
 
     @Override
     public void onActivate() {
+        serverChecked = false;
+        targetServer = false;
         config = AutoLoginConfig.load();
         resetConnectionState(LoginState.IDLE);
         if (questions.isEmpty()) loadQuestions();
