@@ -1,6 +1,6 @@
 {
   "meta.wavexin.language": "简体中文",
-  "module.wavexin.end_gateway_finder.title": "末地折跃门定位",
+  "module.wavexin.end_gateway_finder.title": "EndBaseFinder",
   "module.wavexin.end_gateway_finder.description": "在本地预测末地返回折跃门，并将路线与 WaveXin 容器记录结合。",
   "group.wavexin.end_gateway_finder.general": "常规",
   "group.wavexin.end_gateway_finder.render": "渲染",
@@ -617,6 +617,8 @@
   "setting.wavexin.base_finder.spiral_scan.start_container_recorder.title": "启动容器记录器",
   "setting.wavexin.base_finder.spiral_scan.start_container_recorder.description": "螺旋扫描真正开始后启动容器记录器。",
   "setting.wavexin.end_gateway_finder.general.start_container_recorder.title": "启动容器记录器",
+  "setting.wavexin.container_recorder.container_recording.debug_mode.title": "调试模式",
+  "setting.wavexin.container_recorder.container_recording.debug_mode.description": "将详细记录诊断及坐标写入 logs/latest.log，可能产生大量日志。",
   "setting.wavexin.end_gateway_finder.general.start_container_recorder.description": "末地折跃门查找器真正开始后启动容器记录器。",
   "setting.wavexin.container_recorder.container_recording.container_threshold.title": "容器阈值",
   "setting.wavexin.container_recorder.container_recording.container_threshold.description": "当前区块内选定容器数量达到该值时记录该区块。",

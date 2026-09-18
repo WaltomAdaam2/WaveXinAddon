@@ -82,7 +82,7 @@ public final class EndGatewayFinder extends WaveXinModule {
     private final Setting<Integer> stayDuration = sgGeneral.add(new IntSetting.Builder().name("Stay Duration")
         .description("Seconds to stay at each gateway.").defaultValue(5).min(1).max(300).sliderMax(60).visible(stayAtGateway::get).build());
     private final Setting<Boolean> startContainerRecorder = sgGeneral.add(new BoolSetting.Builder().name("Start Container Recorder")
-        .description("Starts Container Recorder after End Gateway Finder has begun.").defaultValue(true).build());
+        .description("Starts Container Recorder after EndBaseFinder has begun.").defaultValue(true).build());
     private final Setting<PathAlgorithm> pathAlgorithm = sgGeneral.add(new EnumSetting.Builder<PathAlgorithm>().name("Path Algorithm")
         .description("Order used to visit unvisited gateways.").defaultValue(PathAlgorithm.NEAREST_NEIGHBOR).build());
     private final Setting<Integer> renderDistance = sgRender.add(new IntSetting.Builder().name("Render Distance")
@@ -145,7 +145,7 @@ public final class EndGatewayFinder extends WaveXinModule {
         activationRejected = false;
         if (mc.player == null || mc.world == null) return;
         if (!mc.world.getRegistryKey().equals(World.END)) {
-            error("End Gateway Finder can only run in The End.");
+            error("EndBaseFinder can only run in The End.");
             toggle();
             return;
         }
@@ -192,7 +192,7 @@ public final class EndGatewayFinder extends WaveXinModule {
     private void onTick(TickEvent.Pre event) {
         if (mc.player == null || mc.world == null) return;
         if (!mc.world.getRegistryKey().equals(World.END)) {
-            error("End Gateway Finder can only run in The End.");
+            error("EndBaseFinder can only run in The End.");
             toggle();
             return;
         }

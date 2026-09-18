@@ -1,6 +1,6 @@
 {
   "meta.wavexin.language": "English",
-  "module.wavexin.end_gateway_finder.title": "End Gateway Finder",
+  "module.wavexin.end_gateway_finder.title": "EndBaseFinder",
   "module.wavexin.end_gateway_finder.description": "Locally predicts End return gateways and combines the route with WaveXin container recording.",
   "group.wavexin.end_gateway_finder.general": "General",
   "group.wavexin.end_gateway_finder.render": "Render",
@@ -617,7 +617,9 @@
   "setting.wavexin.base_finder.spiral_scan.start_container_recorder.title": "Start Container Recorder",
   "setting.wavexin.base_finder.spiral_scan.start_container_recorder.description": "Starts Container Recorder after Spiral Scan has begun.",
   "setting.wavexin.end_gateway_finder.general.start_container_recorder.title": "Start Container Recorder",
-  "setting.wavexin.end_gateway_finder.general.start_container_recorder.description": "Starts Container Recorder after End Gateway Finder has begun.",
+  "setting.wavexin.container_recorder.container_recording.debug_mode.title": "Debug Mode",
+  "setting.wavexin.container_recorder.container_recording.debug_mode.description": "Logs detailed recorder diagnostics and coordinates to logs/latest.log. May produce large logs.",
+  "setting.wavexin.end_gateway_finder.general.start_container_recorder.description": "Starts Container Recorder after EndBaseFinder has begun.",
   "setting.wavexin.container_recorder.container_recording.container_threshold.title": "Container Threshold",
   "setting.wavexin.container_recorder.container_recording.container_threshold.description": "Records the current chunk when it contains at least this many selected containers.",
   "setting.wavexin.container_recorder.container_recording.container_blocks.title": "Container Blocks",

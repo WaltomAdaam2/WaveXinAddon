@@ -37,9 +37,30 @@ public final class XaeroWaypointBridge {
     /** Opaque identity token for one waypoint created through this bridge. */
     public static final class WaypointHandle {
         private final Object waypoint;
+        private SaveAction save;
 
         private WaypointHandle(Object waypoint) {
             this.waypoint = waypoint;
+        }
+    }
+
+    @FunctionalInterface
+    interface SaveAction { void save() throws ReflectiveOperationException; }
+
+    static Result addPersistent(Object waypoint, Object owner, Method add, Method temporary, SaveAction save) throws ReflectiveOperationException {
+        temporary.invoke(waypoint, false);
+        add.invoke(owner, waypoint);
+        WaypointHandle handle = new WaypointHandle(waypoint);
+        handle.save = save;
+        return retrySave(handle);
+    }
+
+    static Result retrySave(WaypointHandle handle) {
+        try {
+            handle.save.save();
+            return new Result(Status.CREATED, "", handle);
+        } catch (ReflectiveOperationException | RuntimeException error) {
+            return new Result(Status.FAILED, messageOf(error), handle);
         }
     }
 
@@ -91,15 +112,15 @@ public final class XaeroWaypointBridge {
             if (resolved) return;
 
             try {
-                access = new LegacyAccess();
+                access = new ModernAccess();
                 unavailableReason = "";
             } catch (ReflectiveOperationException legacyFailure) {
                 try {
-                    access = new ModernAccess();
+                    access = new LegacyAccess();
                     unavailableReason = "";
                 } catch (ReflectiveOperationException modernFailure) {
                     access = null;
-                    unavailableReason = "legacy=" + messageOf(legacyFailure) + "; modern=" + messageOf(modernFailure);
+                    unavailableReason = "modern=" + messageOf(legacyFailure) + "; legacy=" + messageOf(modernFailure);
                 }
             }
 
@@ -287,9 +308,9 @@ public final class XaeroWaypointBridge {
                 Object waypoint = waypointConstructor.newInstance(
                     pos.getX(), pos.getY(), pos.getZ(), name, initials, color, normalPurpose, false
                 );
-                methods.addWaypoint.invoke(waypointSet, waypoint);
-                methods.saveIfSupported(session, currentWorld);
-                return new Result(Status.CREATED, "", new WaypointHandle(waypoint));
+                ModernRuntimeMethods persistence = methods;
+                return addPersistent(waypoint, waypointSet, methods.addWaypoint, waypointClass.getMethod("setTemporary", boolean.class),
+                    () -> persistence.saveIfSupported(session, currentWorld));
             } catch (ReflectiveOperationException | RuntimeException e) {
                 return result(Status.FAILED, messageOf(e));
             }
@@ -377,9 +398,10 @@ public final class XaeroWaypointBridge {
             }
 
             private void saveIfSupported(Object session, Object world) throws ReflectiveOperationException {
-                if (getWorldManagerIO == null || saveWorld == null) return;
+                if (getWorldManagerIO == null || saveWorld == null) throw new NoSuchMethodException("Xaero waypoint persistence API unavailable");
                 Object io = getWorldManagerIO.invoke(session);
-                if (io != null) saveWorld.invoke(io, world);
+                if (io == null) throw new IllegalStateException("Xaero waypoint storage is not ready");
+                saveWorld.invoke(io, world);
             }
         }
     }

@@ -2,7 +2,8 @@ package me.waltom.wavexin.modules.containerrecorder;
 
 /** Lightweight lifecycle checks that do not require a Minecraft client. */
 public final class ContainerRecorderBehaviorTest {
-    public static void main(String[] args) {
+    public static void main(String[] args) throws ReflectiveOperationException {
+        XaeroPersistenceBehaviorTest.run();
         defaultRadiusMatchesExistingScans();
         scanClaimsKeepTheRecorderAliveUntilTheLastScanStops();
         manualActivationIsStoppedByTheLastScanClaim();
