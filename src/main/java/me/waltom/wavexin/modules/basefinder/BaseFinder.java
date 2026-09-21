@@ -1,33 +1,23 @@
 package me.waltom.wavexin.modules.basefinder;
 
 import me.waltom.wavexin.core.WaveXinModule;
-import me.waltom.wavexin.core.WaveXinDataPaths;
 import me.waltom.wavexin.WaveXinAddon;
+import me.waltom.wavexin.core.WaveXinDebugLog;
 import me.waltom.wavexin.i18n.WaveXinI18n;
+import me.waltom.wavexin.modules.NavigationModuleControl;
+import me.waltom.wavexin.modules.containerrecorder.ContainerRecorderModule;
 import me.waltom.wavexin.gui.WaveXinEnumDropdown;
-import meteordevelopment.meteorclient.MeteorClient;
 import meteordevelopment.meteorclient.gui.renderer.GuiRenderer;
 import meteordevelopment.meteorclient.gui.utils.SettingsWidgetFactory;
 import meteordevelopment.meteorclient.gui.widgets.input.WDropdown;
 import meteordevelopment.meteorclient.gui.widgets.input.WIntEdit;
-import meteordevelopment.meteorclient.utils.player.ChatUtils;
 import meteordevelopment.meteorclient.utils.render.color.Color;
 import meteordevelopment.meteorclient.utils.render.color.RainbowColors;
-import net.minecraft.block.entity.BlockEntity;
-import net.minecraft.block.entity.BlockEntityType;
-import net.minecraft.world.chunk.WorldChunk;
-import java.io.IOException;
 import java.lang.ref.WeakReference;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
 import it.unimi.dsi.fastutil.longs.LongArrayList;
 import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.ThreadLocalRandom;
 import java.util.function.Consumer;
 import meteordevelopment.meteorclient.events.render.Render3DEvent;
 import meteordevelopment.meteorclient.events.world.TickEvent;
@@ -36,20 +26,16 @@ import meteordevelopment.meteorclient.settings.*;
 import meteordevelopment.meteorclient.utils.render.color.SettingColor;
 import meteordevelopment.orbit.EventHandler;
 import meteordevelopment.orbit.EventPriority;
-import net.minecraft.entity.Entity;
-import net.minecraft.entity.EntityType;
-import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.ChunkPos;
 import net.minecraft.util.math.Vec3d;
 import net.minecraft.nbt.NbtCompound;
-import net.minecraft.text.Style;
-import net.minecraft.text.Text;
-import net.minecraft.text.TextColor;
 import java.util.HashSet;
 import java.util.Set;
-import java.util.UUID;
 
 public class BaseFinder extends WaveXinModule {
+    private final WaveXinDebugLog debugLog = new WaveXinDebugLog("BaseFinder");
+    private boolean activationRejected;
+
     static {
         SettingsWidgetFactory.registerCustomFactory(RestartIntSetting.class, theme -> (table, setting) -> {
             RestartIntSetting intSetting = (RestartIntSetting) setting;
@@ -88,9 +74,6 @@ public class BaseFinder extends WaveXinModule {
     }
 
     public enum ScanMethod { SPIRAL("Spiral Scan"), NORMAL("Normal Scan"); private final String title; ScanMethod(String title) { this.title = title; } @Override public String toString() { return title; } }
-    private static final Path CONTAINER_RECORD_PATH = WaveXinDataPaths.CONTAINER_DIRECTORY.resolve("container-records.txt");
-    private static final Path LEGACY_CONTAINER_RECORD_PATH = MeteorClient.FOLDER.toPath().resolve("base-finder-xin").resolve("container-records.txt");
-    private static final DateTimeFormatter RECORD_TIME_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
     public enum SpiralStartMode {
         CURRENT("Current Position"),
@@ -158,13 +141,14 @@ public class BaseFinder extends WaveXinModule {
             return title;
         }
     }
+
     private final SettingGroup sgScanMode = settings.createGroup("Scan Mode");
     private final SettingGroup sgNormalScan = settings.createGroup("Normal Scan");
     private final SettingGroup sgSpiralScan = settings.createGroup("Spiral Scan");
     private final SettingGroup sgSpiralRender = settings.createGroup("Spiral Render");
-    private final SettingGroup sgContainerRecording = settings.createGroup("Container Recording");
     private final SettingGroup sgRender = settings.createGroup("Render");
     private final SettingGroup sgRestart = settings.createGroup("Restart");
+    private final ContainerRecorderModule containerRecorder;
     private ChunkPos originChunk;
     private ChunkPos targetChunk;
     private ChunkPos resumeCheckpointChunk;
@@ -186,9 +170,6 @@ public class BaseFinder extends WaveXinModule {
     private final LongArrayList normalRenderChunks = new LongArrayList();
     private long normalRenderCacheSignature = Long.MIN_VALUE;
     private long normalRenderCachePlayerChunk = Long.MIN_VALUE;
-    private final XaeroWaypointBridge xaeroWaypointBridge = new XaeroWaypointBridge();
-    private XaeroWaypointBridge.Status lastXaeroWarningStatus;
-    private long lastXaeroWarningAt;
 
     private MapScanDirection spiralDirection = MapScanDirection.EAST;
     private int spiralStepsInCurrentLength;
@@ -206,19 +187,8 @@ public class BaseFinder extends WaveXinModule {
     private int normalDebugTicks;
     private String normalDebugState = "INACTIVE";
     private int lastCompletedNormalRing = -1;
-    private final Set<Long> recordedContainerChunks = new HashSet<>();
-    private final Set<ChunkPos> checkedContainerChunks = new HashSet<>();
-    private int containerScanTicks;
-    private int containerScanSettingsHash = Integer.MIN_VALUE;
-    private Object containerScanWorld;
-    private final Set<UUID> recordedThrownPearls = new HashSet<>();
-    private final List<BlockPos> createdWaypointPositions = new ArrayList<>();
-    private final Set<Long> warnedMissingLoadedChunks = new HashSet<>();
     private final Set<String> warnedNormalDebugStates = new HashSet<>();
-    private int nextWaypointNumber = 1;
-    private int nextPearlWaypointNumber = 1;
-    private boolean warnedEmptyContainerBlocks;
-    private boolean warnedContainerScanUnavailable;
+    private boolean commandDebug;
 
     private final Setting<ScanMethod> scanMethod = sgScanMode.add(new EnumSetting.Builder<ScanMethod>()
         .name("Scan Method")
@@ -290,6 +260,13 @@ public class BaseFinder extends WaveXinModule {
     private final Setting<Boolean> spiralPauseOnScreen = sgSpiralScan.add(new BoolSetting.Builder()
         .name("Pause On Screen")
         .description("Releases movement controls while a screen is open.")
+        .defaultValue(true)
+        .visible(this::isSpiralScan)
+        .build()
+    );
+    private final Setting<Boolean> startContainerRecorderSpiral = sgSpiralScan.add(new BoolSetting.Builder()
+        .name("Start Container Recorder")
+        .description("Starts Container Recorder after Spiral Scan has begun.")
         .defaultValue(true)
         .visible(this::isSpiralScan)
         .build()
@@ -416,73 +393,14 @@ public class BaseFinder extends WaveXinModule {
             .sliderMax(30)
             .visible(() -> isNormalScan() && waitChunkLoad.get())
             .build());
+    private final Setting<Boolean> startContainerRecorderNormal = sgNormalScan.add(new BoolSetting.Builder()
+            .name("Start Container Recorder")
+            .description("Starts Container Recorder after Normal Scan has begun.")
+            .defaultValue(true)
+            .visible(this::isNormalScan)
+            .build());
 
 // Resume previous scan
-    private final Setting<Integer> containerThreshold = sgContainerRecording.add(new IntSetting.Builder()
-        .name("Container Threshold")
-        .description("Records the current chunk when it contains at least this many selected containers.")
-        .defaultValue(10)
-        .min(2)
-        .max(200)
-        .sliderRange(2, 200)
-        .build()
-    );
-
-    private final Setting<List<BlockEntityType<?>>> containerBlocks = sgContainerRecording.add(new StorageBlockListSetting.Builder()
-        .name("Container Blocks")
-        .description("Container block entity types to count, matching Meteor Storage ESP defaults.")
-        .defaultValue(StorageBlockListSetting.STORAGE_BLOCKS)
-        .build()
-    );
-
-    private final Setting<Boolean> detectThrownPearls = sgContainerRecording.add(new BoolSetting.Builder()
-        .name("Detect Thrown Pearls")
-        .description("Announces thrown ender pearls detected while Base Finder is active.")
-        .defaultValue(false)
-        .build()
-    );
-
-    private final Setting<Boolean> xaeroWaypoints = sgContainerRecording.add(new BoolSetting.Builder()
-        .name("Xaero Waypoints")
-        .description("Creates a Xaero waypoint when a container chunk is recorded. Requires Xaero's Minimap at runtime.")
-        .defaultValue(false)
-        .build()
-    );
-
-    private final Setting<Boolean> recordThrownPearls = sgContainerRecording.add(new BoolSetting.Builder()
-        .name("Record Thrown Pearl")
-        .description("Creates unlimited Xaero waypoints for detected thrown ender pearls, using Pearl names and P aliases.")
-        .defaultValue(false)
-        .visible(xaeroWaypoints::get)
-        .build()
-    );
-
-    private final Setting<XaeroWaypointColor> xaeroWaypointColor = sgContainerRecording.add(new XaeroWaypointColorSetting.Builder()
-        .name("Waypoint Color").description("Xaero waypoint color, or a random supported color for each waypoint.").defaultValue(XaeroWaypointColor.RANDOM).visible(xaeroWaypoints::get).build()
-    );
-    private final Setting<Integer> waypointLimitRadius = sgContainerRecording.add(new IntSetting.Builder()
-        .name("Area Radius").description("Chunk radius used to group nearby waypoints into one base area.").defaultValue(5).range(1, 64).sliderRange(1, 32).visible(xaeroWaypoints::get).build()
-    );
-    private final Setting<Integer> maximumWaypointsPerArea = sgContainerRecording.add(new IntSetting.Builder()
-        .name("Waypoints per Area").description("Maximum waypoints created within one base area during the current scan.").defaultValue(3).range(1, 100).sliderRange(1, 20).visible(xaeroWaypoints::get).build()
-    );
-    private final Setting<String> xaeroWaypointPrefix = sgContainerRecording.add(new StringSetting.Builder()
-        .name("Waypoint Prefix")
-        .description("Text before the waypoint name.")
-        .defaultValue("Base ")
-        .visible(xaeroWaypoints::get)
-        .build()
-    );
-
-    private final Setting<String> xaeroWaypointSuffix = sgContainerRecording.add(new StringSetting.Builder()
-        .name("Waypoint Suffix")
-        .description("Text after the waypoint name.")
-        .defaultValue("")
-        .visible(xaeroWaypoints::get)
-        .build()
-    );
-
-
     private final Setting<Boolean> lastBegin = sgRestart.add(new BoolSetting.Builder()
             .name("Resume Previous Scan")
             .description("Resumes from the saved scan progress.")
@@ -671,8 +589,9 @@ public class BaseFinder extends WaveXinModule {
             .visible(() -> isNormalScan() && (shapeMode.get() == ShapeMode.Lines || shapeMode.get() == ShapeMode.Both))
             .build());
 
-    public BaseFinder() {
+    public BaseFinder(ContainerRecorderModule containerRecorder) {
         super(WaveXinAddon.CATEGORY, "base-finder", "Outward map scanner with chunk-loading pauses.");
+        this.containerRecorder = containerRecorder;
     }
 
     private boolean isNormalScan() {
@@ -689,7 +608,15 @@ public class BaseFinder extends WaveXinModule {
 
     @Override
     public void onActivate() {
-        migrateLegacyContainerRecords();
+        debugLog.open(commandDebug, mc.runDirectory.toPath());
+        if (commandDebug) debugLog.info("activation", "method", scanMethod.get());
+        if (NavigationModuleControl.reportConflictingActivation(this)) {
+            activationRejected = true;
+            toggle();
+            return;
+        }
+        activationRejected = false;
+        NavigationModuleControl.suppressMovementInput();
         activeScanMethod = scanMethod.get();
         setScanForwardKey(false);
         scanStartPending = true;
@@ -707,21 +634,12 @@ public class BaseFinder extends WaveXinModule {
         }
 
         scanStartPending = false;
-        recordedContainerChunks.clear();
-        checkedContainerChunks.clear();
-        containerScanTicks = 0;
-        containerScanSettingsHash = Integer.MIN_VALUE;
-        containerScanWorld = mc.world;
-        recordedThrownPearls.clear();
-        createdWaypointPositions.clear();
-        warnedMissingLoadedChunks.clear();
         warnedNormalDebugStates.clear();
-        nextWaypointNumber = 1;
-        nextPearlWaypointNumber = 1;
-        warnedEmptyContainerBlocks = false;
-        warnedContainerScanUnavailable = false;
-        validateXaeroWaypointSetting();
         warnIfUnsafeScanHeight();
+        if ((activeScanMethod == ScanMethod.SPIRAL && startContainerRecorderSpiral.get())
+            || (activeScanMethod == ScanMethod.NORMAL && startContainerRecorderNormal.get())) {
+            containerRecorder.startForScan(this);
+        }
         if (activeScanMethod == ScanMethod.SPIRAL) {
             startSpiralScan();
             return;
@@ -844,6 +762,7 @@ public class BaseFinder extends WaveXinModule {
 
     @EventHandler
     private void onTick(TickEvent.Pre event) {
+        if (activeScanMethod != ScanMethod.SPIRAL) NavigationModuleControl.suppressMovementInput();
         if (activeScanMethod == ScanMethod.NORMAL) normalDebugTicks++;
         if (scanStartPending) {
             initializeActiveScan();
@@ -867,7 +786,6 @@ public class BaseFinder extends WaveXinModule {
         if (resumeCheckpointChunk != null) {
             ChunkPos playerChunk = mc.player.getChunkPos();
             visitedChunks.add(chunkKey(playerChunk.x, playerChunk.z));
-            recordLoadedContainerChunksNear(playerChunk);
             if (!normalDebugState.startsWith("WAITING_RESUME")) {
                 setNormalDebugState("RETURNING_TO_CHECKPOINT", "checkpoint=" + chunkDebugLabel(resumeCheckpointChunk));
             }
@@ -881,7 +799,6 @@ public class BaseFinder extends WaveXinModule {
 
         ChunkPos playerChunk = mc.player.getChunkPos();
         visitedChunks.add(chunkKey(playerChunk.x, playerChunk.z));
-        recordLoadedContainerChunksNear(playerChunk);
 
         if (currentCircle > circleLimit.get()) {
             setNormalDebugState("COMPLETE", "ringLimit=" + circleLimit.get());
@@ -995,22 +912,23 @@ public class BaseFinder extends WaveXinModule {
 
     @Override
     public void onDeactivate() {
+        if (commandDebug) debugLog.info("deactivation", "method", activeScanMethod);
+        if (activationRejected) {
+            debugLog.close();
+            activationRejected = false;
+            return;
+        }
+        containerRecorder.stopForScan(this);
         setScanForwardKey(false);
+        NavigationModuleControl.restoreMovementInput();
+        if (activeScanMethod == null) { debugLog.close(); return; }
         restoreNormalViewYaw();
         scanStartPending = false;
         ScanMethod stoppedScanMethod = activeScanMethod;
         if (stoppedScanMethod == ScanMethod.NORMAL) logNormalDebugSnapshot("DEACTIVATE", "moduleDisabled");
+        debugLog.close();
         ScanProgressManager.NormalScanProgress savedProgress = stoppedScanMethod == ScanMethod.NORMAL ? saveNormalScanProgress() : null;
         activeScanMethod = null;
-        recordedContainerChunks.clear();
-        checkedContainerChunks.clear();
-        containerScanTicks = 0;
-        containerScanSettingsHash = Integer.MIN_VALUE;
-        containerScanWorld = null;
-        recordedThrownPearls.clear();
-        createdWaypointPositions.clear();
-        warnedMissingLoadedChunks.clear();
-
         if (stoppedScanMethod == ScanMethod.SPIRAL) {
             saveSpiralProgress();
             clearSpiralState();
@@ -1209,6 +1127,7 @@ public class BaseFinder extends WaveXinModule {
     }
 
     private void logNormalDebugSnapshot(String event, String detail) {
+        if (!commandDebug) return;
         if (!shouldLogNormalDebugSnapshot(event)) return;
         if (!"DEACTIVATE".equals(event) && !warnedNormalDebugStates.add(normalDebugState)) return;
 
@@ -1254,10 +1173,18 @@ public class BaseFinder extends WaveXinModule {
             mc.currentScreen == null ? "none" : mc.currentScreen.getClass().getSimpleName(),
             playerState
         );
+        debugLog.warn("normal-scan", "event", event, "state", normalDebugState, "detail", detail, "player", playerState);
     }
 
     private boolean shouldLogNormalDebugSnapshot(String event) {
         return BaseFinderStateLogic.shouldLogNormalDebugSnapshot(event, normalDebugState);
+    }
+
+    public void setDebugMode(boolean enabled) {
+        commandDebug = enabled;
+        spiralDebug.set(enabled);
+        if (enabled && isActive()) debugLog.open(true, mc.runDirectory.toPath());
+        else if (!enabled) debugLog.close();
     }
 
     private String describeStartReadiness() {
@@ -1357,294 +1284,6 @@ public class BaseFinder extends WaveXinModule {
 
         return true;
     }
-    private void migrateLegacyContainerRecords() {
-        if (Files.exists(CONTAINER_RECORD_PATH) || !Files.exists(LEGACY_CONTAINER_RECORD_PATH)) return;
-
-        try {
-            Files.createDirectories(CONTAINER_RECORD_PATH.getParent());
-            Files.copy(LEGACY_CONTAINER_RECORD_PATH, CONTAINER_RECORD_PATH);
-            WaveXinAddon.LOG.info("Migrated container records to {}.", CONTAINER_RECORD_PATH);
-        } catch (IOException e) {
-            WaveXinAddon.LOG.error("Could not migrate container records to {}.", CONTAINER_RECORD_PATH, e);
-        }
-    }
-    private void recordLoadedContainerChunksNear(ChunkPos center) {
-        if (mc.world == null) {
-            if (!warnedContainerScanUnavailable) {
-                WaveXinAddon.LOG.warn("[BaseFinderDebug] Skipped container scan because world is null. method={} center={}", activeScanMethod, chunkDebugLabel(center));
-                warnedContainerScanUnavailable = true;
-            }
-            return;
-        }
-
-        if (containerScanWorld != mc.world) {
-            containerScanWorld = mc.world;
-            recordedContainerChunks.clear();
-            checkedContainerChunks.clear();
-            containerScanTicks = 0;
-            recordedThrownPearls.clear();
-            createdWaypointPositions.clear();
-            warnedMissingLoadedChunks.clear();
-            nextWaypointNumber = 1;
-            nextPearlWaypointNumber = 1;
-            containerScanSettingsHash = Integer.MIN_VALUE;
-        }
-
-        detectThrownPearlsIfEnabled();
-
-        List<BlockEntityType<?>> selectedContainerBlocks = containerBlocks.get();
-        if (selectedContainerBlocks == null || selectedContainerBlocks.isEmpty()) {
-            checkedContainerChunks.clear();
-            containerScanTicks = 0;
-            if (!warnedEmptyContainerBlocks) {
-                WaveXinAddon.LOG.warn("[BaseFinderDebug] Container scan skipped because no container block types are selected. threshold={} method={}", containerThreshold.get(), activeScanMethod);
-                warnedEmptyContainerBlocks = true;
-            }
-            return;
-        }
-        warnedEmptyContainerBlocks = false;
-
-        int settingsHash = 31 * containerThreshold.get() + selectedContainerBlocks.hashCode();
-        if (settingsHash != containerScanSettingsHash) {
-            checkedContainerChunks.clear();
-            containerScanTicks = 0;
-            containerScanSettingsHash = settingsHash;
-        }
-
-        if (++containerScanTicks >= CONTAINER_RESCAN_INTERVAL_TICKS) {
-            checkedContainerChunks.clear();
-            containerScanTicks = 0;
-        }
-
-        int radius = getContainerScanRadius();
-        checkedContainerChunks.removeIf(chunk ->
-            Math.abs((long) chunk.x - center.x) > radius
-                || Math.abs((long) chunk.z - center.z) > radius
-                || !mc.world.getChunkManager().isChunkLoaded(chunk.x, chunk.z)
-        );
-
-        for (int chunkX = center.x - radius; chunkX <= center.x + radius; chunkX++) {
-            for (int chunkZ = center.z - radius; chunkZ <= center.z + radius; chunkZ++) {
-                if (!mc.world.getChunkManager().isChunkLoaded(chunkX, chunkZ)) continue;
-                recordContainerChunkIfNeeded(new ChunkPos(chunkX, chunkZ), selectedContainerBlocks);
-            }
-        }
-    }
-
-    private int getContainerScanRadius() {
-        int radius = Math.max(1, getChunkWaitRadius());
-        if (mc.options == null) return radius;
-        return Math.min(radius, Math.max(1, mc.options.getViewDistance().getValue()));
-    }
-
-    private void recordContainerChunkIfNeeded(ChunkPos chunkPos, List<BlockEntityType<?>> selectedContainerBlocks) {
-        long key = chunkPos.toLong();
-        if (recordedContainerChunks.contains(key) || checkedContainerChunks.contains(chunkPos)) return;
-
-        WorldChunk chunk = mc.world.getChunkManager().getWorldChunk(chunkPos.x, chunkPos.z, false);
-        if (chunk == null) {
-            if (warnedMissingLoadedChunks.add(key)) {
-                WaveXinAddon.LOG.warn("[BaseFinderDebug] Loaded container candidate had no WorldChunk. chunk={} playerChunk={} method={} resume={}", chunkDebugLabel(chunkPos), chunkDebugLabel(mc.player.getChunkPos()), activeScanMethod, chunkDebugLabel(resumeCheckpointChunk));
-            }
-            return;
-        }
-
-        int count = 0;
-        BlockPos firstPos = null;
-
-        for (BlockEntity blockEntity : chunk.getBlockEntities().values()) {
-            if (!selectedContainerBlocks.contains(blockEntity.getType())) continue;
-
-            count++;
-            if (firstPos == null) firstPos = blockEntity.getPos();
-        }
-
-        checkedContainerChunks.add(chunkPos);
-        if (count < containerThreshold.get()) return;
-
-        recordedContainerChunks.add(key);
-        BlockPos playerPos = mc.player.getBlockPos();
-        BlockPos recordPos = firstPos != null ? firstPos : playerPos;
-        appendContainerRecord(chunkPos, recordPos, playerPos, count);
-        createXaeroWaypointIfEnabled(recordPos);
-        announceBaseDiscovery(chunkPos, recordPos, count);
-    }
-
-    private boolean isScanAreaLoaded() {
-        ChunkPos center = mc.player.getChunkPos();
-        int radius = mc.options.getViewDistance().getValue();
-
-        for (int offsetX = -radius; offsetX <= radius; offsetX++) {
-            for (int offsetZ = -radius; offsetZ <= radius; offsetZ++) {
-                if (!mc.world.getChunkManager().isChunkLoaded(center.x + offsetX, center.z + offsetZ)) return false;
-            }
-        }
-
-        return true;
-    }
-
-    private void announceBaseDiscovery(ChunkPos chunkPos, BlockPos recordPos, int count) {
-        warningKey("warning.wavexin.base_finder.base_found", "(highlight)(bold)Base found! (default)Chunk: (highlight)%d, %d(default) | Position: (highlight)%d, %d, %d(default) | Containers: (highlight)%d(default)",
-            chunkPos.x, chunkPos.z, recordPos.getX(), recordPos.getY(), recordPos.getZ(), count);
-    }
-
-    private void detectThrownPearlsIfEnabled() {
-        if (!detectThrownPearls.get() || mc.world == null) return;
-
-        for (Entity entity : mc.world.getEntities()) {
-            if (entity.getType() != EntityType.ENDER_PEARL) continue;
-            UUID uuid = entity.getUuid();
-            if (!recordedThrownPearls.add(uuid)) continue;
-
-            BlockPos pearlPos = entity.getBlockPos();
-            ChunkPos pearlChunk = new ChunkPos(pearlPos);
-            announceThrownPearl(pearlChunk, pearlPos);
-            createPearlXaeroWaypointIfEnabled(pearlPos);
-        }
-    }
-
-    private void announceThrownPearl(ChunkPos chunkPos, BlockPos pos) {
-        warningKey("warning.wavexin.base_finder.pearl_found", "(highlight)(bold)Thrown pearl detected! (default)Chunk: (highlight)%d, %d(default) | Position: (highlight)%d, %d, %d(default)",
-            chunkPos.x, chunkPos.z, pos.getX(), pos.getY(), pos.getZ());
-    }
-
-    private boolean hasReachedWaypointLimit(BlockPos candidate) {
-        int radiusBlocks = waypointLimitRadius.get() * 16;
-        int nearby = 0;
-        for (BlockPos existing : createdWaypointPositions) {
-            if (Math.abs(existing.getX() - candidate.getX()) > radiusBlocks || Math.abs(existing.getZ() - candidate.getZ()) > radiusBlocks) continue;
-            if (++nearby >= maximumWaypointsPerArea.get()) {
-                WaveXinAddon.LOG.warn("[BaseFinderDebug] Skipped Xaero waypoint because area limit was reached. candidate=({}, {}) radiusChunks={} limit={}", candidate.getX(), candidate.getZ(), waypointLimitRadius.get(), maximumWaypointsPerArea.get());
-                infoKey("message.wavexin.base_finder.xaero_area_limit", "Skipped Xaero waypoint near (%d, %d): area limit of %d reached.", candidate.getX(), candidate.getZ(), maximumWaypointsPerArea.get());
-                return true;
-            }
-        }
-        return false;
-    }
-
-    private int getXaeroWaypointColorId() {
-        XaeroWaypointColor color = xaeroWaypointColor.get();
-        return color == XaeroWaypointColor.RANDOM ? ThreadLocalRandom.current().nextInt(16) : color.colorId;
-    }
-
-    private void sendXaeroCreatedMessage(String name, int colorId) {
-        Color color = getXaeroWaypointDisplayColor(colorId);
-        int rgb = ((color.r & 0xFF) << 16) | ((color.g & 0xFF) << 8) | (color.b & 0xFF);
-        Text message = Text.literal(WaveXinI18n.tr("message.wavexin.base_finder.xaero_created", "Created Xaero waypoint: %s", ""))
-            .append(Text.literal(name).setStyle(Style.EMPTY.withBold(true).withColor(TextColor.fromRgb(rgb))));
-
-        ChatUtils.forceNextPrefixClass(getClass());
-        ChatUtils.sendMsg(message);
-    }
-
-    private static Color getXaeroWaypointDisplayColor(int colorId) {
-        return XaeroWaypointColor.fromColorId(colorId).displayColor();
-    }
-
-    private void appendContainerRecord(ChunkPos chunkPos, BlockPos recordPos, BlockPos playerPos, int count) {
-        String line = "%s | chunk=(%d,%d) | first-container=(%d,%d,%d) | player=(%d,%d,%d) | count=%d%n".formatted(
-            LocalDateTime.now().format(RECORD_TIME_FORMAT),
-            chunkPos.x,
-            chunkPos.z,
-            recordPos.getX(),
-            recordPos.getY(),
-            recordPos.getZ(),
-            playerPos.getX(),
-            playerPos.getY(),
-            playerPos.getZ(),
-            count
-        );
-
-        try {
-            Files.createDirectories(CONTAINER_RECORD_PATH.getParent());
-            Files.writeString(CONTAINER_RECORD_PATH, line, StandardCharsets.UTF_8,
-                java.nio.file.StandardOpenOption.CREATE,
-                java.nio.file.StandardOpenOption.APPEND
-            );
-        } catch (IOException e) {
-            WaveXinAddon.LOG.error("[BaseFinderDebug] Failed to save container chunk record. path={} chunk={} recordPos={} playerPos={} count={}", CONTAINER_RECORD_PATH, chunkDebugLabel(chunkPos), recordPos, playerPos, count, e);
-            errorKey("error.wavexin.base_finder.record_save_failed", "Failed to save container chunk record: %s", e.getMessage());
-        }
-    }
-
-    private void createXaeroWaypointIfEnabled(BlockPos pos) {
-        if (!validateXaeroWaypointSetting()) return;
-        if (hasReachedWaypointLimit(pos)) return;
-
-        String name = xaeroWaypointPrefix.get() + nextWaypointNumber + xaeroWaypointSuffix.get();
-        String initials = makeWaypointInitials(name);
-        if (createXaeroWaypoint(pos, name, initials)) {
-            createdWaypointPositions.add(pos.toImmutable());
-            nextWaypointNumber++;
-        }
-    }
-
-    private void createPearlXaeroWaypointIfEnabled(BlockPos pos) {
-        if (!xaeroWaypoints.get() || !recordThrownPearls.get()) return;
-        if (!validateXaeroWaypointSetting()) return;
-
-        int number = nextPearlWaypointNumber;
-        String name = BaseFinderStateLogic.pearlWaypointName(number);
-        String initials = BaseFinderStateLogic.pearlWaypointAlias(number);
-        if (createXaeroWaypoint(pos, name, initials)) {
-            nextPearlWaypointNumber++;
-        }
-    }
-
-    private boolean createXaeroWaypoint(BlockPos pos, String name, String initials) {
-        int colorId = getXaeroWaypointColorId();
-        XaeroWaypointBridge.Result result = xaeroWaypointBridge.create(pos, name, initials, colorId);
-        if (result.created()) {
-            sendXaeroCreatedMessage(name, colorId);
-            return true;
-        }
-
-        warnXaeroFailure(result, pos, name);
-        return false;
-    }
-
-    private void warnXaeroFailure(XaeroWaypointBridge.Result result, BlockPos pos, String name) {
-        long now = System.currentTimeMillis();
-        boolean repeatedTooSoon = result.status() == lastXaeroWarningStatus && now - lastXaeroWarningAt < 10_000L;
-        if (repeatedTooSoon) return;
-
-        lastXaeroWarningStatus = result.status();
-        lastXaeroWarningAt = now;
-        WaveXinAddon.LOG.warn("[BaseFinderDebug] Xaero waypoint creation skipped. status={} detail={} pos={} method={} name={}",
-            result.status(), result.detail(), pos, activeScanMethod, name);
-
-        switch (result.status()) {
-            case MISSING -> warningKey("warning.wavexin.base_finder.xaero_missing", "Xaero's Minimap was not detected. Container recording will continue without waypoints.");
-            case SESSION_NOT_READY -> warningKey("warning.wavexin.base_finder.xaero_session_not_ready", "Xaero's Minimap session is not ready. Record saved without a waypoint.");
-            case WORLD_NOT_READY -> warningKey("warning.wavexin.base_finder.xaero_world_not_ready", "Xaero current waypoint world is not ready. Record saved without a waypoint.");
-            case SET_NOT_READY -> warningKey("warning.wavexin.base_finder.xaero_set_not_ready", "Xaero current waypoint set is not ready. Record saved without a waypoint.");
-            case FAILED -> warningKey("warning.wavexin.base_finder.xaero_create_failed", "Failed to create Xaero waypoint: %s", result.detail());
-            case CREATED -> { }
-        }
-    }
-
-    private boolean validateXaeroWaypointSetting() {
-        if (!xaeroWaypoints.get()) return false;
-        if (xaeroWaypointBridge.isAvailable()) return true;
-
-        xaeroWaypoints.set(false);
-        WaveXinAddon.LOG.warn("[BaseFinderDebug] Xaero waypoint support is unavailable. reason={}", xaeroWaypointBridge.unavailableReason());
-        warningKey("warning.wavexin.base_finder.xaero_missing", "Xaero's Minimap was not detected. Xaero Waypoints has been disabled, but container recording will continue.");
-        return false;
-    }
-
-    private String makeWaypointInitials(String name) {
-        if (name == null || name.isBlank()) return "B";
-
-        StringBuilder initials = new StringBuilder();
-        for (String part : name.trim().split("\\s+")) {
-            if (!part.isEmpty() && initials.length() < 2) initials.append(Character.toUpperCase(part.charAt(0)));
-        }
-
-        return initials.isEmpty() ? "B" : initials.toString();
-    }
-
-
     private void startSpiralScan() {
         if (mc.player == null) return;
 
@@ -1774,7 +1413,6 @@ public class BaseFinder extends WaveXinModule {
         }
 
         ChunkPos playerChunk = mc.player.getChunkPos();
-        recordLoadedContainerChunksNear(playerChunk);
 
         if (spiralMaximumSegments.get() > 0 && spiralSegments >= spiralMaximumSegments.get()) {
             setScanForwardKey(false);
@@ -1943,6 +1581,7 @@ public class BaseFinder extends WaveXinModule {
     @EventHandler(priority = EventPriority.HIGHEST)
     private void onSpiralTick(TickEvent.Pre event) {
         if (activeScanMethod != ScanMethod.SPIRAL) return;
+        NavigationModuleControl.suppressMovementInput();
         if (scanStartPending) initializeActiveScan();
         if (!scanStartPending) runSpiralScan();
     }

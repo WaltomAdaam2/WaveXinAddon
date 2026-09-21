@@ -97,6 +97,11 @@ public class SnifferNametags extends WaveXinModule {
         super(WaveXinAddon.CATEGORY, "sniffer-nametags", "Displays custom nametags for sniffer entities.");
     }
 
+    @Override
+    public void onDeactivate() {
+        snifferList.clear();
+    }
+
     @EventHandler
     private void onTick(TickEvent.Post event) {
         if (mc.player == null || mc.world == null) {
@@ -105,20 +110,23 @@ public class SnifferNametags extends WaveXinModule {
         }
 
         snifferList.clear();
-        Vec3d cameraPos = new Vec3d(mc.player.getX(), mc.player.getY(), mc.player.getZ());
-
-        for (Entity entity : mc.world.getEntities()) {
-            if (entity.getType() != EntityType.SNIFFER) continue;
-            if (!(entity instanceof SnifferEntity sniffer)) continue;
-            if (!isValid(sniffer)) continue;
-
-            double distance = PlayerUtils.distanceToCamera(sniffer);
-            if (distance <= maxRange.get()) {
-                snifferList.add(sniffer);
+        Vec3d cameraPos = mc.gameRenderer.getCamera().getCameraPos();
+        double range = maxRange.get(), rangeSquared = range * range;
+        if (range <= 256) {
+            mc.world.collectEntitiesByType(EntityType.SNIFFER,
+                new net.minecraft.util.math.Box(cameraPos, cameraPos).expand(range),
+                sniffer -> sniffer.isAlive() && !sniffer.isRemoved()
+                    && PlayerUtils.squaredDistanceToCamera(sniffer) <= rangeSquared, snifferList);
+        } else {
+            // Very large user ranges are cheaper to filter than to enumerate every spatial section.
+            for (Entity entity : mc.world.getEntities()) {
+                if (entity.getType() != EntityType.SNIFFER) continue;
+                if (entity instanceof SnifferEntity sniffer && sniffer.isAlive() && !sniffer.isRemoved()
+                    && PlayerUtils.squaredDistanceToCamera(sniffer) <= rangeSquared) snifferList.add(sniffer);
             }
         }
 
-        snifferList.sort(Comparator.comparing(e -> e.squaredDistanceTo(cameraPos)));
+        snifferList.sort(Comparator.comparingDouble(e -> e.squaredDistanceTo(mc.player.getX(), mc.player.getY(), mc.player.getZ())));
     }
 
     @EventHandler

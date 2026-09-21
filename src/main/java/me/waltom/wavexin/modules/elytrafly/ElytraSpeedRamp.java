@@ -17,6 +17,10 @@ public final class ElytraSpeedRamp {
     }
 
     public void tick(boolean isGliding) {
+        tick(isGliding, true);
+    }
+
+    public void tick(boolean isGliding, boolean advanceAcceleration) {
         if (!isGliding) {
             activeGlideTicks = 0;
             cooldownTicks = 0;
@@ -34,7 +38,7 @@ public final class ElytraSpeedRamp {
             return;
         }
 
-        activeGlideTicks++;
+        if (advanceAcceleration) activeGlideTicks++;
     }
 
     public void onLagback(boolean resetAfterLagback) {

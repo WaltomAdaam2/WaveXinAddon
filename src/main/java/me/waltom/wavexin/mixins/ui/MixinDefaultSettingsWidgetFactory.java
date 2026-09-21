@@ -49,22 +49,40 @@ public abstract class MixinDefaultSettingsWidgetFactory {
     @Inject(method = "enumW", at = @At("HEAD"), cancellable = true)
     private <T extends Enum<?>> void onEnumW(WTable table, EnumSetting<T> setting, CallbackInfo ci) {
         if (!WaveXinI18n.isWaveXin(setting.module)) return;
-        if (!(table.theme instanceof MeteorGuiTheme)) return;
         T current = setting.get();
         if (current == null) return;
 
         WaveXinI18n.markUiPath("setting-enum-dropdown");
-        WDropdown<T> dropdown = table.add(new WaveXinEnumDropdown<>((T[]) current.getDeclaringClass().getEnumConstants(), current, setting.module)).expandCellX().widget();
-        dropdown.action = () -> setting.set(dropdown.get());
+        Runnable refresh;
+        if (table.theme instanceof MeteorGuiTheme) {
+            WDropdown<T> dropdown = table.add(new WaveXinEnumDropdown<>((T[]) current.getDeclaringClass().getEnumConstants(), current, setting.module)).expandCellX().widget();
+            dropdown.action = () -> setting.set(dropdown.get());
+            refresh = () -> dropdown.set(setting.get());
+        } else {
+            // Keep the active theme's widget; translated display wrappers never enter saved settings.
+            T[] values = (T[]) current.getDeclaringClass().getEnumConstants();
+            EnumLabel[] labels = new EnumLabel[values.length];
+            for (int i = 0; i < values.length; i++) labels[i] = new EnumLabel(values[i], setting.module);
+            WDropdown<EnumLabel> dropdown = table.add(table.theme.dropdown(labels, labels[current.ordinal()])).expandCellX().widget();
+            dropdown.action = () -> setting.set((T) dropdown.get().value());
+            refresh = () -> dropdown.set(labels[setting.get().ordinal()]);
+        }
 
         WButton reset = table.add(table.theme.button(GuiRenderer.RESET)).widget();
         reset.action = () -> {
             setting.reset();
-            dropdown.set(setting.get());
+            refresh.run();
         };
         reset.tooltip = WaveXinI18n.tr("tooltip.wavexin.common.reset", "Reset");
 
         ci.cancel();
+    }
+
+    private record EnumLabel(Enum<?> value, Module module) {
+        @Override
+        public String toString() {
+            return WaveXinI18n.enumLabel(module, value);
+        }
     }
 
     private static Module findModule(SettingGroup group) {

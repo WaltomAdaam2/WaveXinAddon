@@ -1,6 +1,7 @@
 package me.waltom.wavexin.modules.litematicaprinter;
 
 import me.waltom.wavexin.WaveXinAddon;
+import me.waltom.wavexin.core.WaveXinDebugLog;
 import me.waltom.wavexin.core.WaveXinModule;
 import me.waltom.wavexin.i18n.WaveXinI18n;
 import meteordevelopment.meteorclient.events.game.OpenScreenEvent;
@@ -103,12 +104,7 @@ public final class LitematicaPrinter extends WaveXinModule {
         .build()
     );
 
-    private final Setting<Boolean> debugLogEnabled = sgGeneral.add(new BoolSetting.Builder()
-        .name("Debug Log")
-        .description("Writes detailed Litematica Printer diagnostics to meteor-client/wavexin/printer.")
-        .defaultValue(false)
-        .build()
-    );
+    private boolean debugMode;
 
     private final Setting<Integer> placementsPerTick = sgBuild.add(new IntSetting.Builder()
         .name("Blocks Per Tick")
@@ -427,7 +423,7 @@ public final class LitematicaPrinter extends WaveXinModule {
     private final PrinterInventory inventory = new PrinterInventory();
     private final PrinterPlacement placement = new PrinterPlacement(inventory);
     private final PrinterBatchPlanner<PrinterPlacement.Candidate> batchPlanner = new PrinterBatchPlanner<>();
-    private final PrinterDebugLog debugLog = new PrinterDebugLog();
+    private final WaveXinDebugLog debugLog = new WaveXinDebugLog("LitematicaPrinter");
     private final PrinterSessionCache sessionCache = new PrinterSessionCache();
     private final SupplyContainerSession containerSession = new SupplyContainerSession();
     private final Map<BlockPos, ProjectionScan.Target> pending = new LinkedHashMap<>();
@@ -624,7 +620,7 @@ public final class LitematicaPrinter extends WaveXinModule {
     @Override
     public void onActivate() {
         migrateStoredSupplySelection();
-        debugLog.open(debugLogEnabled.get(), mc.runDirectory.toPath());
+        debugLog.open(debugMode, mc.runDirectory.toPath());
         debugLog.info("activation", "minecraft", MINECRAFT_VERSION, "debug_file", debugLog.path());
         if (mc.player == null || mc.world == null || mc.interactionManager == null) {
             stopWithActivationError("error.wavexin.litematica_printer.world_unavailable", "(highlight)(bold)Litematica Printer requires an active world.(default)");
@@ -668,6 +664,13 @@ public final class LitematicaPrinter extends WaveXinModule {
         debugLog.flush();
         if (selection != null && mc.world == sessionWorld && selection.isStillSelected()) suspendRuntime();
         else resetRuntime(true);
+        debugLog.close();
+    }
+
+    public void setDebugMode(boolean enabled) {
+        debugMode = enabled;
+        if (enabled && isActive()) debugLog.open(true, mc.runDirectory.toPath());
+        else if (!enabled) debugLog.close();
     }
 
     @EventHandler(priority = EventPriority.HIGHEST)

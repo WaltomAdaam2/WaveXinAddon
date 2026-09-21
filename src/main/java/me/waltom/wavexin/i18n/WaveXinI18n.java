@@ -4,6 +4,7 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import me.waltom.wavexin.WaveXinAddon;
+import me.waltom.wavexin.core.WaveXinSettingsStore;
 import meteordevelopment.meteorclient.settings.Setting;
 import meteordevelopment.meteorclient.settings.SettingGroup;
 import meteordevelopment.meteorclient.systems.config.Config;
@@ -41,6 +42,7 @@ public final class WaveXinI18n {
     private static final Set<String> LOGGED_UI_PATHS = ConcurrentHashMap.newKeySet();
     private static final Set<String> LOGGED_FORMAT_FAILURES = ConcurrentHashMap.newKeySet();
     private static final Map<String, String> KEY_SEGMENT_CACHE = new ConcurrentHashMap<>();
+    private static final Map<String, Map<String, String>> LANGUAGE_CACHE = new ConcurrentHashMap<>();
     private static final Map<Setting<?>, SettingGroup> SETTING_GROUP_CACHE =
         Collections.synchronizedMap(new IdentityHashMap<>());
 
@@ -48,6 +50,8 @@ public final class WaveXinI18n {
     }
 
     public static MutableText text(String key, String fallback, Object... args) {
+        String selected = selectedTranslation(key);
+        if (selected != null) return Text.literal(formatFallback(selected, args));
         try {
             if (I18n.hasTranslation(key)) return Text.translatable(key, args);
         } catch (RuntimeException e) {
@@ -57,6 +61,8 @@ public final class WaveXinI18n {
     }
 
     public static String tr(String key, String fallback, Object... args) {
+        String selected = selectedTranslation(key);
+        if (selected != null) return formatFallback(selected, args);
         try {
             if (I18n.hasTranslation(key)) return I18n.translate(key, args);
         } catch (RuntimeException e) {
@@ -76,6 +82,16 @@ public final class WaveXinI18n {
             logFormatFailure("fallback:" + fallback, fallback, e);
             return fallback;
         }
+    }
+
+    private static String selectedTranslation(String key) {
+        String language = WaveXinSettingsStore.getLanguage();
+        if (language == null) return null;
+        return bundledTranslation(language, key);
+    }
+
+    static String bundledTranslation(String language, String key) {
+        return LANGUAGE_CACHE.computeIfAbsent(language, WaveXinI18n::readLanguage).get(key);
     }
 
     public static boolean isWaveXin(Module module) {

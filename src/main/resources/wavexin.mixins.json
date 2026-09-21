@@ -3,10 +3,12 @@
   "package": "me.waltom.wavexin.mixins",
   "compatibilityLevel": "JAVA_21",
   "client": [
+    "MixinMinecraftClient",
     "MixinClientPlayNetworkHandler",
     "MixinClientPlayerEntity",
     "MixinBlockItemAccessor",
     "MixinPlayerEntity",
+    "MixinLivingEntityAccessor",
     "MixinWIntEdit",
     "MixinWTextBoxAccessor"
   ],
