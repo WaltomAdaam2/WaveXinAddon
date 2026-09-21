@@ -3,6 +3,7 @@ package me.waltom.wavexin.modules.containerrecorder;
 import me.waltom.wavexin.WaveXinAddon;
 import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 import me.waltom.wavexin.core.WaveXinDataPaths;
+import me.waltom.wavexin.core.WaveXinDebugLog;
 import me.waltom.wavexin.core.WaveXinModule;
 import me.waltom.wavexin.i18n.WaveXinI18n;
 import meteordevelopment.meteorclient.MeteorClient;
@@ -83,9 +84,8 @@ public final class ContainerRecorderModule extends WaveXinModule {
     }
 
     private final SettingGroup sgRecording = settings.createGroup("Container Recording");
-    private final Setting<Boolean> debugMode = sgRecording.add(new BoolSetting.Builder().name("Debug Mode")
-        .description("Logs detailed recorder diagnostics and coordinates to logs/latest.log. May produce large logs.")
-        .defaultValue(false).onChanged(value -> WaveXinAddon.LOG.info("[ContainerRecorderDebug] Debug Mode={}", value)).build());
+    private final WaveXinDebugLog debugLog = new WaveXinDebugLog("ContainerRecorder");
+    private boolean debugMode;
     private final XaeroWaypointBridge xaero = new XaeroWaypointBridge();
     private final ContainerRecorderClaimState scanRequests = new ContainerRecorderClaimState();
     private final LongOpenHashSet recordedChunks = new LongOpenHashSet();
@@ -146,6 +146,8 @@ public final class ContainerRecorderModule extends WaveXinModule {
 
     private ClientWorld scannedWorld;
     private int scanTicks;
+    private long lastScanCenter = Long.MIN_VALUE;
+    private int lastScanRadius = -1;
     private int settingsHash = Integer.MIN_VALUE;
     private int nextWaypointNumber = 1;
     private int nextPearlWaypointNumber = 1;
@@ -162,28 +164,34 @@ public final class ContainerRecorderModule extends WaveXinModule {
         debug("scan-start requester={} active={}", requester.name, isActive());
         if (!scanRequests.request(requester, isActive())) return;
         toggle();
+        sendToggledMsg();
     }
 
     public void stopForScan(WaveXinModule requester) {
         debug("scan-stop requester={} active={}", requester.name, isActive());
-        if (scanRequests.release(requester, isActive())) toggle();
+        if (scanRequests.release(requester, isActive())) {
+            toggle();
+            sendToggledMsg();
+        }
     }
 
     @Override public void onActivate() {
+        debugLog.open(debugMode, mc.runDirectory.toPath());
         debug("activate world={} retained-records={} pending-records={} pending-waypoints={}", mc.world, recordedChunks.size(), pendingRecords.size(), pendingWaypoints.size());
         migrateLegacyRecords();
         ensureWorld();
         checkedChunks.clear();
+        lastScanRadius = -1;
         validateXaeroSetting();
     }
 
     @Override public void onDeactivate() {
         debug("deactivate world={} records={} pearls={} pending-records={} pending-waypoints={}", mc.world, recordedChunks.size(), recordedPearls.size(), pendingRecords.size(), pendingWaypoints.size());
         flushPending();
+        debugLog.close();
     }
 
     @EventHandler private void onEntityAdded(EntityAddedEvent event) {
-        if (event.entity.getType() == EntityType.ENDER_PEARL) debug("pearl-added uuid={} pos={} detect={} record={} xaero={}", event.entity.getUuid(), event.entity.getBlockPos(), detectPearls.get(), recordPearls.get(), xaeroWaypoints.get());
         if (mc.world == null) return;
         ensureWorld();
         detectPearl(event.entity);
@@ -192,16 +200,11 @@ public final class ContainerRecorderModule extends WaveXinModule {
     @EventHandler private void onChunkData(ChunkDataEvent event) {
         ClientWorld world = mc.world;
         mc.execute(() -> {
-            debug("chunk-data chunk={} active={} same-world={} player-ready={}", event.chunk().getPos(), isActive(), mc.world == world, mc.player != null);
             if (!isActive() || mc.world != world || mc.player == null || world == null) return;
             ensureWorld();
             ChunkPos pos = event.chunk().getPos();
             ChunkPos player = mc.player.getChunkPos();
-            if (Math.abs((long) pos.x - player.x) > scanRadius.get() || Math.abs((long) pos.z - player.z) > scanRadius.get()) {
-                debug("chunk-skip chunk={} reason=outside-radius player-chunk={} radius={}", pos, player, scanRadius.get());
-                return;
-            }
-            debug("chunk-filter chunk={} recorded={} pending={} empty-types={}", pos, recordedChunks.contains(pos.toLong()), pendingRecords.containsKey(pos.toLong()), blocks.get().isEmpty());
+            if (Math.abs((long) pos.x - player.x) > scanRadius.get() || Math.abs((long) pos.z - player.z) > scanRadius.get()) return;
             checkedChunks.remove(pos.toLong());
             if (!recordedChunks.contains(pos.toLong()) && !pendingRecords.containsKey(pos.toLong()) && !blocks.get().isEmpty()) recordChunk(mc, pos, blocks.get());
         });
@@ -238,6 +241,7 @@ public final class ContainerRecorderModule extends WaveXinModule {
         List<BlockEntityType<?>> selected = blocks.get();
         if (selected == null || selected.isEmpty()) {
             checkedChunks.clear(); scanTicks = 0;
+            lastScanRadius = -1;
             if (!warnedEmptyTypes) {
                 warnedEmptyTypes = true;
                 WaveXinAddon.LOG.warn("Skipped container scan because no container block types are selected.");
@@ -246,13 +250,19 @@ public final class ContainerRecorderModule extends WaveXinModule {
         }
         warnedEmptyTypes = false;
         int currentSettingsHash = 31 * threshold.get() + selected.hashCode();
-        if (currentSettingsHash != settingsHash) { checkedChunks.clear(); scanTicks = 0; settingsHash = currentSettingsHash; }
-        if (++scanTicks >= RESCAN_INTERVAL_TICKS) { checkedChunks.clear(); scanTicks = 0; }
+        boolean rescan = currentSettingsHash != settingsHash;
+        if (rescan) { checkedChunks.clear(); scanTicks = 0; settingsHash = currentSettingsHash; }
+        if (++scanTicks >= RESCAN_INTERVAL_TICKS) { checkedChunks.clear(); scanTicks = 0; rescan = true; }
 
         int radius = Math.min(scanRadius.get(), Math.max(1, client.options.getViewDistance().getValue()));
-        boolean snapshot = debugMode.get() && System.currentTimeMillis() >= nextDebugSnapshotAt;
+        // ChunkData handles loaded chunks immediately; movement and periodic rescans
+        // still visit the complete square using the original radius and interval.
+        if (!rescan && center.toLong() == lastScanCenter && radius == lastScanRadius) return;
+        lastScanCenter = center.toLong();
+        lastScanRadius = radius;
+        boolean snapshot = debugMode && System.currentTimeMillis() >= nextDebugSnapshotAt;
         if (snapshot) {
-            nextDebugSnapshotAt = System.currentTimeMillis() + 1000;
+            nextDebugSnapshotAt = System.currentTimeMillis() + 5000;
             debug("scan world={} dimension={} player={} radius={} effective-radius={} threshold={} types={} detect-pearls={} record-pearls={} xaero={} area-radius={} area-limit={} toast={} sound={} recorded={} pearls={} pending-records={} pending-waypoints={}",
                 client.world, client.world.getRegistryKey().getValue(), client.player.getBlockPos(), scanRadius.get(), radius, threshold.get(), selected,
                 detectPearls.get(), recordPearls.get(), xaeroWaypoints.get(), waypointRadius.get(), waypointsPerArea.get(), achievementToast.get(), toastSound.get(), recordedChunks.size(), recordedPearls.size(), pendingRecords.size(), pendingWaypoints.size());
@@ -283,10 +293,9 @@ public final class ContainerRecorderModule extends WaveXinModule {
         int count = 0; BlockPos first = null;
         for (BlockEntity blockEntity : chunk.getBlockEntities().values()) {
             boolean matches = selected.contains(blockEntity.getType());
-            if (debugMode.get()) debug("block-entity chunk={} pos={} type={} selected={}", chunkPos, blockEntity.getPos(), net.minecraft.registry.Registries.BLOCK_ENTITY_TYPE.getId(blockEntity.getType()), matches);
             if (matches) { count++; if (first == null) first = blockEntity.getPos(); }
         }
-        debug("chunk-count chunk={} block-entities={} selected-count={} threshold={} accepted={}", chunkPos, chunk.getBlockEntities().size(), count, threshold.get(), count >= threshold.get());
+        if (count >= threshold.get()) debug("chunk-count chunk={} block-entities={} selected-count={} threshold={}", chunkPos, chunk.getBlockEntities().size(), count, threshold.get());
         checkedChunks.add(key);
         if (count < threshold.get()) return;
         BlockPos playerPos = client.player.getBlockPos();
@@ -320,6 +329,10 @@ public final class ContainerRecorderModule extends WaveXinModule {
     private void detectPearl(Entity entity) {
         if (!detectPearls.get()) return;
         if (entity.getType() != EntityType.ENDER_PEARL) return;
+        UUID id = entity.getUuid();
+        boolean announce = !recordedPearls.contains(id);
+        boolean waypoint = recordPearls.get() && xaeroWaypoints.get() && !waypointPearls.contains(id);
+        if (!announce && !waypoint) return;
         BlockPos pos = entity.getBlockPos(); ChunkPos chunk = new ChunkPos(pos);
         if (!recordedPearls.contains(entity.getUuid())) debug("pearl-detected uuid={} pos={} record={} xaero={}", entity.getUuid(), pos, recordPearls.get(), xaeroWaypoints.get());
         if (recordedPearls.add(entity.getUuid())) warning(WaveXinI18n.tr("warning.wavexin.base_finder.pearl_found", "(highlight)(bold)Thrown pearl detected! (default)Chunk: (highlight)%d, %d(default) | Position: (highlight)%d, %d, %d(default)", chunk.x, chunk.z, pos.getX(), pos.getY(), pos.getZ()));
@@ -412,6 +425,8 @@ public final class ContainerRecorderModule extends WaveXinModule {
     private void clearSession() {
         debug("session-clear recorded={} checked={} pearls={} area-points={} pending-records={} pending-waypoints={}", recordedChunks.size(), checkedChunks.size(), recordedPearls.size(), createdWaypointPositions.size(), pendingRecords.size(), pendingWaypoints.size());
         nextDebugSnapshotAt = 0;
+        lastScanCenter = Long.MIN_VALUE;
+        lastScanRadius = -1;
         if (!pendingRecords.isEmpty() || !pendingWaypoints.isEmpty()) WaveXinAddon.LOG.warn("Container Recorder session ended with {} unsaved records and {} pending waypoints.", pendingRecords.size(), pendingWaypoints.size());
         pendingRecords.clear(); pendingWaypoints.clear(); nextRetryAt = 0;
         recordedChunks.clear(); checkedChunks.clear(); recordedPearls.clear(); waypointPearls.clear(); createdWaypointPositions.clear(); warnedMissingChunks.clear();
@@ -424,7 +439,13 @@ public final class ContainerRecorderModule extends WaveXinModule {
         catch (IOException error) { WaveXinAddon.LOG.error("Could not migrate container records.", error); }
     }
 
+    public void setDebugMode(boolean enabled) {
+        debugMode = enabled;
+        if (enabled && isActive()) debugLog.open(true, mc.runDirectory.toPath());
+        else if (!enabled) debugLog.close();
+    }
+
     private void debug(String message, Object... arguments) {
-        if (debugMode.get()) WaveXinAddon.LOG.info("[ContainerRecorderDebug] " + message, arguments);
+        if (debugMode) debugLog.info(org.slf4j.helpers.MessageFormatter.arrayFormat(message, arguments).getMessage());
     }
 }

@@ -1,5 +1,14 @@
 # WaveXinAddon 1.21.1 兼容与代码审计实施计划
 
+## 2026-09-20：1.21.11 SNAPSHOT 新模块待同步事项
+
+先确认 1.21.11 SNAPSHOT 的实机行为，再开始 1.21.1 同步；本轮不修改 1.21.1 分支或发布版本。下文旧审计条目是历史记录，不表示当前 SNAPSHOT 仍存在同样问题。
+
+- EndBaseFinder 的 DPAPI 许可证文件路径、封装和标记应保持兼容。
+- 将当前 SNAPSHOT 的 EndBaseFinder 分批计算/固定中心/进度、独立 Container Recorder、诊断命令、更新检查、翻译及修复列为同步基线；分别验证旧设置恢复、扫描许可证、地图点持久性、临时路径点清理以及 Toast API。
+- 每个版本独立运行翻译与行为测试并构建版本专属 JAR；编译成功不能替代实机交互验证。
+- KillAura+ 的原版计时使用 `LivingEntity.ticksSinceLastAttack` accessor；回移前核对 1.21.1 映射、挥手数据包与转向时序，并保留独立于 EndBaseFinder 的本地许可证验证。
+
 ## 1. 目标与交付物
 
 目标不是让同一个 JAR 同时加载在 Minecraft 1.21.11 和 1.21.1，而是在同一个仓库中维护同一套功能，发布两个经过独立构建和测试的 JAR：
@@ -33,7 +42,7 @@ Minecraft、Yarn、Meteor 和 Mixin 内部 API 在两个版本之间存在差异
 - **Xaero 反射每次创建路径点都重新查类、构造器和方法**：这会产生额外开销，也让错误散落在 BaseFinder 内。应提取 `XaeroWaypointBridge`，首次使用时解析并缓存反射句柄；1.21.11 和 1.21.1 各自提供适配实现。
 - **核心 Mixin 对版本变化过于敏感**：`wavexin.mixins.json` 为 required，且包含 Meteor GUI 控件和 Minecraft 网络/移动方法注入。1.21.1 必须使用独立的 Mixin 配置和类，不能直接复用 1.21.11 target。
 - **Auto Login 有静默吞掉异常的位置**：部分 `catch (Exception ignored)` 会隐藏账号配置或界面状态识别失败。应记录不含密码的限频 debug/warn，并保留正常降级行为。
-- **未注册模块仍参与编译**：`CommandScannerXin` 和 `HighwayWalkerXin` 当前不在入口注册，但仍扩大每个 Minecraft 版本的移植面。1.21.1 初版应从版本构建中排除，确认要恢复后再单独适配。
+- **未注册模块仍参与编译**：`CommandScannerXin` 当前不在入口注册，但仍扩大每个 Minecraft 版本的移植面。1.21.1 初版应从版本构建中排除，确认要恢复后再单独适配。
 
 ### P2：结构优化
 
@@ -72,7 +81,6 @@ EasyAddon 只用于确认依赖组合、旧 API 名称和 1.21.1 行为入口。
 - ScanProgressManager 的数据模型与计算
 - Chat Filter 文本匹配
 - Auto Login 流程状态机与安全账号数据模型
-- Turtle Potion 的选择计划
 - i18n key、资源和行为测试
 
 版本适配层保留：
@@ -117,11 +125,10 @@ EasyAddon 只用于确认依赖组合、旧 API 名称和 1.21.1 行为入口。
 5. Better Elytra Fly
 6. Elytra Fly Path
 7. Chicken/Sniffer Nametags
-8. Turtle Potion Thrower
-9. Xaero waypoint integration
-10. 双语 ClickGUI UI Mixin
+8. Xaero waypoint integration
+9. 双语 ClickGUI UI Mixin
 
-`CommandScannerXin` 和 `HighwayWalkerXin` 不进入首个 1.21.1 发布包，因为它们没有注册为公开模块。
+`CommandScannerXin` 不进入首个 1.21.1 发布包，因为它没有注册为公开模块。
 
 ### Phase D：逐类处理版本差异
 
@@ -169,7 +176,6 @@ Release 同时上传两个 JAR，并在文件名和说明中明确版本。禁�
 - 随机 Xaero 路径点的聊天名称颜色与实际路径点一致，连续创建可得到不同随机颜色但每个单独路径点内部一致。
 - `Area Radius = 5`、`Waypoints per Area = 3` 为新配置默认值；旧配置不会被强制覆盖。
 - Auto Login 不打印或记录明文密码。
-- Turtle Potion Thrower 在副手、主手、快捷栏和背包 quick swap 四种场景都能恢复原槽位。
 - 启用/停用飞行或扫描模块后，前进键、冲刺、yaw/pitch 和库存状态不会残留。
 - 缺少 Xaero 时 Base Finder 仍可记录容器，且只关闭 Xaero 功能。
 - 中文和英文 key 集合完全一致，README 名称与 ClickGUI 名称一致。

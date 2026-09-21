@@ -1,6 +1,7 @@
 package me.waltom.wavexin.modules.autologin;
 
 import me.waltom.wavexin.WaveXinAddon;
+import me.waltom.wavexin.core.WaveXinDebugLog;
 import me.waltom.wavexin.core.WaveXinModule;
 import me.waltom.wavexin.core.WaveXinDataPaths;
 import me.waltom.wavexin.i18n.WaveXinI18n;
@@ -65,6 +66,7 @@ import javax.crypto.spec.SecretKeySpec;
  * License: MIT
  */
 public class AutoLogin extends WaveXinModule {
+    private final WaveXinDebugLog debugLog = new WaveXinDebugLog("AutoLogin");
     private static final MinecraftClient mc = MinecraftClient.getInstance();
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
     private static final Path CONFIG_DIRECTORY = WaveXinDataPaths.DIRECTORY;
@@ -157,6 +159,12 @@ public class AutoLogin extends WaveXinModule {
         .build()
     );
 
+    public void setDebugMode(boolean enabled) {
+        debugMode.set(enabled);
+        if (enabled && isActive()) debugLog.open(true, mc.runDirectory.toPath());
+        else if (!enabled) debugLog.close();
+    }
+
     public final Setting<AccountType> accountType = sgAccount.add(new EnumSetting.Builder<AccountType>()
         .name("Account Type")
         .description("Microsoft accounts do not use /l. Offline accounts use the saved password")
@@ -233,6 +241,8 @@ public class AutoLogin extends WaveXinModule {
 
     @Override
     public void onActivate() {
+        debugLog.open(debugMode.get(), mc.runDirectory.toPath());
+        if (debugMode.get()) debugLog.info("activation");
         serverChecked = false;
         targetServer = false;
         config = AutoLoginConfig.load();
@@ -246,7 +256,9 @@ public class AutoLogin extends WaveXinModule {
 
     @Override
     public void onDeactivate() {
+        if (debugMode.get()) debugLog.info("deactivation");
         resetConnectionState(LoginState.IDLE);
+        debugLog.close();
         pendingAnswer = null;
         pendingAnswerTicks = 0;
     }
@@ -860,7 +872,10 @@ public class AutoLogin extends WaveXinModule {
     }
 
     private void debugKey(String key, String fallback, Object... args) {
-        if (debugMode.get()) ChatUtils.info("[AutoLogin] " + WaveXinI18n.tr(key, fallback, args));
+        if (debugMode.get()) {
+            debugLog.info("state", "key", key);
+            ChatUtils.info("[AutoLogin] " + WaveXinI18n.tr(key, fallback, args));
+        }
     }
 
     private enum AccountType {

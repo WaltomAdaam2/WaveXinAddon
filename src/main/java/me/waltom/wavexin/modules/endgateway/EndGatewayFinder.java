@@ -3,7 +3,11 @@ package me.waltom.wavexin.modules.endgateway;
 import me.waltom.wavexin.WaveXinAddon;
 import me.waltom.wavexin.core.WaveXinDataPaths;
 import me.waltom.wavexin.core.WaveXinModule;
+import me.waltom.wavexin.core.WaveXinSettingsStore;
+import me.waltom.wavexin.core.WaveXinDebugLog;
 import me.waltom.wavexin.i18n.WaveXinI18n;
+import me.waltom.wavexin.gui.TargetCoordinateSetting;
+import me.waltom.wavexin.gui.LockedBoolSetting;
 import me.waltom.wavexin.modules.NavigationModuleControl;
 import me.waltom.wavexin.modules.containerrecorder.ContainerRecorderModule;
 import meteordevelopment.meteorclient.events.render.Render3DEvent;
@@ -49,17 +53,28 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.PriorityQueue;
+import it.unimi.dsi.fastutil.ints.IntArrayList;
+import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.Set;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
+import java.util.function.BooleanSupplier;
 import java.util.function.LongPredicate;
 
 /** Locally predicts and visits vanilla End return gateways for the configured seed. */
 public final class EndGatewayFinder extends WaveXinModule {
+    private final WaveXinDebugLog debugLog = new WaveXinDebugLog("EndBaseFinder");
     static final int TILE_SIZE_CHUNKS = 32;
     static final int TILE_SIZE_BLOCKS = TILE_SIZE_CHUNKS * 16;
     static final int PREFETCH_DISTANCE_BLOCKS = 100;
     static final int DEFAULT_ROLLING_RADIUS_CHUNKS = 1000;
+    static final int DEFAULT_CALCULATION_BATCH_CHUNKS = 3_000_000;
+    static final int MIN_CALCULATION_BATCH_CHUNKS = 1_000_000;
+    static final int MAX_CALCULATION_BATCH_CHUNKS = 100_000_000;
+    private static final int PREFETCH_REMAINING_GATEWAYS = 10;
     private static final int BATCH_SIZE_TILES = 32;
     private static final int ROUTE_WINDOW_SIZE = 256;
     private static final long PROGRESS_UPDATE_INTERVAL_MS = 1000L;
@@ -67,6 +82,16 @@ public final class EndGatewayFinder extends WaveXinModule {
 
     private final SettingGroup sgGeneral = settings.getDefaultGroup();
     private final SettingGroup sgRender = settings.createGroup("Render");
+    private final Setting<Boolean> fixedScanCenter = sgGeneral.add(new LockedBoolSetting("Fixed Scan Center",
+        "Scan around the configured center. Disable the module before changing this setting.", this::isActive, this::centerLockedNotice));
+    private final Setting<Integer> centerX = sgGeneral.add(new TargetCoordinateSetting.Builder().name("Center X")
+        .description("Fixed scan center X in blocks. Disable the module before editing.").defaultValue(0)
+        .min(-30000000).max(30000000).sliderMin(-30000000).sliderMax(30000000)
+        .visible(fixedScanCenter::get).build().lockWhile(this::isActive, this::centerLockedNotice));
+    private final Setting<Integer> centerZ = sgGeneral.add(new TargetCoordinateSetting.Builder().name("Center Z")
+        .description("Fixed scan center Z in blocks. Disable the module before editing.").defaultValue(0)
+        .min(-30000000).max(30000000).sliderMin(-30000000).sliderMax(30000000)
+        .visible(fixedScanCenter::get).build().lockWhile(this::isActive, this::centerLockedNotice));
     private final Setting<String> worldSeed = sgGeneral.add(new StringSetting.Builder().name("World Seed")
         .description("World seed used to predict End return gateways locally.").defaultValue("3763250021837776656").build());
     private final Setting<GenerationVersion> generationVersion = sgGeneral.add(new EnumSetting.Builder<GenerationVersion>().name("Generation Version")
@@ -74,6 +99,9 @@ public final class EndGatewayFinder extends WaveXinModule {
     private final Setting<Integer> rollingRadiusChunks = sgGeneral.add(new IntSetting.Builder().name("Rolling Radius (Chunks)")
         .description("Circular scan radius in chunks. Results are cached for this game session.")
         .defaultValue(DEFAULT_ROLLING_RADIUS_CHUNKS).min(8).max(100000).sliderMax(100000).build());
+    private final Setting<Integer> calculationBatchChunks = sgGeneral.add(new IntSetting.Builder().name("Calculation Batch (Chunks)")
+        .description("Maximum chunks calculated in one background batch. Full 32x32 chunk tiles are used.")
+        .defaultValue(DEFAULT_CALCULATION_BATCH_CHUNKS).min(MIN_CALCULATION_BATCH_CHUNKS).max(MAX_CALCULATION_BATCH_CHUNKS).sliderMax(MAX_CALCULATION_BATCH_CHUNKS).build());
     private final Setting<Double> arrivalDistance = sgGeneral.add(new DoubleSetting.Builder().name("Arrival Distance")
         .defaultValue(16.0).min(1.0).max(128.0).build());
     private final Setting<Boolean> autoLook = sgGeneral.add(new BoolSetting.Builder().name("Auto Look").defaultValue(true).build());
@@ -99,10 +127,23 @@ public final class EndGatewayFinder extends WaveXinModule {
     private final ContainerRecorderModule containerRecorder;
 
     private final Object cacheLock = new Object();
+    private final ExecutorService scanExecutor = Executors.newSingleThreadExecutor(task -> {
+        Thread thread = new Thread(task, "wavexin-end-gateway-scan");
+        thread.setDaemon(true);
+        return thread;
+    });
+    // Used only by the serial scan worker; these generators contain no live world state.
+    private ScanContext workerContext;
+    private long workerSeed;
+    // The serial worker retains this cursor between batches so it never walks old tiles again.
+    private TileScheduler workerScheduler;
+    private int workerSchedulerRevision = -1;
     private final Set<Long> completedTiles = new HashSet<>();
     private final Set<Long> activeCompletedTiles = new HashSet<>();
     private final Map<Long, List<Gateway>> cachedGateways = new HashMap<>();
     private final List<Gateway> gateways = new ArrayList<>();
+    private final GatewayRenderIndex renderIndex = new GatewayRenderIndex();
+    private final IntArrayList visibleGateways = new IntArrayList();
     private final Set<Gateway> activeGatewaySet = new HashSet<>();
     private final Set<Gateway> visited = new HashSet<>();
     private List<Integer> route = List.of();
@@ -112,6 +153,9 @@ public final class EndGatewayFinder extends WaveXinModule {
     private volatile int rollingCenterX;
     private volatile int rollingCenterZ;
     private volatile int activeRadiusChunks;
+    private boolean activeFixedCenter;
+    private int activeCenterX, activeCenterZ;
+    private long lastCenterLockedNotice;
     private volatile boolean scanning;
     private volatile int runningGeneration = -1;
     private long completedViewTiles;
@@ -123,6 +167,7 @@ public final class EndGatewayFinder extends WaveXinModule {
     private boolean forcingForward;
     private boolean containerRecorderRequested;
     private boolean activationRejected;
+    private boolean debugMode;
     private long activeSeed;
     private GenerationVersion activeGenerationVersion;
     private ClientWorld activeWorld;
@@ -135,8 +180,16 @@ public final class EndGatewayFinder extends WaveXinModule {
         this.containerRecorder = containerRecorder;
     }
 
+    public void setDebugMode(boolean enabled) {
+        debugMode = enabled;
+        if (enabled && isActive()) debugLog.open(true, mc.runDirectory.toPath());
+        else if (!enabled) debugLog.close();
+    }
+
     @Override
     public void onActivate() {
+        debugLog.open(debugMode, mc.runDirectory.toPath());
+        if (debugMode) debugLog.info("activation", "position", mc.player == null ? "no-player" : mc.player.getBlockPos());
         if (NavigationModuleControl.reportConflictingActivation(this)) {
             activationRejected = true;
             toggle();
@@ -145,13 +198,14 @@ public final class EndGatewayFinder extends WaveXinModule {
         activationRejected = false;
         if (mc.player == null || mc.world == null) return;
         if (!mc.world.getRegistryKey().equals(World.END)) {
-            error("EndBaseFinder can only run in The End.");
+            errorKey("error.wavexin.end_gateway_finder.wrong_dimension", "EndBaseFinder can only run in The End.");
             toggle();
             return;
         }
         NavigationModuleControl.suppressMovementInput();
 
         gateways.clear();
+        renderIndex.clear();
         activeGatewaySet.clear();
         visited.clear();
         route = List.of();
@@ -166,13 +220,18 @@ public final class EndGatewayFinder extends WaveXinModule {
         ensureSessionCache(activeWorld, activeSeed, activeGenerationVersion);
         loadVisited();
 
+        activeFixedCenter = fixedScanCenter.get();
+        activeCenterX = centerX.get();
+        activeCenterZ = centerZ.get();
         containerRecorderRequested = startContainerRecorder.get();
         if (containerRecorderRequested) containerRecorder.startForScan(this);
-        configureRollingView(mc.player.getBlockX(), mc.player.getBlockZ(), rollingRadiusChunks.get(), false);
+        configureInitialView(rollingRadiusChunks.get());
     }
 
     @Override
     public void onDeactivate() {
+        if (debugMode) debugLog.info("deactivation", "gateways", gateways.size(), "visited", visited.size());
+        debugLog.close();
         if (activationRejected) {
             activationRejected = false;
             return;
@@ -192,7 +251,7 @@ public final class EndGatewayFinder extends WaveXinModule {
     private void onTick(TickEvent.Pre event) {
         if (mc.player == null || mc.world == null) return;
         if (!mc.world.getRegistryKey().equals(World.END)) {
-            error("EndBaseFinder can only run in The End.");
+            errorKey("error.wavexin.end_gateway_finder.wrong_dimension", "EndBaseFinder can only run in The End.");
             toggle();
             return;
         }
@@ -221,6 +280,7 @@ public final class EndGatewayFinder extends WaveXinModule {
                 if (visited.add(gateway)) {
                     arrivalNumber = ++arrivedCount;
                     saveVisited();
+                    showScanToast(currentScanState(), true);
                 }
                 releaseForward();
                 target = -1;
@@ -250,10 +310,10 @@ public final class EndGatewayFinder extends WaveXinModule {
             ensureSessionCache(activeWorld, activeSeed, activeGenerationVersion);
             visited.clear();
             loadVisited();
-            configureRollingView(mc.player.getBlockX(), mc.player.getBlockZ(), radius, false);
+            configureInitialView(radius);
         } else if (radius != activeRadiusChunks) {
-            configureRollingView(mc.player.getBlockX(), mc.player.getBlockZ(), radius, false);
-        } else if (shouldAdvanceView(rollingCenterX, rollingCenterZ, activeRadiusChunks, mc.player.getBlockX(), mc.player.getBlockZ())) {
+            configureInitialView(radius);
+        } else if (shouldAdvanceView(activeFixedCenter, rollingCenterX, rollingCenterZ, activeRadiusChunks, mc.player.getBlockX(), mc.player.getBlockZ())) {
             configureRollingView(mc.player.getBlockX(), mc.player.getBlockZ(), radius, true);
         }
     }
@@ -269,11 +329,31 @@ public final class EndGatewayFinder extends WaveXinModule {
         }
     }
 
+    private void centerLockedNotice() {
+        long now = System.currentTimeMillis();
+        if (now - lastCenterLockedNotice < 1000) return;
+        lastCenterLockedNotice = now;
+        info(WaveXinI18n.tr("message.wavexin.end_gateway_finder.center_locked", "Disable the module before changing the scan center."));
+    }
+
+    private void configureInitialView(int radius) {
+        configureRollingView(scanCenterCoordinate(activeFixedCenter, activeCenterX, mc.player.getBlockX()),
+            scanCenterCoordinate(activeFixedCenter, activeCenterZ, mc.player.getBlockZ()), radius, false);
+    }
+
+    static int scanCenterCoordinate(boolean fixed, int configured, int player) {
+        return fixed ? configured : player;
+    }
+
     private void configureRollingView(int centerX, int centerZ, int radiusChunks, boolean nextArea) {
-        rollingCenterX = centerX;
-        rollingCenterZ = centerZ;
-        activeRadiusChunks = radiusChunks;
-        scanRevision++;
+        synchronized (cacheLock) {
+            rollingCenterX = centerX;
+            rollingCenterZ = centerZ;
+            activeRadiusChunks = radiusChunks;
+            scanRevision++;
+        }
+        arrivedCount = countVisitedGateways(visited, centerX, centerZ, radiusChunks, activeGenerationVersion);
+        if (pendingArrivalNumber > 0) pendingArrivalNumber = arrivedCount;
         totalViewTiles = countTilesInCircle(centerX, centerZ, radiusChunks);
         completedViewTiles = countCompletedTilesInView(centerX, centerZ, radiusChunks);
         rebuildActiveGateways();
@@ -285,70 +365,88 @@ public final class EndGatewayFinder extends WaveXinModule {
     private void startScanWorker(int generation, long seed, GenerationVersion version) {
         if (!scanning || runningGeneration == generation) return;
         runningGeneration = generation;
-        Thread thread = new Thread(() -> runScanWorker(generation, seed, version), "wavexin-end-gateway-scan");
-        thread.setDaemon(true);
-        thread.start();
+        int tileBudget = calculationTileBudget(calculationBatchChunks.get());
+        scanExecutor.execute(() -> runScanWorker(generation, seed, version, tileBudget));
     }
 
-    private void runScanWorker(int generation, long seed, GenerationVersion version) {
+    private void runScanWorker(int generation, long seed, GenerationVersion version, int tileBudget) {
         try {
-            ScanContext context = new ScanContext(seed);
+            if (generation != scanGeneration) return;
+            if (workerContext == null || workerSeed != seed) {
+                workerContext = new ScanContext(seed);
+                workerSeed = seed;
+            }
+            ScanContext context = workerContext;
             int revision = -1;
-            TileScheduler scheduler = null;
+            int calculatedTiles = 0;
             List<TileResult> batch = new ArrayList<>();
             long lastUpdate = System.currentTimeMillis();
 
-            while (isActive() && generation == scanGeneration) {
+            while (generation == scanGeneration) {
                 int currentRevision = scanRevision;
                 if (revision != currentRevision) {
-                    postBatch(generation, revision, batch, false, null);
+                    postBatch(generation, revision, batch, false, false, null);
                     batch = new ArrayList<>();
                     revision = currentRevision;
-                    scheduler = new TileScheduler(rollingCenterX, rollingCenterZ, activeRadiusChunks);
+                    synchronized (cacheLock) {
+                        revision = scanRevision;
+                        if (workerSchedulerRevision != revision) {
+                            workerScheduler = new TileScheduler(rollingCenterX, rollingCenterZ, activeRadiusChunks);
+                            workerSchedulerRevision = revision;
+                        }
+                    }
+                    calculatedTiles = 0;
                 }
 
-                Tile tile = scheduler.next(this::isTileCached);
+                if (calculatedTiles >= tileBudget) {
+                    postBatch(generation, revision, batch, false, true, null);
+                    return;
+                }
+                Tile tile = workerScheduler.next(this::isTileCached, () -> generation != scanGeneration);
                 if (tile == null) {
-                    postBatch(generation, revision, batch, true, null);
-                    if (revision == scanRevision) scanning = false;
+                    postBatch(generation, revision, batch, true, false, null);
                     return;
                 }
 
                 List<Gateway> result = scanTile(seed, version, context, tile);
-                if (!isActive() || generation != scanGeneration) return;
+                if (generation != scanGeneration) return;
                 long key = pack(tile.x, tile.z);
                 boolean added;
                 synchronized (cacheLock) {
+                    // Cache replacement and stale-result rejection share the same lock.
+                    if (generation != scanGeneration || cachedSeed != seed || cachedGenerationVersion != version) return;
                     added = completedTiles.add(key);
                     if (added && !result.isEmpty()) cachedGateways.put(key, result);
                 }
                 if (!added) continue;
 
+                calculatedTiles++;
                 batch.add(new TileResult(tile, result));
                 long now = System.currentTimeMillis();
                 if (batch.size() >= BATCH_SIZE_TILES || now - lastUpdate >= PROGRESS_UPDATE_INTERVAL_MS) {
-                    postBatch(generation, revision, batch, false, null);
+                    postBatch(generation, revision, batch, false, false, null);
                     batch = new ArrayList<>();
                     lastUpdate = now;
                 }
             }
         } catch (RuntimeException failure) {
-            postBatch(generation, scanRevision, List.of(), false, failure);
+            postBatch(generation, scanRevision, List.of(), false, false, failure);
         } finally {
-            if (runningGeneration == generation) runningGeneration = -1;
+            // Process the final batch before allowing a replacement worker to start.
+            mc.execute(() -> { if (runningGeneration == generation) runningGeneration = -1; });
         }
     }
 
-    private void postBatch(int generation, int revision, List<TileResult> results, boolean complete, RuntimeException failure) {
+    private void postBatch(int generation, int revision, List<TileResult> results, boolean rangeComplete, boolean batchComplete, RuntimeException failure) {
         List<TileResult> copy = results.isEmpty() ? List.of() : List.copyOf(results);
-        mc.execute(() -> applyBatch(generation, revision, copy, complete, failure));
+        mc.execute(() -> applyBatch(generation, revision, copy, rangeComplete, batchComplete, failure));
     }
 
-    private void applyBatch(int generation, int revision, List<TileResult> results, boolean complete, RuntimeException failure) {
+    private void applyBatch(int generation, int revision, List<TileResult> results, boolean rangeComplete, boolean batchComplete, RuntimeException failure) {
         if (!isActive() || generation != scanGeneration) return;
         if (failure != null) {
             scanning = false;
-            error("Gateway scan failed: %s", failure.getMessage());
+            errorKey("error.wavexin.end_gateway_finder.scan_failed", "Gateway scan failed: %s", failure.getMessage());
             showScanToast(ScanState.FAILED, true);
             releaseContainerRecorder();
             toggle();
@@ -362,16 +460,21 @@ public final class EndGatewayFinder extends WaveXinModule {
                 && activeCompletedTiles.add(tileKey)) completedViewTiles = activeCompletedTiles.size();
             for (Gateway gateway : result.gateways) {
                 if (!gatewayInsideView(gateway) || !activeGatewaySet.add(gateway)) continue;
+                renderIndex.add(gateways.size(), gateway);
                 gateways.add(gateway);
                 addedGateway = true;
             }
         }
 
         if (target < 0 && addedGateway && stayUntil == 0) nextTarget();
-        if (complete && revision == scanRevision) {
+        if (rangeComplete && revision == scanRevision) {
             scanning = false;
             completedViewTiles = Math.min(completedViewTiles, totalViewTiles);
             showScanToast(ScanState.COMPLETE, true);
+        } else if (batchComplete && revision == scanRevision) {
+            scanning = false;
+            showScanToast(ScanState.QUEUED, true);
+            requestNextBatchIfNeeded();
         } else if (!results.isEmpty()) {
             showScanToast(ScanState.SCANNING, false);
         }
@@ -407,10 +510,12 @@ public final class EndGatewayFinder extends WaveXinModule {
             .thenComparingInt(gateway -> gateway.z >> 4).thenComparingInt(gateway -> gateway.x >> 4).thenComparing(gateway -> gateway.version));
         gateways.clear();
         gateways.addAll(rebuilt);
+        renderIndex.clear();
+        for (int i = 0; i < gateways.size(); i++) renderIndex.add(i, gateways.get(i));
         activeGatewaySet.clear();
         activeGatewaySet.addAll(rebuilt);
         target = current == null ? -1 : gateways.indexOf(current);
-        if (stayUntil == 0 && (target < 0 || visited.contains(gateways.get(target)))) nextTarget();
+        if (stayUntil == 0 && (target < 0 || visited.contains(gateways.get(target)))) nextTarget(arrivedCount);
     }
 
     private boolean gatewayInsideView(Gateway gateway) {
@@ -433,6 +538,7 @@ public final class EndGatewayFinder extends WaveXinModule {
             target = -1;
             releaseForward();
             if (arrivalNumber > 0) info(arrivalMessage(arrivalNumber, null));
+            requestNextBatchIfNeeded();
             return;
         }
         int next = route.getFirst();
@@ -441,12 +547,38 @@ public final class EndGatewayFinder extends WaveXinModule {
         Gateway gateway = gateways.get(target);
         if (arrivalNumber > 0) info(arrivalMessage(arrivalNumber, gateway));
         else info("-> (%d, %d)", gateway.x, gateway.z);
+        requestNextBatchIfNeeded();
+    }
+
+    private void requestNextBatchIfNeeded() {
+        if (!shouldQueueNextBatch(unvisitedGatewayCount(), scanning, completedViewTiles, totalViewTiles)) return;
+        scanning = true;
+        showScanToast(ScanState.SCANNING, true);
+        if (runningGeneration != scanGeneration) startScanWorker(scanGeneration, activeSeed, activeGenerationVersion);
+    }
+
+    private int unvisitedGatewayCount() {
+        int count = 0;
+        for (Gateway gateway : gateways) if (!visited.contains(gateway)) count++;
+        return count;
+    }
+
+    static int calculationTileBudget(int chunks) {
+        return Math.max(1, chunks / (TILE_SIZE_CHUNKS * TILE_SIZE_CHUNKS));
+    }
+
+    static boolean shouldQueueNextBatch(int unvisitedGateways, boolean scanning, long completedTiles, long totalTiles) {
+        return !scanning && completedTiles < totalTiles && unvisitedGateways <= PREFETCH_REMAINING_GATEWAYS;
+    }
+
+    private ScanState currentScanState() {
+        return scanning ? ScanState.SCANNING : completedViewTiles >= totalViewTiles ? ScanState.COMPLETE : ScanState.QUEUED;
     }
 
     static String arrivalMessage(int arrivalNumber, Gateway next) {
         return next == null
-            ? "Arrived at #%d".formatted(arrivalNumber)
-            : "Arrived at #%d -> (%d, %d)".formatted(arrivalNumber, next.x, next.z);
+            ? WaveXinI18n.tr("message.wavexin.end_gateway_finder.arrived", "Arrived at #%d", arrivalNumber)
+            : WaveXinI18n.tr("message.wavexin.end_gateway_finder.arrived_next", "Arrived at #%d -> (%d, %d)", arrivalNumber, next.x, next.z);
     }
 
     private void moveToTarget() {
@@ -492,28 +624,47 @@ public final class EndGatewayFinder extends WaveXinModule {
         String stateText = switch (state) {
             case SCANNING -> WaveXinI18n.tr("status.wavexin.end_gateway_finder.scanning", "Scanning");
             case NEXT_AREA -> WaveXinI18n.tr("status.wavexin.end_gateway_finder.next_area", "Scanning next area");
+            case QUEUED -> WaveXinI18n.tr("status.wavexin.end_gateway_finder.queued", "Queued");
             case COMPLETE -> WaveXinI18n.tr("status.wavexin.end_gateway_finder.complete", "Complete");
             case FAILED -> WaveXinI18n.tr("status.wavexin.end_gateway_finder.failed", "Failed");
         };
-        SystemToast.show(mc.getToastManager(), SCAN_TOAST_TYPE,
-            Text.literal(WaveXinI18n.tr("message.wavexin.end_gateway_finder.scan_toast_title", "End Gateway Scan - %s", stateText)),
-            Text.literal(WaveXinI18n.tr("message.wavexin.end_gateway_finder.scan_toast_progress", "%d/%d chunks (%d%%)", completedChunks, totalChunks, percent)
-                + "\n" + WaveXinI18n.tr("message.wavexin.end_gateway_finder.scan_toast_gateways", "Gateways: %d", gateways.size())));
+        Text title = Text.literal(WaveXinI18n.tr("message.wavexin.end_gateway_finder.scan_toast_title", "End Gateway Scan - %s", stateText));
+        Text description = Text.literal(WaveXinI18n.tr("message.wavexin.end_gateway_finder.scan_toast_progress", "%d/%d chunks (%d%%)", completedChunks, totalChunks, percent)
+            + "\n" + WaveXinI18n.tr("message.wavexin.end_gateway_finder.scan_toast_gateways", "Gateways: %d/%d (%d%%)", arrivedCount, gateways.size(), gatewayProgressPercent(arrivedCount, gateways.size())));
+        ScanProgressToast toast = mc.getToastManager().getToast(ScanProgressToast.class, SCAN_TOAST_TYPE);
+        if (toast == null) mc.getToastManager().add(new ScanProgressToast(mc, SCAN_TOAST_TYPE, title, description));
+        else toast.setContent(mc, title, description);
+    }
+
+    static int countVisitedGateways(Set<Gateway> visited, int centerX, int centerZ, int radiusChunks, GenerationVersion version) {
+        long radius = (long) radiusChunks * 16;
+        int count = 0;
+        for (Gateway gateway : visited) {
+            if (version != GenerationVersion.BOTH && gateway.version != version) continue;
+            long dx = (long) gateway.x - centerX;
+            long dz = (long) gateway.z - centerZ;
+            if (dx * dx + dz * dz <= radius * radius) count++;
+        }
+        return count;
+    }
+
+    static long gatewayProgressPercent(long completed, long total) {
+        return total == 0 ? completed > 0 ? 100 : 0 : Math.min(100, completed * 100 / total);
     }
 
     private void hideScanToast() {
-        if (mc != null) SystemToast.hide(mc.getToastManager(), SCAN_TOAST_TYPE);
+        if (mc == null) return;
+        ScanProgressToast toast = mc.getToastManager().getToast(ScanProgressToast.class, SCAN_TOAST_TYPE);
+        if (toast != null) toast.hide();
     }
 
     @EventHandler
     private void onRender(Render3DEvent event) {
         if (mc.player == null) return;
-        double maximum = (double) renderDistance.get() * renderDistance.get();
-        for (int i = 0; i < gateways.size(); i++) {
+        renderIndex.collect(gateways, mc.player.getX(), mc.player.getZ(), renderDistance.get(), visibleGateways);
+        for (int index = 0; index < visibleGateways.size(); index++) {
+            int i = visibleGateways.getInt(index);
             Gateway gateway = gateways.get(i);
-            double dx = gateway.x - mc.player.getX();
-            double dz = gateway.z - mc.player.getZ();
-            if (dx * dx + dz * dz > maximum) continue;
             boolean isTarget = i == target;
             boolean isVisited = visited.contains(gateway);
             SettingColor side = isTarget ? targetColor.get() : isVisited ? visitedColor.get() : gateway.version == GenerationVersion.V1_12 ? legacyGatewayColor.get() : modernGatewayColor.get();
@@ -610,9 +761,21 @@ public final class EndGatewayFinder extends WaveXinModule {
     }
 
     static List<Integer> nearestWindow(List<Gateway> gateways, List<Integer> candidates, double playerX, double playerZ, int maximum) {
-        List<Integer> window = new ArrayList<>(candidates);
-        window.sort(Comparator.comparingDouble(index -> squared(gateways.get(index).x + .5, gateways.get(index).z + .5, playerX, playerZ)));
-        return window.size() <= maximum ? window : new ArrayList<>(window.subList(0, maximum));
+        if (maximum <= 0) return List.of();
+        // Candidate positions preserve the old stable ordering for equal distances.
+        Comparator<Integer> order = Comparator.<Integer>comparingDouble(position -> {
+            Gateway gateway = gateways.get(candidates.get(position));
+            return squared(gateway.x + .5, gateway.z + .5, playerX, playerZ);
+        }).thenComparingInt(position -> position);
+        PriorityQueue<Integer> nearest = new PriorityQueue<>(Math.min(maximum, Math.max(1, candidates.size())), order.reversed());
+        for (int i = 0; i < candidates.size(); i++) {
+            if (nearest.size() < maximum) nearest.add(i);
+            else if (order.compare(i, nearest.peek()) < 0) { nearest.poll(); nearest.add(i); }
+        }
+        List<Integer> window = new ArrayList<>(nearest);
+        window.sort(order);
+        window.replaceAll(candidates::get);
+        return window;
     }
 
     static List<Integer> route(List<Gateway> gateways, List<Integer> candidates, double playerX, double playerZ, PathAlgorithm algorithm) {
@@ -654,14 +817,20 @@ public final class EndGatewayFinder extends WaveXinModule {
             if (distance > furthest) { furthest = distance; first = candidate; }
         }
         result.add(first);
+        boolean[] inserted = new boolean[candidates.size()];
+        double[] nearestDistances = new double[candidates.size()];
+        for (int i = 0; i < candidates.size(); i++) {
+            inserted[i] = candidates.get(i) == first;
+            nearestDistances[i] = distance(gateways.get(candidates.get(i)), gateways.get(first));
+        }
         while (result.size() < candidates.size()) {
             int selected = -1;
+            int selectedPosition = -1;
             double selectedDistance = -1;
-            for (int candidate : candidates) {
-                if (result.contains(candidate)) continue;
-                double nearest = Double.POSITIVE_INFINITY;
-                for (int current : result) nearest = Math.min(nearest, distance(gateways.get(candidate), gateways.get(current)));
-                if (nearest > selectedDistance) { selectedDistance = nearest; selected = candidate; }
+            for (int i = 0; i < candidates.size(); i++) {
+                if (!inserted[i] && nearestDistances[i] > selectedDistance) {
+                    selectedDistance = nearestDistances[i]; selected = candidates.get(i); selectedPosition = i;
+                }
             }
             int insertion = 0;
             double increase = distance(gateways.get(selected), gateways.get(result.getFirst()));
@@ -671,6 +840,10 @@ public final class EndGatewayFinder extends WaveXinModule {
             }
             if (distance(gateways.get(result.getLast()), gateways.get(selected)) < increase) insertion = result.size();
             result.add(insertion, selected);
+            inserted[selectedPosition] = true;
+            for (int i = 0; i < candidates.size(); i++) if (!inserted[i]) {
+                nearestDistances[i] = Math.min(nearestDistances[i], distance(gateways.get(candidates.get(i)), gateways.get(selected)));
+            }
         }
         return result;
     }
@@ -708,14 +881,18 @@ public final class EndGatewayFinder extends WaveXinModule {
         StringBuilder output = new StringBuilder("# End Return Gateways v2\n");
         for (Gateway gateway : visited) output.append(gateway.version.name()).append(',').append(gateway.x).append(',').append(gateway.z).append('\n');
         try {
-            Files.createDirectories(visitedPath.getParent());
-            Files.writeString(visitedPath, output, StandardCharsets.UTF_8);
+            WaveXinSettingsStore.writeAtomically(visitedPath, output.toString());
         } catch (IOException ignored) {
             WaveXinAddon.LOG.warn("Could not save End gateway visit history.");
         }
     }
 
     static boolean shouldAdvanceView(int centerX, int centerZ, int radiusChunks, int playerX, int playerZ) {
+        return shouldAdvanceView(false, centerX, centerZ, radiusChunks, playerX, playerZ);
+    }
+
+    static boolean shouldAdvanceView(boolean fixed, int centerX, int centerZ, int radiusChunks, int playerX, int playerZ) {
+        if (fixed) return false;
         long threshold = Math.max(0L, (long) radiusChunks * 16L - PREFETCH_DISTANCE_BLOCKS);
         long dx = (long) playerX - centerX;
         long dz = (long) playerZ - centerZ;
@@ -815,7 +992,11 @@ public final class EndGatewayFinder extends WaveXinModule {
         }
 
         Tile next(LongPredicate cached) {
-            while (ring <= maximumRing) {
+            return next(cached, () -> false);
+        }
+
+        Tile next(LongPredicate cached, BooleanSupplier cancelled) {
+            while (ring <= maximumRing && !cancelled.getAsBoolean()) {
                 if (position >= currentRing.size()) {
                     currentRing = createRing(ring++);
                     position = 0;
@@ -854,9 +1035,40 @@ public final class EndGatewayFinder extends WaveXinModule {
     }
 
     enum ScanShape { CIRCLE, SQUARE }
+    /** Main-thread render lookup; preserves the original draw order within the radius. */
+    static final class GatewayRenderIndex {
+        private final Long2ObjectOpenHashMap<IntArrayList> tiles = new Long2ObjectOpenHashMap<>();
+
+        void clear() { tiles.clear(); }
+
+        void add(int index, Gateway gateway) {
+            long key = pack(Math.floorDiv(gateway.x, TILE_SIZE_BLOCKS), Math.floorDiv(gateway.z, TILE_SIZE_BLOCKS));
+            tiles.computeIfAbsent(key, ignored -> new IntArrayList()).add(index);
+        }
+
+        void collect(List<Gateway> gateways, double x, double z, int radius, IntArrayList result) {
+            result.clear();
+            int minX = (int) Math.floor((x - radius) / TILE_SIZE_BLOCKS);
+            int maxX = (int) Math.floor((x + radius) / TILE_SIZE_BLOCKS);
+            int minZ = (int) Math.floor((z - radius) / TILE_SIZE_BLOCKS);
+            int maxZ = (int) Math.floor((z + radius) / TILE_SIZE_BLOCKS);
+            double maximum = (double) radius * radius;
+            for (int tx = minX; tx <= maxX; tx++) for (int tz = minZ; tz <= maxZ; tz++) {
+                IntArrayList nearby = tiles.get(pack(tx, tz));
+                if (nearby == null) continue;
+                for (int i = 0; i < nearby.size(); i++) {
+                    int index = nearby.getInt(i);
+                    Gateway gateway = gateways.get(index);
+                    if (squared(gateway.x, gateway.z, x, z) <= maximum) result.add(index);
+                }
+            }
+            result.sort((it.unimi.dsi.fastutil.ints.IntComparator) null);
+        }
+    }
+
     enum GenerationVersion { V1_12, V1_20_4, BOTH }
     enum PathAlgorithm { NEAREST_NEIGHBOR, TSP, SCAN_ORDER, RANDOM }
-    private enum ScanState { SCANNING, NEXT_AREA, COMPLETE, FAILED }
+    private enum ScanState { SCANNING, NEXT_AREA, QUEUED, COMPLETE, FAILED }
     record Gateway(int x, int z, GenerationVersion version) {
         Gateway(int x, int z) { this(x, z, GenerationVersion.V1_20_4); }
     }

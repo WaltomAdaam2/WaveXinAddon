@@ -1,5 +1,10 @@
 # WaveXinAddon Feature Logic Guide
 
+## New 1.21.11 SNAPSHOT modules
+
+- **KillAura+:** An activation-controlled adaptation of [Alienv4 Aura (e443c5b)](https://github.com/RageCat420/AlienClient-OpenSource/blob/e443c5bc499af722429d311333d10377623d6f9b/src/main/java/dev/luminous/mod/modules/impl/combat/Aura.java), with a license independent of EndBaseFinder. Defaults to attack range 6, candidate search range 8, wall range 6, and cooldown progress 1.1; search range does not extend attack range. Retains entity/friend filtering, low-armor priority, delay/vanilla timers, TPS scaling, yaw steps, FOV gating, and swing choices, without mace logic or an Alien runtime dependency.
+- **KillAura+ rendering:** Provides fills, boxes, animated rings, hit colors, and easing curves. The original ThunderHack display is adapted as a Meteor 3D target cross, not a pixel-identical shader recreation, and is labeled accordingly. Rotation callbacks recheck the active module, world, target, and range before attacking.
+
 This page describes implementation details and notable behavior for the public ClickGUI modules. It is not a complete settings reference; the in-game module settings remain authoritative.
 
 ### Better Elytra Fly
@@ -40,13 +45,6 @@ This page describes implementation details and notable behavior for the public C
 - `Hide Death Messages` uses plain death-announcement format matching, including suicide, bed/firework/TNT self-explosions, ender-pearl deaths, world-border suicide, environmental deaths, player kills, shots, fireballs, suffocation, falling objects, cliff or void pushes, and common Chinese/English server formats. It no longer depends on color pairs, so other colored server messages are not hidden by that rule.
 - Public chat is recognized only through the verified single-line `<player> message` structure. `player: message`, command help, player lookup output, plugin status output, server announcements, and MSG private messages are not filtered as public chat. `Show Own Public Messages` is enabled by default and compares both the account name and the display name after formatting/prefix stripping.
 
-### Turtle Potion Thrower
-
-- The module is triggered by Meteor's built-in Bind. Pressing the bind throws once and then automatically disables the module instead of leaving a persistent listener active.
-- It only searches for splash turtle potions, accepting normal, long, and strong Turtle Master variants. Drinkable potions and other splash potions are ignored.
-- `Quick Swap` is enabled by default. If the target potion is already in the offhand or main hand, that hand is used directly. If it is in inventory, it is temporarily swapped into the selected hotbar slot, thrown with the normal right-click interaction, then swapped back from a `finally` block using Meteor's original quick swap flow.
-- With `Quick Swap` disabled, only offhand, main-hand, or hotbar potions are used; temporary hotbar swaps restore the locally captured selected slot from a `finally` block and do not depend on Meteor's shared `swapBack()` state. Missing potions, failed swaps, rejected interactions, and restore failures always write warn-level game-log details. `Notify` only controls whether the normal WaveXin warning chat message is also shown.
-
 ### Container Recorder
 
 - Container Recorder is an independent persistent module. It checks loaded chunks within its `Scan Radius` around the player (default: 4 chunks) and records a coordinate and count only when the selected container types meet `Container Threshold`.
@@ -80,7 +78,7 @@ This page describes implementation details and notable behavior for the public C
 - Build materials are searched from left to right in the hotbar first. With `Allow Inventory Pull`, a full stack is moved from inventory only when the hotbar has none of the required material, following inventory order from left to right and top to bottom instead of performing a temporary swap for every placement.
 - `.sel`, `.sel 1`, and `.sel 2` select the restock cuboid; `.sel c` clears both corners, its renderer, and region-bound container cache. Restock demand comes from the active Litematica layer/range or the currently actionable area, prioritizes nearby targets and higher remaining demand, and takes whole stacks from containers. It never returns player items automatically. If manual inventory cleanup is required, the module disables and resumes from the session cache after reactivation.
 - Projection targets and observed containers use a session cache bound to the world, projection fingerprint, region, and state summary. Disabling the module preserves progress; leaving the world or game clears it. On activation, loaded projection chunks and supply containers are scanned immediately, while unloaded portions are recorded as the player approaches. Cache data never replaces final loaded-state confirmation.
-- `Debug Log` creates one `meteor-client/wavexin/printer/yyyy-MM-dd-N.log` file per Minecraft process; module toggles only flush it. It records planner decisions, support sources, exact states, temporary rotation, screen interception, restocking, cache decisions, and audit results.
+- Use `.wavexin debug printer on/off` to control diagnostics in `meteor-client/wavexin/debug/[printer]-yyyy-MM-dd-N.log`. Logs cover planner decisions, support sources, exact states, temporary rotation, screen interception, restocking, cache decisions, and audit results, with repeated-event summaries and batched writes to reduce overhead.
 - `Maximum Projection Volume` defaults to 10,000,000 and has a hard limit of 500,000,000. Raising the cap only permits larger bounds; scanning remains constrained by per-tick budgets, chunk loading, and memory. Liquids, entities, waterlogged states, and structures that cannot be placed reliably are reported after other actionable blocks have been handled.
 
 ### Performance and Lifecycle
@@ -92,8 +90,9 @@ This page describes implementation details and notable behavior for the public C
 
 ### Bilingual Implementation
 
-- WaveXin visible text uses Minecraft-native `assets/wavexin/lang/*.json` resources. By default it follows the client language for Simplified Chinese or the English fallback. `.wavexin lang Simplified Chinese` and `.wavexin lang English` save an override for WaveXinAddon visible text only; they do not change Minecraft, Meteor, or other addons.
+- WaveXin visible text uses Minecraft-native `assets/wavexin/lang/*.json` resources. By default it follows the client language for Simplified Chinese or the English fallback. `.wavexin lang Chinese` and `.wavexin lang English` save an override for WaveXinAddon visible text only; they do not change Minecraft, Meteor, or other addons.
 - Translation affects display only. `Module.name`, `Setting.name`, `SettingGroup.name`, enum constants, NBT, and config values keep their original identifiers, so changing language does not rewrite saved settings.
 - ClickGUI module cards, module screens, setting groups, setting titles and descriptions, enum dropdowns, custom buttons, search results, and the Active Modules HUD display current-language text through WaveXin-specific i18n helpers. Non-WaveXin Meteor modules keep upstream behavior.
 - Chat messages, warnings, debug state, disconnect reasons, and default entity labels use the same translation layer while preserving Java Formatter placeholders and Meteor chat style tokens.
 - `verifyWaveXinTranslations` validates `en_us`/`zh_cn` key equality, the explicit expected-key registry, static Java keys, dead keys, placeholders, Meteor tokens, mojibake, and invalid values. `testWaveXinI18nBehavior` covers fallback formatting, keySegment normalization, and null enum fallback.
+- `testWaveXinUiTranslationCoverage` additionally derives UI keys from registered modules' current source conventions, including settings and enum choices, without launching Minecraft. Unknown setting declarations fail the check. Non-Meteor themes retain their own enum widgets with translated display labels; stored enum values are unchanged.

@@ -11,6 +11,7 @@ public final class EndGatewayFinderBehaviorTest {
     }
 
     public static void main(String[] args) {
+        EndGatewayPerformanceBehaviorTest.run();
         testCoordinatePacking();
         testLegacyCandidatesUseJavaRandom();
         testVoidHeightIsExcluded();
@@ -22,7 +23,46 @@ public final class EndGatewayFinderBehaviorTest {
         testArrivalMessageMergesNextTarget();
         testRollingBoundary();
         testTileSchedulerCoverageAndCaching();
+        testCalculationBatches();
         testNearestWindowIsBounded();
+        testGatewayProgressDuringCalculation();
+        testFixedCenterAndLockedSettings();
+    }
+
+    private static void testFixedCenterAndLockedSettings() {
+        assertEquals(-30000000, EndGatewayFinder.scanCenterCoordinate(true, -30000000, 123), "fixed world boundary center");
+        assertEquals(-123, EndGatewayFinder.scanCenterCoordinate(false, 1000, -123), "ordinary mode uses player position");
+        java.util.concurrent.atomic.AtomicBoolean running = new java.util.concurrent.atomic.AtomicBoolean();
+        java.util.concurrent.atomic.AtomicInteger notices = new java.util.concurrent.atomic.AtomicInteger();
+        assertTrue(me.waltom.wavexin.gui.TargetCoordinateSetting.canEdit(() -> !running.get(), notices::incrementAndGet), "stopped settings editable");
+        running.set(true);
+        assertTrue(!me.waltom.wavexin.gui.TargetCoordinateSetting.canEdit(() -> !running.get(), notices::incrementAndGet), "running settings locked");
+        assertEquals(1, notices.get(), "blocked edit reports lock");
+        running.set(false);
+        assertTrue(me.waltom.wavexin.gui.TargetCoordinateSetting.canEdit(() -> !running.get(), notices::incrementAndGet), "stopped settings unlock");
+        assertTrue(!EndGatewayFinder.shouldAdvanceView(true, -100, 200, 1000, 30000000, -30000000), "fixed center never advances even outside range");
+        assertTrue(EndGatewayFinder.shouldAdvanceView(false, -100, 200, 1000, 30000000, -30000000), "ordinary center continues rolling");
+    }
+
+    private static void testGatewayProgressDuringCalculation() {
+        var legacy = EndGatewayFinder.GenerationVersion.V1_12;
+        var modern = EndGatewayFinder.GenerationVersion.V1_20_4;
+        Set<EndGatewayFinder.Gateway> visited = new HashSet<>();
+        for (int x = -77; x <= 77; x++) visited.add(new EndGatewayFinder.Gateway(x, 0, legacy));
+        visited.add(new EndGatewayFinder.Gateway(0, 0, modern));
+        visited.add(new EndGatewayFinder.Gateway(161, 0, legacy));
+        int arrived = EndGatewayFinder.countVisitedGateways(visited, 0, 0, 10, legacy);
+        assertEquals(155, arrived, "all in-range history available before any candidates");
+        assertEquals("Arrived at #155", EndGatewayFinder.arrivalMessage(arrived, null), "startup uses historical arrival number");
+        assertEquals(100L, EndGatewayFinder.gatewayProgressPercent(arrived, 0), "history before candidates is capped");
+        assertEquals(100L, EndGatewayFinder.gatewayProgressPercent(arrived, 15), "history exceeding computed total is capped");
+        assertEquals(50L, EndGatewayFinder.gatewayProgressPercent(arrived, 310), "growing denominator retains historical numerator");
+        visited.add(new EndGatewayFinder.Gateway(160, 0, legacy));
+        assertEquals(156, EndGatewayFinder.countVisitedGateways(visited, 0, 0, 10, legacy), "new arrival and inclusive circular boundary");
+        assertEquals(157, EndGatewayFinder.countVisitedGateways(visited, 0, 0, 10, EndGatewayFinder.GenerationVersion.BOTH), "both includes both versions");
+        assertEquals(1, EndGatewayFinder.countVisitedGateways(visited, 0, 0, 10, modern), "single version excludes other history");
+        assertEquals(0, EndGatewayFinder.countVisitedGateways(visited, -1000, -1000, 10, legacy), "rolling center excludes old range");
+        assertEquals(0L, EndGatewayFinder.gatewayProgressPercent(0, 0), "empty progress");
     }
 
     private static void testCoordinatePacking() {
@@ -141,6 +181,43 @@ public final class EndGatewayFinderBehaviorTest {
             assertTrue(negativeTiles.add(EndGatewayFinder.pack(tile.x(), tile.z())), "negative scheduler emits each tile once");
         }
         assertEquals(EndGatewayFinder.countTilesInCircle(-1234, 5678, radiusChunks), (long) negativeTiles.size(), "negative scheduler covers every tile");
+    }
+
+    private static void testCalculationBatches() {
+        assertEquals(976, EndGatewayFinder.calculationTileBudget(1_000_000), "one million chunk budget rounds down to whole tiles");
+        assertEquals(2_929, EndGatewayFinder.calculationTileBudget(3_000_000), "default batch budget rounds down to whole tiles");
+        assertEquals(97_656, EndGatewayFinder.calculationTileBudget(100_000_000), "maximum batch budget rounds down to whole tiles");
+        assertTrue((long) EndGatewayFinder.calculationTileBudget(3_000_000) * EndGatewayFinder.TILE_SIZE_CHUNKS * EndGatewayFinder.TILE_SIZE_CHUNKS <= 3_000_000,
+            "batch never exceeds its configured chunk budget");
+
+        EndGatewayFinder.TileScheduler scheduler = new EndGatewayFinder.TileScheduler(-1234, 5678, 96);
+        Set<Long> calculated = new HashSet<>();
+        int[] batches = {0, 0};
+        for (int batch = 0; batch < batches.length; batch++) {
+            for (int i = 0; i < 3; i++) {
+                EndGatewayFinder.Tile tile = scheduler.next(calculated::contains);
+                if (tile == null) break;
+                assertTrue(calculated.add(EndGatewayFinder.pack(tile.x(), tile.z())), "batch emits no duplicate tiles");
+                batches[batch]++;
+            }
+        }
+        assertEquals(3, batches[0], "first batch stops at its tile budget");
+        assertEquals(3, batches[1], "second batch resumes the same cursor");
+        while (true) {
+            int calculatedThisBatch = 0;
+            for (int i = 0; i < 3; i++) {
+                EndGatewayFinder.Tile tile = scheduler.next(calculated::contains);
+                if (tile == null) break;
+                assertTrue(calculated.add(EndGatewayFinder.pack(tile.x(), tile.z())), "later batch emits no duplicate tiles");
+                calculatedThisBatch++;
+            }
+            if (calculatedThisBatch == 0) break;
+        }
+        assertEquals(EndGatewayFinder.countTilesInCircle(-1234, 5678, 96), (long) calculated.size(), "all batches cover the full range exactly once");
+        assertTrue(EndGatewayFinder.shouldQueueNextBatch(10, false, calculated.size(), calculated.size() + 1), "ten unvisited gateways queues the next batch");
+        assertTrue(!EndGatewayFinder.shouldQueueNextBatch(11, false, calculated.size(), calculated.size() + 1), "eleven unvisited gateways retains the queued state");
+        assertTrue(!EndGatewayFinder.shouldQueueNextBatch(0, true, calculated.size(), calculated.size() + 1), "active calculation cannot queue a duplicate worker");
+        assertTrue(!EndGatewayFinder.shouldQueueNextBatch(0, false, calculated.size(), calculated.size()), "completed range never queues another batch");
     }
 
     private static void testNearestWindowIsBounded() {

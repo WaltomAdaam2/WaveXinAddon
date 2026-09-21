@@ -2,6 +2,7 @@ package me.waltom.wavexin.modules.basefinder;
 
 import me.waltom.wavexin.core.WaveXinModule;
 import me.waltom.wavexin.WaveXinAddon;
+import me.waltom.wavexin.core.WaveXinDebugLog;
 import me.waltom.wavexin.i18n.WaveXinI18n;
 import me.waltom.wavexin.modules.NavigationModuleControl;
 import me.waltom.wavexin.modules.containerrecorder.ContainerRecorderModule;
@@ -32,6 +33,7 @@ import java.util.HashSet;
 import java.util.Set;
 
 public class BaseFinder extends WaveXinModule {
+    private final WaveXinDebugLog debugLog = new WaveXinDebugLog("BaseFinder");
     private boolean activationRejected;
 
     static {
@@ -186,6 +188,7 @@ public class BaseFinder extends WaveXinModule {
     private String normalDebugState = "INACTIVE";
     private int lastCompletedNormalRing = -1;
     private final Set<String> warnedNormalDebugStates = new HashSet<>();
+    private boolean commandDebug;
 
     private final Setting<ScanMethod> scanMethod = sgScanMode.add(new EnumSetting.Builder<ScanMethod>()
         .name("Scan Method")
@@ -605,6 +608,8 @@ public class BaseFinder extends WaveXinModule {
 
     @Override
     public void onActivate() {
+        debugLog.open(commandDebug, mc.runDirectory.toPath());
+        if (commandDebug) debugLog.info("activation", "method", scanMethod.get());
         if (NavigationModuleControl.reportConflictingActivation(this)) {
             activationRejected = true;
             toggle();
@@ -907,18 +912,21 @@ public class BaseFinder extends WaveXinModule {
 
     @Override
     public void onDeactivate() {
+        if (commandDebug) debugLog.info("deactivation", "method", activeScanMethod);
         if (activationRejected) {
+            debugLog.close();
             activationRejected = false;
             return;
         }
         containerRecorder.stopForScan(this);
         setScanForwardKey(false);
         NavigationModuleControl.restoreMovementInput();
-        if (activeScanMethod == null) return;
+        if (activeScanMethod == null) { debugLog.close(); return; }
         restoreNormalViewYaw();
         scanStartPending = false;
         ScanMethod stoppedScanMethod = activeScanMethod;
         if (stoppedScanMethod == ScanMethod.NORMAL) logNormalDebugSnapshot("DEACTIVATE", "moduleDisabled");
+        debugLog.close();
         ScanProgressManager.NormalScanProgress savedProgress = stoppedScanMethod == ScanMethod.NORMAL ? saveNormalScanProgress() : null;
         activeScanMethod = null;
         if (stoppedScanMethod == ScanMethod.SPIRAL) {
@@ -1119,6 +1127,7 @@ public class BaseFinder extends WaveXinModule {
     }
 
     private void logNormalDebugSnapshot(String event, String detail) {
+        if (!commandDebug) return;
         if (!shouldLogNormalDebugSnapshot(event)) return;
         if (!"DEACTIVATE".equals(event) && !warnedNormalDebugStates.add(normalDebugState)) return;
 
@@ -1164,10 +1173,18 @@ public class BaseFinder extends WaveXinModule {
             mc.currentScreen == null ? "none" : mc.currentScreen.getClass().getSimpleName(),
             playerState
         );
+        debugLog.warn("normal-scan", "event", event, "state", normalDebugState, "detail", detail, "player", playerState);
     }
 
     private boolean shouldLogNormalDebugSnapshot(String event) {
         return BaseFinderStateLogic.shouldLogNormalDebugSnapshot(event, normalDebugState);
+    }
+
+    public void setDebugMode(boolean enabled) {
+        commandDebug = enabled;
+        spiralDebug.set(enabled);
+        if (enabled && isActive()) debugLog.open(true, mc.runDirectory.toPath());
+        else if (!enabled) debugLog.close();
     }
 
     private String describeStartReadiness() {

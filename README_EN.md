@@ -2,7 +2,7 @@
 
 **Language / 语言:** [中文](README.md) | English
 
-WaveXinAddon is a Meteor Client addon designed for the **2b2t.xin** server. It provides elytra flight, automatic elytra replacement, path flight, semi-automatic Litematica printing, auto login, auto answer, automatic Daily Flower (monthly pass) check-ins, base scanning, chat filtering, turtle-potion throwing, entity nametags, and other utility modules.
+WaveXinAddon is a Meteor Client addon designed for the **2b2t.xin** server. It provides elytra flight, automatic elytra replacement, path flight, semi-automatic Litematica printing, auto login, auto answer, automatic Daily Flower (monthly pass) check-ins, base scanning, chat filtering, entity nametags, and other utility modules.
 
 <p align="center">
   <img src="assets/wavexin_readme_preview.png" alt="WaveXinAddon Preview" width="850">
@@ -16,7 +16,6 @@ WaveXinAddon is a Meteor Client addon designed for the **2b2t.xin** server. It p
 * Sniffer Nametags: Renders configurable name, health, and distance labels for nearby sniffers.
 * Auto Login: Automates supported 2b2t.xin login, quiz, Daily Flower check-in, and join flows while encrypting offline-account passwords.
 * Chat Filter: Separately filters MSG, public chat, and death messages with independent allowlists and an own-message bypass enabled by default.
-* Turtle Potion Thrower: One-shot bind for normal, long, or strong splash Turtle Master potions with offhand, hotbar, Quick Swap, slot restore, and notification support.
 * Base Finder: Normal/spiral scanning, checkpoint resume, immediate visited-chunk rendering, container and pearl recording, and optional Xaero waypoints with area limits and exact creation-message colors.
 * Container Recorder: An independent recorder for selected loaded-chunk containers that meet its threshold. It supports pearl detection, record files, Xaero waypoints, vanilla achievement toasts, and the achievement sound. Each scan mode can start it automatically through its own option.
 * End Gateway Finder: Locally predicts End return gateways from the world seed for 1.12, 1.20.4, or both versions. It rolls the scan around the player, reuses overlapping results for the current game session, reports progress through a top-right toast, and supports routes, dwell time, automatic movement, rendering, and Container Recorder integration.
@@ -24,13 +23,19 @@ WaveXinAddon is a Meteor Client addon designed for the **2b2t.xin** server. It p
 
 For implementation details and feature-specific notes, see the [Feature Logic Guide](docs/README_LOGIC_EN.md). The staged Minecraft 1.21.1 port and acceptance criteria are documented in the [1.21.1 Compatibility Plan](docs/MC_1_21_1_PORT_PLAN.md).
 
+New in the 1.21.11 SNAPSHOT:
+
+* KillAura+: Adapts Alienv4 targeting, cooldown, and rotation behavior for automatic melee combat and target rendering. Available in WaveXinAddon after activation.
+
+KillAura+ has not yet been ported to 1.21.1.
+
 ## Commands
 
 The Meteor command prefix is configurable. Current public commands:
 
 * `.sel [1|2|c]`: Select, confirm, or clear the Litematica Printer restock region.
 * `.wavexin check-update true|false`: Save the startup update-check preference.
-* `.wavexin lang Simplified Chinese`: Change WaveXinAddon visible text only to Simplified Chinese.
+* `.wavexin lang Chinese`: Change WaveXinAddon visible text only to Simplified Chinese.
 * `.wavexin lang English`: Change WaveXinAddon visible text only to English.
 
 ## Requirements

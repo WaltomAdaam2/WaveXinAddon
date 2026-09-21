@@ -3,8 +3,9 @@ package me.waltom.wavexin.modules.elytraflypath;
 import me.waltom.wavexin.events.TravelEvent;
 import me.waltom.wavexin.events.MoveEvent;
 import me.waltom.wavexin.core.WaveXinModule;
+import me.waltom.wavexin.core.WaveXinDebugLog;
 import me.waltom.wavexin.WaveXinAddon;
-import me.waltom.wavexin.gui.TargetCoordinateInput;
+import me.waltom.wavexin.gui.TargetCoordinateSetting;
 import me.waltom.wavexin.i18n.WaveXinI18n;
 import me.waltom.wavexin.modules.NavigationModuleControl;
 import me.waltom.wavexin.modules.basefinder.BaseFinder;
@@ -14,9 +15,6 @@ import me.waltom.wavexin.modules.elytrafly.ElytraFlightLogic;
 import me.waltom.wavexin.modules.elytrafly.ElytraSpeedRamp;
 import meteordevelopment.meteorclient.events.packets.PacketEvent;
 import meteordevelopment.meteorclient.events.world.TickEvent;
-import meteordevelopment.meteorclient.gui.renderer.GuiRenderer;
-import meteordevelopment.meteorclient.gui.utils.SettingsWidgetFactory;
-import meteordevelopment.meteorclient.gui.widgets.input.WIntEdit;
 import meteordevelopment.meteorclient.settings.*;
 import meteordevelopment.meteorclient.utils.player.ChatUtils;
 import meteordevelopment.orbit.EventHandler;
@@ -28,38 +26,21 @@ import net.minecraft.entity.MovementType;
 import net.minecraft.entity.effect.StatusEffects;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.Items;
-import net.minecraft.nbt.NbtCompound;
 import net.minecraft.network.packet.c2s.play.ClientCommandC2SPacket;
 import net.minecraft.network.packet.s2c.play.PlayerPositionLookS2CPacket;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.ChunkPos;
 import net.minecraft.util.math.Vec3d;
-import java.util.function.Consumer;
 import java.util.concurrent.ThreadLocalRandom;
 
 public class ElytraFlyPath extends WaveXinModule {
+    private final WaveXinDebugLog debugLog = new WaveXinDebugLog("ElytraFlyPath");
     private static final MinecraftClient mc = MinecraftClient.getInstance();
     private static final int MAX_TARGET_COORDINATE = 30000000;
     private boolean activationRejected;
+    private boolean debugMode;
 
-    static {
-        SettingsWidgetFactory.registerCustomFactory(TargetCoordinateSetting.class, theme -> (table, setting) -> {
-            TargetCoordinateSetting coordinate = (TargetCoordinateSetting) setting;
-            WIntEdit edit = table.add(theme.intEdit(coordinate.get(), coordinate.min, coordinate.max, coordinate.sliderMin, coordinate.sliderMax, coordinate.noSlider)).expandX().widget();
-            ((TargetCoordinateInput) edit).wavexin$setTargetCoordinateInput(true);
 
-            edit.action = () -> {
-                if (!coordinate.set(edit.get())) edit.set(coordinate.get());
-            };
-
-            var reset = table.add(theme.button(GuiRenderer.RESET)).widget();
-            reset.action = () -> {
-                coordinate.reset();
-                edit.set(coordinate.get());
-            };
-            reset.tooltip = WaveXinI18n.tr("tooltip.wavexin.common.reset", "Reset");
-        });
-    }
 
     
     private final SettingGroup sgTarget = settings.createGroup("Target Coordinates");
@@ -228,12 +209,20 @@ public class ElytraFlyPath extends WaveXinModule {
         super(WaveXinAddon.CATEGORY, "elytra-fly-path", "Automatic elytra path flight");
     }
 
+    public void setDebugMode(boolean enabled) {
+        debugMode = enabled;
+        if (enabled && isActive()) debugLog.open(true, mc.runDirectory.toPath());
+        else if (!enabled) debugLog.close();
+    }
+
     
 
 
 
     @Override
     public void onActivate() {
+        debugLog.open(debugMode, mc.runDirectory.toPath());
+        if (debugMode) debugLog.info("activation", "target", getTargetX() + "," + getTargetZ());
         if (NavigationModuleControl.reportConflictingActivation(this)) {
             activationRejected = true;
             toggle();
@@ -274,6 +263,8 @@ public class ElytraFlyPath extends WaveXinModule {
 
     @Override
     public void onDeactivate() {
+        if (debugMode) debugLog.info("deactivation", "arrived", isArrive);
+        debugLog.close();
         if (activationRejected) {
             activationRejected = false;
             return;
@@ -572,82 +563,7 @@ public class ElytraFlyPath extends WaveXinModule {
         return stack.isOf(Items.ELYTRA) && stack.getDamage() < stack.getMaxDamage() - 1;
     }
 
-    private static class TargetCoordinateSetting extends Setting<Integer> {
-        public final int min, max;
-        public final int sliderMin, sliderMax;
-        public final boolean noSlider;
 
-        private TargetCoordinateSetting(String name, String description, int defaultValue, Consumer<Integer> onChanged, Consumer<Setting<Integer>> onModuleActivated, IVisible visible, int min, int max, int sliderMin, int sliderMax, boolean noSlider) {
-            super(name, description, defaultValue, onChanged, onModuleActivated, visible);
-
-            this.min = min;
-            this.max = max;
-            this.sliderMin = sliderMin;
-            this.sliderMax = sliderMax;
-            this.noSlider = noSlider;
-        }
-
-        @Override
-        protected Integer parseImpl(String str) {
-            try {
-                return Integer.parseInt(str.trim());
-            } catch (NumberFormatException ignored) {
-                return null;
-            }
-        }
-
-        @Override
-        protected boolean isValueValid(Integer value) {
-            return value >= min && value <= max;
-        }
-
-        @Override
-        protected NbtCompound save(NbtCompound tag) {
-            tag.putInt("value", get());
-            return tag;
-        }
-
-        @Override
-        protected Integer load(NbtCompound tag) {
-            set(tag.getInt("value", 0));
-            return get();
-        }
-
-        private static class Builder extends SettingBuilder<Builder, Integer, TargetCoordinateSetting> {
-            private int min = Integer.MIN_VALUE, max = Integer.MAX_VALUE;
-            private int sliderMin = 0, sliderMax = 10;
-            private boolean noSlider = false;
-
-            private Builder() {
-                super(0);
-            }
-
-            public Builder min(int min) {
-                this.min = min;
-                return this;
-            }
-
-            public Builder max(int max) {
-                this.max = max;
-                return this;
-            }
-
-            public Builder sliderMin(int min) {
-                this.sliderMin = min;
-                return this;
-            }
-
-            public Builder sliderMax(int max) {
-                this.sliderMax = max;
-                return this;
-            }
-
-            @Override
-            public TargetCoordinateSetting build() {
-                return new TargetCoordinateSetting(name, description, defaultValue, onChanged, onModuleActivated, visible, min, max, Math.max(sliderMin, min), Math.min(sliderMax, max), noSlider);
-            }
-        }
-    }
 
 
 }

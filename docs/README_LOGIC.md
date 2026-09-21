@@ -1,5 +1,10 @@
 # WaveXinAddon 功能逻辑说明
 
+## 1.21.11 SNAPSHOT 新模块
+
+- **KillAura+**：按 [Alienv4 Aura（e443c5b）](https://github.com/RageCat420/AlienClient-OpenSource/blob/e443c5bc499af722429d311333d10377623d6f9b/src/main/java/dev/luminous/mod/modules/impl/combat/Aura.java) 的行为适配，激活后可用，许可证独立于 EndBaseFinder。默认攻击距离 6、候选搜索距离 8、隔墙距离 6、冷却进度 1.1；搜索距离不会扩大实际攻击距离。保留实体/好友筛选、低护甲优先、延时/原版计时、TPS 换算、渐进转向、视角限制与挥手方式，不加入重锤逻辑或 Alien 运行时依赖。
+- **KillAura+ 显示**：保留填充、方框、环形动画、命中颜色和缓动曲线。原 ThunderHack 显示使用 Meteor 三维十字适配，并非原着色器效果的逐像素复刻；设置界面明确标注适配效果。异步转向后的攻击会重新检查模块、世界、目标和距离。
+
 本页说明 ClickGUI 中公开模块的实现方式与需要注意的行为。它不是完整的设置手册；实际可用选项以游戏内模块设置为准。
 
 ### 鞘翅飞行 (Better Elytra Fly)
@@ -40,13 +45,6 @@
 - `Hide Death Messages` 使用最朴素的死亡公告格式匹配，例如自杀、床/烟花/TNT 自爆、末影珍珠死亡、世界边界自杀、环境死亡、玩家击杀、射杀、火球、窒息、坠落物砸死、推下悬崖或虚空等中英文格式；它不再依赖颜色组合，因此不会因为服务器其他彩色消息误过滤。
 - 公共聊天只按已验证的单行 `<玩家名> 消息` 结构判断；`玩家名: 消息`、命令帮助、玩家查询、插件状态、服务器公告和 MSG 私聊都不会按 public 过滤。`Show Own Public Messages` 默认启用，会同时比较账户名和去格式/前缀后的显示名。
 
-### 神龟药水投掷 (Turtle Potion Thrower)
-
-- 模块使用 Meteor 自带 Bind 触发；按下绑定键时执行一次投掷，然后自动关闭，不保持常驻监听状态。
-- 只查找喷溅型神龟药水，并接受普通、长效和增强三种神龟药水；普通饮用药水和其他喷溅药水不会被使用。
-- `Quick Swap` 默认启用。目标药水在副手或主手时直接使用对应手；在背包内时会临时换到当前快捷栏槽位、右键投掷，并在 `finally` 中按 Meteor 原版 quick swap 逻辑换回。
-- 关闭 `Quick Swap` 后只使用副手、主手或快捷栏内的目标药水；临时切换到其他快捷栏槽位时使用本模块捕获的原 selected slot 在 `finally` 中恢复，不依赖 Meteor 的共享 `swapBack()` 状态。找不到可用药水、切换失败、投掷被拒绝或恢复失败都会写入 warn 级游戏 log；`Notify` 仅决定是否额外在聊天栏按 WaveXin 警告格式提示。
-
 ### 容器记录器 (Container Recorder)
 
 - Container Recorder 是独立的常驻模块，以玩家周围的 `Scan Radius`（默认 4 区块）检查已加载区块；仅在符合容器类型筛选且数量达到 `Container Threshold` 时记录坐标和数量。
@@ -80,7 +78,7 @@
 - 建造材料始终先按快捷栏从左到右查找。启用 `Allow Inventory Pull` 后，仅在快捷栏缺少对应材料时，才按背包从左到右、从上到下选取完整 stack 换入快捷栏，避免每次放置都临时搬动物品。
 - `.sel`、`.sel 1`、`.sel 2` 选择补货长方体，`.sel c` 清除两个端点、渲染和该区域的容器缓存。补货按当前 Litematica layer/range 或当前可施工范围统计需求，优先填充近期目标且需求量较大的材料，并从容器按整组拿取；不会自动把玩家物品退回容器。背包需要人工清理时会停用模块，重新启用后从会话缓存继续。
 - 投影目标和已观察容器使用世界、投影指纹、区域及状态摘要绑定的会话缓存。模块关闭不会清除进度；退出世界或游戏时清理。模块启用后立即扫描已加载的投影区块和补货容器，其余部分在玩家靠近并加载后补齐，缓存不能代替最终已加载状态确认。
-- `Debug Log` 按每次 Minecraft 进程创建一个 `meteor-client/wavexin/printer/yyyy-MM-dd-N.log`，模块开关只 flush，不重复建文件。日志记录 planner、支撑、状态、临时旋转、界面拦截、补货、缓存和 audit 决策。
+- 使用 `.wavexin debug printer on/off` 控制诊断日志，文件位于 `meteor-client/wavexin/debug/[printer]-yyyy-MM-dd-N.log`。日志记录 planner、支撑、状态、临时旋转、界面拦截、补货、缓存和 audit 决策，并合并重复事件、批量写入以减少开销。
 - `Maximum Projection Volume` 默认 10,000,000，硬上限 500,000,000。提高上限只允许扫描更大的边界，不代表一次性加载；扫描仍受每 tick 预算、区块加载和内存约束。液体、生物、实体、含水状态及无法可靠放置的结构会在其他可施工方块完成后统一报告。
 
 ### 性能与生命周期
@@ -92,8 +90,9 @@
 
 ### 双语实现 (Bilingual Implementation)
 
-- WaveXin 可见文本使用 Minecraft 原生 `assets/wavexin/lang/*.json` 资源；默认随客户端语言选择简体中文或英文兜底。`.wavexin lang Simplified Chinese` 和 `.wavexin lang English` 可保存 WaveXinAddon 自身的显示语言覆盖，不会修改 Minecraft、Meteor 或其他 addon 的语言。
+- WaveXin 可见文本使用 Minecraft 原生 `assets/wavexin/lang/*.json` 资源；默认随客户端语言选择简体中文或英文兜底。`.wavexin lang Chinese` 和 `.wavexin lang English` 可保存 WaveXinAddon 自身的显示语言覆盖，不会修改 Minecraft、Meteor 或其他 addon 的语言。
 - 翻译只影响显示文本；`Module.name`、`Setting.name`、`SettingGroup.name`、enum 常量、NBT 和配置值都保持原始标识符，因此切换语言不会改写已保存设置。
 - ClickGUI 的模块卡片、模块页面、设置组、设置标题与描述、enum 下拉框、自定义按钮、搜索结果和 Active Modules HUD 通过 WaveXin 专用 i18n 辅助方法显示当前语言文案；非 WaveXin 的 Meteor 模块保持上游行为。
 - 聊天消息、警告、调试状态、断开原因和实体默认名称使用相同翻译层，并保留 Java Formatter 占位符和 Meteor 聊天样式 token。
 - `verifyWaveXinTranslations` 会校验 `en_us`/`zh_cn` key 集合、显式 expected-key registry、静态 Java key、dead key、占位符、Meteor token、mojibake 和非法值；`testWaveXinI18nBehavior` 覆盖 fallback 格式化、keySegment 和 null enum 兜底。
+- `testWaveXinUiTranslationCoverage` 会按当前源码写法从已注册模块推导设置与枚举选项的显示键，不启动 Minecraft；遇到无法识别的设置声明会校验失败。非 Meteor 主题保留自身下拉控件并显示翻译标签，保存的枚举值不变。
