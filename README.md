@@ -2,7 +2,7 @@
 
 **语言 / Language:** 中文 | [English](README_EN.md)
 
-WaveXinAddon 是一个为 **2b2t.xin** 服务器设计的 Meteor Client Addon (彗星段扩展)，主要提供鞘翅飞行、鞘翅自动更换、路径飞行、Litematica 半自动投影打印、自动登录、自动答题、自动每日小红花（月卡）、基地扫描、聊天过滤和实体名牌显示等辅助功能。
+WaveXinAddon 是一个为 **2b2t.xin** 服务器设计的 Meteor Client Addon（彗星端扩展），主要提供鞘翅飞行与路径导航、Litematica 半自动投影打印、登录与签到自动化、基地与末地折跃门扫描、容器记录、聊天过滤、实体名牌和可选战斗辅助等功能。
 
 <p align="center">
   <img src="assets/wavexin_readme_preview.png" alt="WaveXinAddon Preview" width="850">
@@ -10,22 +10,19 @@ WaveXinAddon 是一个为 **2b2t.xin** 服务器设计的 Meteor Client Addon (�
 
 ## 功能
 
-* 鞘翅飞行 (Better Elytra Fly)：提供可调水平/垂直飞行控制和低耐久鞘翅自动更换；可选速度渐进会从初始速度按每秒增量提升到上限，并可在服务端拉回后冷却重置。
+* 鞘翅飞行 (Better Elytra Fly)：提供可调水平/垂直飞行控制和低耐久鞘翅自动更换；可选速度渐进会从初始速度按每秒增量提升到上限，并可在服务端拉回后冷却重置，也可禁止在上升阶段继续加速。
 * 鞘翅路径飞行 (Elytra Fly Path)：自动飞向目标 X/Z 坐标，支持下界坐标换算、自动起飞、到达停止、自动断开、同款速度渐进，以及可选 Xaero 临时目标路径点。
 * 鸡标签名显示 (Chicken Nametags)：为范围内的鸡显示可调名称、生命值和距离标签。
 * 嗅探兽标签名显示 (Sniffer Nametags)：为范围内的嗅探兽显示可调名称、生命值和距离标签。
 * 自动登录 (Auto Login)：自动处理 2b2t.xin 支持的登录、答题、每日小红花签到和加入流程，并加密保存离线账号密码。
 * 聊天过滤 (Chat Filter)：分别过滤 MSG 私聊、公共聊天和死亡消息，使用独立白名单，并默认保留自己发送的公共聊天。
-* 基地狩猎扫图 (Base Finder)：提供普通/螺旋扫描、断点恢复、即时已访问区块渲染、容器与末影珍珠记录，以及带区域限额和真实颜色提示的可选 Xaero 路径点。
+* 基地狩猎扫图 (Base Finder)：提供普通/螺旋扫描、断点恢复、即时已访问区块渲染和可选 Xaero 路径点；两种扫描均可联动独立的 Container Recorder。
 * 容器记录器 (Container Recorder)：独立记录已加载区块中符合筛选与阈值的容器；支持末影珍珠检测、记录文件、Xaero 路径点、原版成就提示框和提示音。三种扫描可按各自设置自动启动它。
-* 末地折跃门定位 (EndBaseFinder)：根据世界种子在本地预测 1.12、1.20.4 或双版本的末地返回折跃门；以玩家为中心滚动扫描，复用本次游戏会话的重叠缓存，并通过右上角提示显示进度，同时支持路线、停留、自动移动、渲染及 Container Recorder 联动。
+* 末地折跃门定位 (EndBaseFinder)：根据世界种子在本地预测 1.12、1.20.4 或双版本的末地返回折跃门；支持固定或滚动中心、分批计算、会话缓存、历史到达记录、常驻进度提示、四种路线、停留、自动移动、分色渲染及 Container Recorder 联动。
+* 杀戮光环+ (KillAura+)：本地许可证验证后显示的可选近战模块，提供独立的目标筛选、攻击冷却、转向、武器限制和多种目标渲染；许可证与 EndBaseFinder 相互独立，兑换后不会自动启用模块。
 * 投影打印机 (Litematica Printer)：玩家手动移动时，按 Litematica 投影在可交互范围内批量放置带真实支撑的方块；绿色显示下一批、黄色显示等待重试的方块、红色提示需手动修正的状态，支持方向状态、大箱子、快捷栏补料、选区整组补货、进度与容器缓存，以及独立调试日志。
 
-更多实现逻辑与注意事项请参阅 [功能逻辑说明](docs/README_LOGIC.md)。Minecraft 1.21.1 的双版本移植步骤与验收标准参阅 [1.21.1 兼容实施计划](docs/MC_1_21_1_PORT_PLAN.md)。
-
-1.8.0 新增：
-
-* 杀戮光环+ (KillAura+)：参考 Alienv4 的目标筛选、冷却与转向逻辑，提供自动近战和目标显示，本地许可证验证通过后显示在 WaveXinAddon 分类中。
+更多实现逻辑与注意事项请参阅 [功能逻辑说明](docs/README_LOGIC.md)。Minecraft 1.21.1 的双版本适配记录与验收标准参阅 [1.21.1 兼容实施计划](docs/MC_1_21_1_PORT_PLAN.md)。
 
 1.8.0 分别提供 Minecraft 1.21.11 与 1.21.1 专用 JAR，请勿混用。
 
@@ -34,6 +31,7 @@ WaveXinAddon 是一个为 **2b2t.xin** 服务器设计的 Meteor Client Addon (�
 Meteor 指令前缀可自行设置。当前公开指令：
 
 * `.sel [1|2|c]`：选择、确认或清除投影打印机的补货区域。
+* `.wavexin redeem <code>`：在本地兑换可选模块的访问权限；成功后对应模块立即显示，但不会自动启用。兑换内容不会写入日志或明文保存。
 * `.wavexin check-update true|false`：保存启动时的更新检查开关。
 * `.wavexin lang Chinese`：仅将 WaveXinAddon 可见文本切换为简体中文。
 * `.wavexin lang English`：仅将 WaveXinAddon 可见文本切换为英文。
@@ -51,7 +49,7 @@ Meteor 指令前缀可自行设置。当前公开指令：
 
 ### 可选组件
 
-Base Finder 的 Xaero 路径点功能可能会使用以下组件：
+Base Finder、Container Recorder 与 Elytra Fly Path 的 Xaero 路径点功能可能会使用以下组件：
 
 * Xaero's Minimap
 * Xaero's World Map
@@ -93,6 +91,8 @@ WaveXinAddon 的配置文件会自动保存到：
 ```text
 meteor-client/wavexin/
 ```
+
+其中主要包含全局设置、独立的本地加密许可证、扫描断点、容器记录、按种子保存的折跃门访问历史和模块诊断日志。许可证只在当前 Windows 用户下验证；EndBaseFinder 与 KillAura+ 的许可证彼此独立，升级后不迁移旧的设置激活标记或旧许可证。
 
 ## 更新检查
 
