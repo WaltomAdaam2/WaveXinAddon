@@ -94,6 +94,11 @@ public class ChickenNametags extends WaveXinModule {
         super(WaveXinAddon.CATEGORY, "chicken-nametags", "Displays custom nametags for chicken entities.");
     }
 
+    @Override
+    public void onDeactivate() {
+        chickenList.clear();
+    }
+
     @EventHandler
     private void onTick(TickEvent.Post event) {
         if (mc.player == null || mc.world == null) {
@@ -102,23 +107,23 @@ public class ChickenNametags extends WaveXinModule {
         }
 
         chickenList.clear();
-        Vec3d cameraPos = new Vec3d(mc.player.getX(), mc.player.getY(), mc.player.getZ());
-
-        
-        for (Entity entity : mc.world.getEntities()) {
-            if (entity.getType() != EntityType.CHICKEN) continue;
-
-            ChickenEntity chicken = (ChickenEntity) entity;
-            double distance = PlayerUtils.distanceToCamera(chicken);
-
-            
-            if (distance <= maxRange.get()) {
-                chickenList.add(chicken);
+        Vec3d cameraPos = mc.gameRenderer.getCamera().getPos();
+        double range = maxRange.get(), rangeSquared = range * range;
+        if (range <= 256) {
+            mc.world.collectEntitiesByType(EntityType.CHICKEN,
+                new net.minecraft.util.math.Box(cameraPos, cameraPos).expand(range),
+                chicken -> chicken.isAlive() && !chicken.isRemoved()
+                    && PlayerUtils.squaredDistanceToCamera(chicken) <= rangeSquared, chickenList);
+        } else {
+            // Very large user ranges are cheaper to filter than to enumerate every spatial section.
+            for (Entity entity : mc.world.getEntities()) {
+                if (entity.getType() != EntityType.CHICKEN) continue;
+                if (entity instanceof ChickenEntity chicken && chicken.isAlive() && !chicken.isRemoved()
+                    && PlayerUtils.squaredDistanceToCamera(chicken) <= rangeSquared) chickenList.add(chicken);
             }
         }
 
-        
-        chickenList.sort(Comparator.comparing(e -> e.squaredDistanceTo(cameraPos)));
+        chickenList.sort(Comparator.comparingDouble(e -> e.squaredDistanceTo(mc.player.getX(), mc.player.getY(), mc.player.getZ())));
     }
 
     @EventHandler

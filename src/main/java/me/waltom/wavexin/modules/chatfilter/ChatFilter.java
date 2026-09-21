@@ -118,6 +118,7 @@ public class ChatFilter extends WaveXinModule {
 
     private boolean shouldHideServerMessageInternal(Text message) {
         if (message == null) return false;
+        if (!hideDeathMessages.get() && !hidePrivateMessages.get() && !hidePublicMessages.get()) return false;
         String normalized = normalize(message.getString());
         if (hideDeathMessages.get() && isDeathMessage(normalized)) return true;
         return shouldHideRegularMessage(normalized);

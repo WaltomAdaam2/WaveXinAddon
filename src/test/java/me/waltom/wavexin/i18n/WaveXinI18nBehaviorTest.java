@@ -32,6 +32,14 @@ public final class WaveXinI18nBehaviorTest {
         assertEquals("Unknown direction", WaveXinI18n.enumLabelOr(null, "Unknown direction"), "null direction fallback");
         assertEquals("Custom fallback", WaveXinI18n.enumLabelOr(null, "Custom fallback"), "custom null enum fallback");
         assertEquals("", WaveXinI18n.enumLabelOr(null, null), "null enum null fallback");
+        assertEquals("English", WaveXinI18n.bundledTranslation("en_us", "meta.wavexin.language"), "bundled English translation");
+        assertEquals("简体中文", WaveXinI18n.bundledTranslation("zh_cn", "meta.wavexin.language"), "bundled Chinese translation");
+        assertEquals("KillAura+", WaveXinI18n.bundledTranslation("en_us", "module.wavexin.kill_aura_plus.title"), "English aura title");
+        assertEquals("杀戮光环+", WaveXinI18n.bundledTranslation("zh_cn", "module.wavexin.kill_aura_plus.title"), "Chinese aura title");
+        assertEquals("已到达 #155 -> (-80, 90)", WaveXinI18n.formatFallback(
+            WaveXinI18n.bundledTranslation("zh_cn", "message.wavexin.end_gateway_finder.arrived_next"), 155, -80, 90),
+            "localized arrival retains history counter and coordinates");
+        assertEquals("客户端与服务端", WaveXinI18n.bundledTranslation("zh_cn", "enum.wavexin.swing_side.all"), "swing enum localization");
     }
 
     private static void assertEquals(String expected, String actual, String message) {

@@ -15,6 +15,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDate;
 import java.time.LocalTime;
+import me.waltom.wavexin.core.WaveXinDebugLog;
 
 public final class CuboidCursorBehaviorTest {
     private CuboidCursorBehaviorTest() {
@@ -442,36 +443,43 @@ public final class CuboidCursorBehaviorTest {
     private static void verifyDebugLog() {
         try {
             Path root = Files.createTempDirectory("wavexin-printer-log-test-");
-            Path directory = root.resolve("meteor-client").resolve("wavexin").resolve("printer");
-            PrinterDebugLog disabled = new PrinterDebugLog();
+            Path directory = root.resolve("meteor-client").resolve("wavexin").resolve("debug");
+            WaveXinDebugLog disabled = new WaveXinDebugLog("LitematicaPrinter");
             disabled.open(false, root);
-            check(!Files.exists(directory), "Debug Log=false must not create the printer log directory");
+            check(!Files.exists(directory), "Debug Log=false must not create the shared debug log directory");
 
-            PrinterDebugLog first = new PrinterDebugLog();
+            WaveXinDebugLog first = new WaveXinDebugLog("LitematicaPrinter");
             first.open(true, root);
             Path firstFile = first.path();
             first.open(true, root);
             check(first.path().equals(firstFile),
                 "reopening the module logger in one Minecraft session must reuse the same file");
+            first.warn("single-warning");
+            check(Files.readString(firstFile).contains("single-warning"), "a single warning must flush without preceding INFO lines");
             first.info("planner", "action", "PLACE_BATCH");
-            first.info("planner", "action", "PLACE_BATCH");
+            for (int i = 0; i < 100; i++) first.info("planner", "action", "PLACE_BATCH");
             first.flush();
+            check(Files.readString(firstFile).contains("suppressed=100"), "repeated INFO lines are summarized without losing the repeat count");
+            first.open(false, root);
+            first.info("must-not-be-written");
+            check(!Files.readString(firstFile).contains("must-not-be-written"), "disabled logging closes the file and writes nothing");
             first.close();
-            check(firstFile.getFileName().toString().equals(LocalDate.now() + "-1.log"),
-                "the first daily printer log must use sequence 1");
-            check(Files.readString(firstFile).contains("[WaveXinPrinter]: planner action=PLACE_BATCH"),
+            check(firstFile.getFileName().toString().equals("[LitematicaPrinter]-" + LocalDate.now() + "-1.log"),
+                "the first daily printer log must have its module prefix and sequence 1");
+            check(Files.readString(firstFile).contains("[WaveXinLitematicaPrinter]: planner action=PLACE_BATCH"),
                 "printer logs must contain detailed event fields");
-            check(Files.readString(firstFile).contains("repeated_event event=planner suppressed=1"),
-                "explicit flush must emit a summary for deduplicated INFO events");
 
-            PrinterDebugLog second = new PrinterDebugLog();
+            WaveXinDebugLog second = new WaveXinDebugLog("LitematicaPrinter");
             second.open(true, root);
             Path secondFile = second.path();
             second.close();
-            check(secondFile.getFileName().toString().equals(LocalDate.now() + "-2.log"),
-                "printer log sequence must increment without gzip rotation");
-            check(PrinterDebugLog.formatLine(LocalTime.of(7, 8, 9), "INFO", "path_goal", "target", "1,2,3")
-                    .equals("[07:08:09] [Client thread/INFO] [WaveXinPrinter]: path_goal target=1,2,3"),
+            check(secondFile.getFileName().toString().equals("[LitematicaPrinter]-" + LocalDate.now() + "-2.log"),
+                "printer log sequence must increment in the shared directory");
+            Path recorder = WaveXinDebugLog.nextPath(directory, "ContainerRecorder", LocalDate.now());
+            check(recorder.getFileName().toString().equals("[ContainerRecorder]-" + LocalDate.now() + "-1.log"),
+                "recorder must use its own sequence in the shared directory");
+            check(WaveXinDebugLog.formatLine(LocalTime.of(7, 8, 9), "INFO", "LitematicaPrinter", "path_goal", "target", "1,2,3")
+                    .equals("[07:08:09] [Client thread/INFO] [WaveXinLitematicaPrinter]: path_goal target=1,2,3"),
                 "printer log lines must follow the requested Minecraft-like format");
 
             Files.deleteIfExists(secondFile);

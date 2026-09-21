@@ -6,6 +6,9 @@ import com.google.gson.GsonBuilder;
 import com.google.gson.JsonSyntaxException;
 import meteordevelopment.meteorclient.systems.modules.Module;
 import net.minecraft.nbt.StringNbtReader;
+import net.minecraft.nbt.NbtCompound;
+import java.util.ArrayList;
+import java.util.List;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.AtomicMoveNotSupportedException;
@@ -17,8 +20,57 @@ import java.util.Map;
 
 public final class WaveXinSettingsStore {
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
+    private static boolean updateCheckEnabled = true;
+    private static String language;
 
     private WaveXinSettingsStore() {
+    }
+
+    public static void loadFeatureFlags() {
+        updateCheckEnabled = true;
+        language = null;
+        if (!Files.exists(WaveXinDataPaths.SETTINGS_PATH)) return;
+
+        try {
+            FeatureFlags features = featureFlagsFromJson(Files.readString(WaveXinDataPaths.SETTINGS_PATH, StandardCharsets.UTF_8));
+            updateCheckEnabled = features == null || features.updateCheck;
+            language = features == null ? null : normalizeLanguage(features.language);
+        } catch (IOException | JsonSyntaxException ignored) {
+            // Keep safe legacy defaults when settings cannot be read.
+        }
+    }
+
+    public static boolean isUpdateCheckEnabled() {
+        return updateCheckEnabled;
+    }
+
+    public static String getLanguage() {
+        return language;
+    }
+
+    static boolean updateCheckFeatureFromJson(String json) {
+        FeatureFlags features = featureFlagsFromJson(json);
+        return features == null || features.updateCheck;
+    }
+
+    static String languageFromJson(String json) {
+        FeatureFlags features = featureFlagsFromJson(json);
+        return features == null ? null : normalizeLanguage(features.language);
+    }
+
+    private static FeatureFlags featureFlagsFromJson(String json) {
+        SettingsDocument document = GSON.fromJson(json, SettingsDocument.class);
+        return document == null ? null : document.features;
+    }
+
+    public static void setUpdateCheckEnabled(boolean enabled, Iterable<Module> modules) {
+        updateCheckEnabled = enabled;
+        save(modules);
+    }
+
+    public static void setLanguage(String selectedLanguage, Iterable<Module> modules) {
+        language = normalizeLanguage(selectedLanguage);
+        save(modules);
     }
 
     static boolean restore(Iterable<Module> modules) {
@@ -27,11 +79,25 @@ public final class WaveXinSettingsStore {
         try {
             SettingsDocument document = GSON.fromJson(Files.readString(WaveXinDataPaths.SETTINGS_PATH, StandardCharsets.UTF_8), SettingsDocument.class);
             if (document == null || document.modules == null) throw new JsonSyntaxException("Missing module settings");
+            updateCheckEnabled = document.features == null || document.features.updateCheck;
+            language = document.features == null ? null : normalizeLanguage(document.features.language);
 
-            for (Module module : modules) {
+            List<Module> moduleList = new ArrayList<>();
+            for (Module module : modules) moduleList.add(module);
+            boolean migratedContainerRecorder = migrateContainerRecorder(document, moduleList);
+
+            for (Module module : moduleList) {
                 String serialized = document.modules.get(module.name);
                 if (serialized == null) continue;
                 module.fromTag(StringNbtReader.parse(serialized));
+            }
+
+            if (migratedContainerRecorder) {
+                try {
+                    writeAtomically(WaveXinDataPaths.SETTINGS_PATH, GSON.toJson(document));
+                } catch (IOException error) {
+                    WaveXinAddon.LOG.error("Could not persist migrated Container Recorder settings.", error);
+                }
             }
 
             return true;
@@ -42,8 +108,10 @@ public final class WaveXinSettingsStore {
         }
     }
 
-    static void save(Iterable<Module> modules) {
+    static boolean save(Iterable<Module> modules) {
         SettingsDocument document = new SettingsDocument();
+        document.features.updateCheck = updateCheckEnabled;
+        document.features.language = language;
         for (Module module : modules) {
             var tag = module.toTag();
             if (tag != null) document.modules.put(module.name, tag.toString());
@@ -51,15 +119,21 @@ public final class WaveXinSettingsStore {
 
         try {
             writeAtomically(WaveXinDataPaths.SETTINGS_PATH, GSON.toJson(document));
+            return true;
         } catch (IOException e) {
             WaveXinAddon.LOG.error("Could not save WaveXin settings to {}.", WaveXinDataPaths.SETTINGS_PATH, e);
+            return false;
         }
     }
 
     public static void writeAtomically(java.nio.file.Path path, String contents) throws IOException {
+        writeAtomically(path, contents.getBytes(StandardCharsets.UTF_8));
+    }
+
+    public static void writeAtomically(java.nio.file.Path path, byte[] contents) throws IOException {
         Files.createDirectories(path.getParent());
         java.nio.file.Path temporaryPath = path.resolveSibling(path.getFileName() + ".tmp");
-        Files.writeString(temporaryPath, contents, StandardCharsets.UTF_8);
+        Files.write(temporaryPath, contents);
 
         try {
             Files.move(temporaryPath, path, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
@@ -82,7 +156,46 @@ public final class WaveXinSettingsStore {
     }
 
     private static class SettingsDocument {
-        int version = 1;
+        int version = 4;
         Map<String, String> modules = new LinkedHashMap<>();
+        FeatureFlags features = new FeatureFlags();
+    }
+
+    private static boolean migrateContainerRecorder(SettingsDocument document, List<Module> modules) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
+        if (document.modules.containsKey("container-recorder")) return false;
+        String legacy = document.modules.get("base-finder");
+        if (legacy == null) return false;
+
+        Module recorder = null;
+        for (Module module : modules) if (module.name.equals("container-recorder")) { recorder = module; break; }
+        if (recorder == null) return false;
+
+        NbtCompound legacyTag = StringNbtReader.parse(legacy);
+        NbtCompound recorderTag = recorder.toTag();
+        if (recorderTag == null) return false;
+        String migrated = migratedContainerRecorderTag(legacyTag, recorderTag);
+        if (migrated == null) return false;
+        document.modules.put("container-recorder", migrated);
+        return true;
+    }
+
+    static String migratedContainerRecorderTag(NbtCompound legacyTag, NbtCompound recorderTag) {
+        if (!legacyTag.contains("settings")) return null;
+        NbtCompound legacySettings = legacyTag.getCompound("settings");
+        NbtCompound recorderSettings = recorderTag.getCompound("settings");
+        for (String key : recorderSettings.getKeys()) {
+            var value = legacySettings.get(key);
+            if (value != null) recorderSettings.put(key, value.copy());
+        }
+        return recorderTag.toString();
+    }
+
+    private static class FeatureFlags {
+        boolean updateCheck = true;
+        String language;
+    }
+
+    private static String normalizeLanguage(String value) {
+        return "en_us".equals(value) || "zh_cn".equals(value) ? value : null;
     }
 }

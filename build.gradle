@@ -348,10 +348,29 @@ tasks.register("testWaveXinBaseFinderBehavior", JavaExec) {
     mainClass = "me.waltom.wavexin.modules.basefinder.BaseFinderBehaviorTest"
 }
 
-tasks.register("testWaveXinTurtlePotionThrowerBehavior", JavaExec) {
+tasks.register("testWaveXinUiTranslationCoverage", JavaExec) {
     dependsOn(tasks.named("testClasses"))
     classpath = sourceSets.test.runtimeClasspath
-    mainClass = "me.waltom.wavexin.modules.turtlepotionthrower.TurtlePotionThrowerBehaviorTest"
+    mainClass = "me.waltom.wavexin.i18n.WaveXinUiTranslationCoverageTest"
+    workingDir = projectDir
+}
+
+tasks.register("testWaveXinEndGatewayBehavior", JavaExec) {
+    dependsOn(tasks.named("testClasses"))
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = "me.waltom.wavexin.modules.endgateway.EndGatewayFinderBehaviorTest"
+}
+
+tasks.register("testWaveXinNavigationModuleControlBehavior", JavaExec) {
+    dependsOn(tasks.named("testClasses"))
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = "me.waltom.wavexin.modules.NavigationModuleControlBehaviorTest"
+}
+
+tasks.register("testWaveXinFeatureAccessBehavior", JavaExec) {
+    dependsOn(tasks.named("testClasses"))
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = "me.waltom.wavexin.core.EndGatewayFeatureAccessBehaviorTest"
 }
 
 tasks.register("testWaveXinLitematicaPrinterBehavior", JavaExec) {
@@ -366,13 +385,49 @@ tasks.register("testWaveXinElytraFlightBehavior", JavaExec) {
     mainClass = "me.waltom.wavexin.modules.elytrafly.ElytraFlightBehaviorTest"
 }
 
+tasks.register("testWaveXinContainerRecorderBehavior", JavaExec) {
+    dependsOn(tasks.named("testClasses"))
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = "me.waltom.wavexin.modules.containerrecorder.ContainerRecorderBehaviorTest"
+}
+
+tasks.register("testWaveXinSettingsStoreBehavior", JavaExec) {
+    dependsOn(tasks.named("testClasses"))
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = "me.waltom.wavexin.core.WaveXinSettingsStoreBehaviorTest"
+}
+
+tasks.register("testWaveXinUpdateCheckerBehavior", JavaExec) {
+    dependsOn(tasks.named("testClasses"))
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = "me.waltom.wavexin.core.UpdateCheckerBehaviorTest"
+}
+
+[
+    CraftingGrid: "craftinggrid.CraftingGridBehaviorTest",
+    KillAuraPlus: "killaura.KillAuraPlusBehaviorTest"
+].each { name, entrypoint ->
+    tasks.register("testWaveXin${name}Behavior", JavaExec) {
+        dependsOn(tasks.named("testClasses"))
+        classpath = sourceSets.test.runtimeClasspath
+        mainClass = "me.waltom.wavexin.modules.${entrypoint}"
+    }
+    tasks.named("test") { dependsOn(tasks.named("testWaveXin${name}Behavior")) }
+}
+
 tasks.named("test") {
     dependsOn(tasks.named("testWaveXinI18nBehavior"))
+    dependsOn(tasks.named("testWaveXinUiTranslationCoverage"))
     dependsOn(tasks.named("testWaveXinChatFilterBehavior"))
     dependsOn(tasks.named("testWaveXinBaseFinderBehavior"))
-    dependsOn(tasks.named("testWaveXinTurtlePotionThrowerBehavior"))
+    dependsOn(tasks.named("testWaveXinEndGatewayBehavior"))
+    dependsOn(tasks.named("testWaveXinNavigationModuleControlBehavior"))
+    dependsOn(tasks.named("testWaveXinFeatureAccessBehavior"))
     dependsOn(tasks.named("testWaveXinLitematicaPrinterBehavior"))
     dependsOn(tasks.named("testWaveXinElytraFlightBehavior"))
+    dependsOn(tasks.named("testWaveXinContainerRecorderBehavior"))
+    dependsOn(tasks.named("testWaveXinSettingsStoreBehavior"))
+    dependsOn(tasks.named("testWaveXinUpdateCheckerBehavior"))
 }
 
 tasks.named("check") {
