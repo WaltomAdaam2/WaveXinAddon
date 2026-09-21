@@ -18,16 +18,16 @@ WaveXinAddon is a Meteor Client addon designed for the **2b2t.xin** server. It p
 * Chat Filter: Separately filters MSG, public chat, and death messages with independent allowlists and an own-message bypass enabled by default.
 * Base Finder: Normal/spiral scanning, checkpoint resume, immediate visited-chunk rendering, container and pearl recording, and optional Xaero waypoints with area limits and exact creation-message colors.
 * Container Recorder: An independent recorder for selected loaded-chunk containers that meet its threshold. It supports pearl detection, record files, Xaero waypoints, vanilla achievement toasts, and the achievement sound. Each scan mode can start it automatically through its own option.
-* End Gateway Finder: Locally predicts End return gateways from the world seed for 1.12, 1.20.4, or both versions. It rolls the scan around the player, reuses overlapping results for the current game session, reports progress through a top-right toast, and supports routes, dwell time, automatic movement, rendering, and Container Recorder integration.
+* EndBaseFinder: Locally predicts End return gateways from the world seed for 1.12, 1.20.4, or both versions. It rolls the scan around the player, reuses overlapping results for the current game session, reports progress through a top-right toast, and supports routes, dwell time, automatic movement, rendering, and Container Recorder integration.
 * Litematica Printer: While the player moves manually, places projection blocks with real support inside interaction range. Green marks the next batch, yellow marks retrying blocks, and red marks states requiring manual correction. It also handles directional states, double chests, hotbar refills, whole-stack restocking from a selected region, progress/container caches, and a dedicated debug log.
 
 For implementation details and feature-specific notes, see the [Feature Logic Guide](docs/README_LOGIC_EN.md). The staged Minecraft 1.21.1 port and acceptance criteria are documented in the [1.21.1 Compatibility Plan](docs/MC_1_21_1_PORT_PLAN.md).
 
-New in the 1.21.11 SNAPSHOT:
+New in 1.8.0:
 
-* KillAura+: Adapts Alienv4 targeting, cooldown, and rotation behavior for automatic melee combat and target rendering. Available in WaveXinAddon after activation.
+* KillAura+: Adapts Alienv4 targeting, cooldown, and rotation behavior for automatic melee combat and target rendering. Available in WaveXinAddon after local license validation.
 
-KillAura+ has not yet been ported to 1.21.1.
+1.8.0 provides separate Minecraft 1.21.11 and 1.21.1 JARs; use the matching artifact.
 
 ## Commands
 
@@ -37,10 +37,11 @@ The Meteor command prefix is configurable. Current public commands:
 * `.wavexin check-update true|false`: Save the startup update-check preference.
 * `.wavexin lang Chinese`: Change WaveXinAddon visible text only to Simplified Chinese.
 * `.wavexin lang English`: Change WaveXinAddon visible text only to English.
+* `.wavexin debug <module> on|off`: Control diagnostics for `autologin`, `basefinder`, `elytraflypath`, `container`, `printer`, or `endbasefinder`.
 
 ## Requirements
 
-* Minecraft 1.21.11 / 1.21.1 (some features still require updates)
+* Minecraft 1.21.11 / 1.21.1 (use the matching version-specific JAR)
 * Java 21
 * Fabric Loader
 * Fabric API

@@ -1,6 +1,6 @@
 # WaveXinAddon 功能逻辑说明
 
-## 1.21.11 SNAPSHOT 新模块
+## 1.8.0 新模块
 
 - **KillAura+**：按 [Alienv4 Aura（e443c5b）](https://github.com/RageCat420/AlienClient-OpenSource/blob/e443c5bc499af722429d311333d10377623d6f9b/src/main/java/dev/luminous/mod/modules/impl/combat/Aura.java) 的行为适配，激活后可用，许可证独立于 EndBaseFinder。默认攻击距离 6、候选搜索距离 8、隔墙距离 6、冷却进度 1.1；搜索距离不会扩大实际攻击距离。保留实体/好友筛选、低护甲优先、延时/原版计时、TPS 换算、渐进转向、视角限制与挥手方式，不加入重锤逻辑或 Alien 运行时依赖。
 - **KillAura+ 显示**：保留填充、方框、环形动画、命中颜色和缓动曲线。原 ThunderHack 显示使用 Meteor 三维十字适配，并非原着色器效果的逐像素复刻；设置界面明确标注适配效果。异步转向后的攻击会重新检查模块、世界、目标和距离。
@@ -49,7 +49,7 @@
 
 - Container Recorder 是独立的常驻模块，以玩家周围的 `Scan Radius`（默认 4 区块）检查已加载区块；仅在符合容器类型筛选且数量达到 `Container Threshold` 时记录坐标和数量。
 - 模块保留末影珍珠检测、记录文件、Xaero 路径点、原版成就提示框及挑战完成提示音。手动启用时独立运行，不依赖任何扫描模块。
-- Base Finder 的普通扫描、螺旋扫描和 End Gateway Finder 都有独立的 `Start Container Recorder` 开关。扫描真正开始后才请求启动记录器；多个扫描同时请求时，记录器会等最后一个请求结束才自动关闭，即使玩家原本手动开启也一样。未启用联动的扫描不会取得记录器的关闭权。
+- Base Finder 的普通扫描、螺旋扫描和 EndBaseFinder 都有独立的 `Start Container Recorder` 开关。扫描真正开始后才请求启动记录器；多个扫描同时请求时，记录器会等最后一个请求结束才自动关闭，即使玩家原本手动开启也一样。未启用联动的扫描不会取得记录器的关闭权。
 
 ### 基地狩猎扫图 (Base Finder)
 
@@ -59,12 +59,12 @@
 - 两种扫描可通过各自的 `Start Container Recorder` 设置联动独立的 Container Recorder。普通目标中心修正是正常移动状态，不写 warn；`BaseFinderDebug` warn 仅用于玩家/世界缺失、等待当前区块等异常或需要诊断的状态。
 - Xaero 路径点为可选功能。仅在开启该选项时检查 Xaero Minimap；缺失时会关闭该选项并给出聊天警告，普通容器记录仍可用。基地路径点名称可使用数字、前缀和后缀，并按区域半径与每区域上限去重；`Area Radius` 默认 5，`Waypoints per Area` 默认 3。`Record Thrown Pearl` 会创建不限数量的 `Pearl 1`、`Pearl 2` 路径点，别名为 `P1`、`P2`，使用同一个路径点颜色设置，并且不计入基地的每区域路径点上限。创建成功的聊天提示会保留 WaveXin 前缀，并将路径点名称加粗、使用 Xaero 实际的 0–15 颜色编号对应色显示；随机颜色只生成一次，同一个编号同时用于路径点和聊天提示。
 
-### 末地折跃门定位 (End Gateway Finder)
+### 末地折跃门定位 (EndBaseFinder)
 
 - 模块只会在末地开始，根据输入的世界种子在本地预测末地返回折跃门。`Generation Version` 可选择 1.12、1.20.4 或同时扫描两种规则；预测结果不会替代已加载区块中的实际方块确认。
 - `Rolling Radius (Chunks)` 是以玩家为中心的圆形工作半径，默认 1,000 区块、范围 8–100,000。后台使用单线程从中心向外处理 32×32 区块任务；发现首个可用候选后即可开始路线，不等待整个范围完成。玩家距当前工作圆边缘 100 格时，扫描中心推进到玩家位置，并复用本次游戏会话内的重叠任务结果。
 - 滚动缓存只保存在内存中，并按世界实例、种子及生成版本隔离；模块关闭后再次开启可复用相同会话缓存，切换世界、种子或生成版本时不会串用。右上角独立进度提示在模块启用期间常驻，按批次动态显示扫描状态、已完成/总区块数、百分比及当前工作区折跃门总数。当前范围完成或暂无候选时模块仍保持启用，等待玩家推进下一范围或后台产生新结果。
-- Base Finder、Elytra Fly Path 与 End Gateway Finder 互斥；其中任一已启用时，另外两个会拒绝启动并在聊天框提示。Base Finder 与 End Gateway Finder 启用期间会像 Elytra Fly Path 一样屏蔽玩家的 WASD、跳跃和潜行输入，停用后恢复物理按键状态。
+- Base Finder、Elytra Fly Path 与 EndBaseFinder 互斥；其中任一已启用时，另外两个会拒绝启动并在聊天框提示。Base Finder 与 EndBaseFinder 启用期间会像 Elytra Fly Path 一样屏蔽玩家的 WASD、跳跃和潜行输入，停用后恢复物理按键状态。
 - 支持四种路线算法、到点停留、自动移动、已访问网关的种子隔离持久化及渲染。默认颜色为当前目标橘色、1.12 预测绿色、1.20.4 预测红色、已完成蓝色，全部可在设置中自行修改。
 - 在模块确认末地并开始扫描后，`Start Container Recorder` 可联动启动独立的 Container Recorder。
 
@@ -78,7 +78,7 @@
 - 建造材料始终先按快捷栏从左到右查找。启用 `Allow Inventory Pull` 后，仅在快捷栏缺少对应材料时，才按背包从左到右、从上到下选取完整 stack 换入快捷栏，避免每次放置都临时搬动物品。
 - `.sel`、`.sel 1`、`.sel 2` 选择补货长方体，`.sel c` 清除两个端点、渲染和该区域的容器缓存。补货按当前 Litematica layer/range 或当前可施工范围统计需求，优先填充近期目标且需求量较大的材料，并从容器按整组拿取；不会自动把玩家物品退回容器。背包需要人工清理时会停用模块，重新启用后从会话缓存继续。
 - 投影目标和已观察容器使用世界、投影指纹、区域及状态摘要绑定的会话缓存。模块关闭不会清除进度；退出世界或游戏时清理。模块启用后立即扫描已加载的投影区块和补货容器，其余部分在玩家靠近并加载后补齐，缓存不能代替最终已加载状态确认。
-- 使用 `.wavexin debug printer on/off` 控制诊断日志，文件位于 `meteor-client/wavexin/debug/[printer]-yyyy-MM-dd-N.log`。日志记录 planner、支撑、状态、临时旋转、界面拦截、补货、缓存和 audit 决策，并合并重复事件、批量写入以减少开销。
+- 使用 `.wavexin debug printer on/off` 控制诊断日志，文件位于 `meteor-client/wavexin/debug/[LitematicaPrinter]-yyyy-MM-dd-N.log`。日志记录 planner、支撑、状态、临时旋转、界面拦截、补货、缓存和 audit 决策，并合并重复事件、批量写入以减少开销。
 - `Maximum Projection Volume` 默认 10,000,000，硬上限 500,000,000。提高上限只允许扫描更大的边界，不代表一次性加载；扫描仍受每 tick 预算、区块加载和内存约束。液体、生物、实体、含水状态及无法可靠放置的结构会在其他可施工方块完成后统一报告。
 
 ### 性能与生命周期

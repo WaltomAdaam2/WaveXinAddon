@@ -1,5 +1,13 @@
 # WaveXinAddon 1.21.1 兼容与代码审计实施计划
 
+## 2026-09-21：1.8.0 双版本适配
+
+- 已将开发线功能同步至 1.21.1，保留原有 Minecraft/Yarn/Meteor 版本组合以及 Gradle 8.10 / Loom 1.7.4 基线。
+- 旧版适配包括 `isFallFlying`、输入 `tick(false, 1.0F)`、NBT 读取、Camera 位置、注册表查询与常驻 Toast 的 `draw` 返回值接口。
+- KillAura+ 使用旧版 Meteor 攻击包类型接口及 `LivingEntity.lastAttackedTicks`（与新版本相同的 intermediary 字段 `field_6273`），保留独立许可。
+- 两版独立运行行为测试与翻译校验，不把编译通过等同于实际游戏验证。旧版区块的生成预测、可选模组接口、GUI/Mixin 启动、战斗与长时间扫描仍需实机确认。
+- 下文为历史审计与移植计划；“待同步”“本轮不修改”等描述仅对应其记录日期。
+
 ## 2026-09-20：1.21.11 SNAPSHOT 新模块待同步事项
 
 先确认 1.21.11 SNAPSHOT 的实机行为，再开始 1.21.1 同步；本轮不修改 1.21.1 分支或发布版本。下文旧审计条目是历史记录，不表示当前 SNAPSHOT 仍存在同样问题。
