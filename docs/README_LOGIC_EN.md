@@ -1,16 +1,20 @@
 # WaveXinAddon Feature Logic Guide
 
-## New 1.8.0 modules
-
-- **KillAura+:** An activation-controlled adaptation of [Alienv4 Aura (e443c5b)](https://github.com/RageCat420/AlienClient-OpenSource/blob/e443c5bc499af722429d311333d10377623d6f9b/src/main/java/dev/luminous/mod/modules/impl/combat/Aura.java), with a license independent of EndBaseFinder. Defaults to attack range 6, candidate search range 8, wall range 6, and cooldown progress 1.1; search range does not extend attack range. Retains entity/friend filtering, low-armor priority, delay/vanilla timers, TPS scaling, yaw steps, FOV gating, and swing choices, without mace logic or an Alien runtime dependency.
-- **KillAura+ rendering:** Provides fills, boxes, animated rings, hit colors, and easing curves. The original ThunderHack display is adapted as a Meteor 3D target cross, not a pixel-identical shader recreation, and is labeled accordingly. Rotation callbacks recheck the active module, world, target, and range before attacking.
-
 This page describes implementation details and notable behavior for the public ClickGUI modules. It is not a complete settings reference; the in-game module settings remain authoritative.
+
+### KillAura+
+
+- KillAura+ is an optional module controlled by a local license. A successful `.wavexin redeem <code>` registers it immediately in the WaveXinAddon category without enabling it. It and EndBaseFinder use independent, locally encrypted Windows licenses that are revalidated at every startup.
+- Combat behavior is independently adapted from [Alienv4 Aura (e443c5b)](https://github.com/RageCat420/AlienClient-OpenSource/blob/e443c5bc499af722429d311333d10377623d6f9b/src/main/java/dev/luminous/mod/modules/impl/combat/Aura.java) without loading the Alien runtime. Defaults are attack range 6, candidate search range 8, wall range 6, and cooldown progress 1.1. Candidate range affects display and selection only; it never extends actual attack range.
+- Separate filters cover players, mobs, animals, villagers, and slimes while excluding friends. It also supports distance/health ordering, low-armor player priority, delay or vanilla cooldown timing, TPS scaling, hurt-time limits, and client/server swing choices. `Weapon Only` is enabled by default and accepts swords, axes, and tridents.
+- The module pauses and clears its target while the player is dead, a screen is open, Blink is active, the held item violates the weapon restriction, or item use is disallowed while the player is using an item. Delayed rotation callbacks recheck the module, world, target, and range before attacking.
+- Rendering supports fill, box, animated ring, a Meteor 3D cross adaptation, or no display, together with hit colors, animation timing, and easing curves. The 3D cross adapts the original ThunderHack display and is not a pixel-identical shader recreation.
 
 ### Better Elytra Fly
 
 - Adjusts horizontal and vertical movement while gliding according to movement keys, view direction, and speed settings. `Flight Speed` retains its existing saved-setting key while displaying as Initial Speed, with a default of 1.8; `Descent Speed` keeps its existing range.
 - The standalone `Speed Acceleration` group is disabled by default, preserving fixed-speed behavior. When enabled, speed rises only during active gliding by the configured per-second amount, never exceeds its cap, and resets to Initial Speed when a new glide starts.
+- `Disable Acceleration While Ascending` is disabled by default. When enabled, ascent does not increase the current speed; if speed was already at the maximum before climbing, ascent keeps that maximum speed.
 - With `Reset After Lagback` enabled, a server position correction resets speed to Initial Speed for exactly five seconds before ramping resumes. With it disabled, corrections do not change speed.
 - The module's `Elytra Replace` setting group can independently enable automatic replacement. When the equipped elytra reaches the configured remaining-durability threshold, it finds a spare elytra above that threshold and equips it in the chest slot.
 - Replacement can be limited to active gliding. Missing-spare warnings are rate-limited to prevent chat spam.
@@ -48,7 +52,9 @@ This page describes implementation details and notable behavior for the public C
 ### Container Recorder
 
 - Container Recorder is an independent persistent module. It checks loaded chunks within its `Scan Radius` around the player (default: 4 chunks) and records a coordinate and count only when the selected container types meet `Container Threshold`.
-- It retains thrown-ender-pearl detection, record files, Xaero waypoints, the vanilla achievement toast, and the challenge-complete sound. When enabled manually, it operates independently of every scan module.
+- Container types are selectable and the threshold defaults to 10. Nearby loaded chunks are rechecked every 20 ticks, and newly received chunk data triggers an immediate check. Changing worlds clears session check caches so state cannot leak across worlds.
+- It retains optional thrown-ender-pearl detection, record files, Xaero waypoints, the vanilla achievement toast, and the challenge-complete sound. Xaero integration is off by default, with an area radius of 5 and at most 3 base waypoints per area; pearl record output is controlled separately. When enabled manually, it operates independently of every scan module.
+- Container records are stored in `meteor-client/wavexin/container/container-records.txt`. If that new file does not yet exist, the recorder migrates the legacy `meteor-client/base-finder-xin/container-records.txt`. Failed file or waypoint saves remain pending and are retried instead of permanently marking the chunk successful first.
 - Base Finder Normal Scan, Base Finder Spiral Scan, and EndBaseFinder each expose `Start Container Recorder`. A scan requests the recorder only after it really starts; concurrent requests keep it active until the last scan ends, including when the player originally enabled the recorder manually. Scans without this option do not take ownership of the recorder.
 
 ### Base Finder
@@ -61,12 +67,15 @@ This page describes implementation details and notable behavior for the public C
 
 ### EndBaseFinder
 
-- The module starts only in the End and predicts End return gateways locally from the entered world seed. `Generation Version` selects 1.12, 1.20.4, or both placement rules; predictions never replace confirming the actual blocks in loaded chunks.
-- `Rolling Radius (Chunks)` is a circular work radius centered on the player. It defaults to 1,000 chunks and ranges from 8 to 100,000. One background thread processes 32x32-chunk tasks from the center outward, so the route can start with the first usable candidate instead of waiting for the whole range. When the player comes within 100 blocks of the current work-circle edge, the center advances to the player and reuses overlapping task results from the current game session.
-- The rolling cache stays in memory and is isolated by world instance, seed, and generation version. Disabling and re-enabling the module can reuse the same session cache, while changing world, seed, or generation version cannot mix results. A dedicated top-right progress toast remains visible while the module is enabled and dynamically reports status, completed/total chunks, percentage, and the current workspace's gateway count. Completing the current range or temporarily exhausting candidates leaves the module enabled to await new results or the next range advance.
+- EndBaseFinder is an optional license-controlled module that starts only in the End and predicts End return gateways locally from the entered world seed. `Generation Version` defaults to 1.12 and can select 1.20.4 or both placement rules. Predictions never replace confirmation of actual blocks in loaded chunks.
+- `Rolling Radius (Chunks)` defines the entire circular work range. It defaults to 1,000 chunks and ranges from 8 to 100,000. `Calculation Batch (Chunks)` defaults to 3,000,000 and ranges from 1,000,000 to 100,000,000. One background thread processes complete 32x32-chunk tiles from the center outward, so an actual batch can be at most 1,023 chunks below its budget. A route can begin with the first usable candidate instead of waiting for the whole radius.
+- The scheduler retains its cursor after each batch and reports `Queued`. When no more than 10 calculated gateways remain unvisited and uncalculated tiles still exist, it queues the next batch; an empty first batch also continues. Only a fully processed circular range reports `Complete`, and newly published results do not replace a still-valid current target.
+- `Fixed Scan Center` is disabled by default, so each activation begins at the player's current position. Coming within 100 blocks of the work-circle edge advances the center to the player and reuses overlapping tiles. Fixed mode instead uses configurable X/Z coordinates and never advances after the range completes. The mode and coordinates are locked while active and can only be changed after disabling the module.
+- Calculation cache exists only for the current game session and is isolated by world instance, seed, generation version, center, and radius. Reopening the same configuration can reuse overlapping work, while world or key-setting changes cannot mix results. A dedicated top-right toast stays visible while enabled and reports `Scanning`, `Queued`, `Next Area`, `Complete`, or `Failed`, calculated/total chunks and percentage, plus arrived/discovered gateways and percentage.
+- Visited gateways are persisted by seed under `meteor-client/wavexin/end-gateways/`. Activation immediately counts historical entries inside the current work range, and gateways reached during calculation join the same total. Chat uses `Arrived At #N -> (x, z)` with that cumulative number instead of replaying history as `#1`, `#2`, and so on. If historical arrivals temporarily exceed discovered results, the toast percentage is capped at 100%.
 - Base Finder, Elytra Fly Path, and EndBaseFinder are mutually exclusive. If one is active, either of the others refuses to start and reports the conflict in chat. While enabled, Base Finder and EndBaseFinder suppress player WASD, jump, and sneak input like Elytra Fly Path, then restore physical key states when disabled.
-- It supports four route algorithms, dwell time, automatic movement, per-seed persisted visited gateways, and rendering. Default colors are orange for the current target, green for 1.12 predictions, red for 1.20.4 predictions, and blue for completed gateways; all are editable.
-- After it has confirmed the End and started scanning, `Start Container Recorder` can request the independent Container Recorder.
+- It supports nearest-neighbor, TSP, scan-order, and random routes. Automatic look is enabled by default, arrival distance is 16 blocks, and dwell time is optional. Default colors are orange for the current target, green for 1.12 predictions, red for 1.20.4 predictions, and blue for completed gateways; all are editable. Default render distance is 1,024 blocks.
+- After confirming the End and starting a scan, `Start Container Recorder` requests the independent recorder by default. A `Queued` batch pause or completed current range does not release it. Only final EndBaseFinder deactivation or activation failure ends its request and closes the recorder according to linked ownership.
 
 ### Litematica Printer
 
@@ -81,10 +90,24 @@ This page describes implementation details and notable behavior for the public C
 - Use `.wavexin debug printer on/off` to control diagnostics in `meteor-client/wavexin/debug/[LitematicaPrinter]-yyyy-MM-dd-N.log`. Logs cover planner decisions, support sources, exact states, temporary rotation, screen interception, restocking, cache decisions, and audit results, with repeated-event summaries and batched writes to reduce overhead.
 - `Maximum Projection Volume` defaults to 10,000,000 and has a hard limit of 500,000,000. Raising the cap only permits larger bounds; scanning remains constrained by per-tick budgets, chunk loading, and memory. Liquids, entities, waterlogged states, and structures that cannot be placed reliably are reported after other actionable blocks have been handled.
 
+### Commands, Access, and Data Files
+
+- The Meteor command prefix is configurable; this guide uses the default `.`. `.wavexin redeem <code>` is the only optional-module redemption entry point. The input is used only for local digest matching and is not written to logs or plaintext files. Success registers the matching module immediately while leaving it disabled. EndBaseFinder and KillAura+ use `license.dat` and `killaura-license.dat`, respectively; Windows protects them for the current local user, and they cannot unlock each other.
+- `.wavexin check-update true|false` saves the startup update preference. `.wavexin lang Chinese|English` changes only WaveXinAddon text. `.wavexin debug <module> on|off` controls module logs. `.sel [1|2|c]` selects or clears the Printer restock region.
+- `meteor-client/wavexin/settings.json` stores global WaveXinAddon preferences, `scan-progress.json` stores Base Finder checkpoints, `container/container-records.txt` stores container records, and `end-gateways/` stores seed-scoped arrival history. EndBaseFinder tile and candidate caches exist only for the current game session and are never written to disk.
+- Upgrades do not convert old activation flags in `settings.json` or old licenses into current licenses. Without a valid license, a controlled module is not registered. Licenses and redemption input are excluded from normal settings, chat, update requests, and diagnostic logs.
+
+### Update Checks and Diagnostics
+
+- Startup update checks are enabled by default. They only read public GitHub Releases metadata in the background, never download or install an update, and do not upload accounts, players, servers, HWIDs, seeds, or configuration. If direct GitHub access fails, the checker tries `ghfast.top`, `gh-proxy.com`, and `gh.3w.pm` in that order. These are public third-party proxies whose availability is not controlled by this project.
+- The unified debug command supports `autologin`, `basefinder`, `elytraflypath`, `container`, `printer`, and `endbasefinder`. Each module writes a separate `meteor-client/wavexin/debug/[Module]-yyyy-MM-dd-N.log`, and repeated sessions on the same day receive distinct files.
+- Diagnostic output collapses repeated INFO events and flushes in batches to reduce long-running disk and main-thread overhead, while errors and important state changes remain prompt. Logs are for module diagnosis and do not record redemption input or stored passwords.
+
 ### Performance and Lifecycle
 
 - Addon settings are checked for changes every 20 ticks, with immediate flushes on screen changes, disconnect and orderly shutdown. Failed writes do not advance the saved signature and are retried. Forced process termination can lose approximately the last second of setting changes.
 - Container scanning uses primitive chunk keys and skips cache hits before accessing the chunk manager. The 20-tick recheck interval, thresholds and record format remain unchanged.
+- EndBaseFinder uses one calculation thread and controls work through 32x32-chunk tiles, a configurable batch budget, and batched result publication at most once per second. A large radius represents a long-running incremental job, not an immediate allocation or calculation of the entire circle.
 - Chicken and sniffer nametags use spatial queries filtered by entity type for ranges up to 256 blocks and squared-distance filtering. Larger ranges fall back to entity iteration to avoid enumerating large empty regions.
 - Elytra path flight combines velocity writes while preserving speed and damping calculations. AutoLogin rechecks the server on every activation so reconnecting while disabled cannot reuse a previous server's eligibility.
 
